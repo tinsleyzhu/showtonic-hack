@@ -1,5 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { upsertAttendance } from "./attendance";
+import { validateLogInput } from "./showtonicUtils.js";
 
 async function getLogByUserAndShow(ctx: any, userId: string, showId: string) {
   return ctx.db
@@ -20,9 +22,12 @@ export const create = mutation({
     rating: v.number(),
     vibes: v.array(v.string()),
     note: v.optional(v.string()),
+    caption: v.optional(v.string()),
+    song: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    validateLogInput({ rating: args.rating, vibes: args.vibes });
     const user = await ctx.db.get(args.userId);
     const show = await ctx.db.get(args.showId);
     if (!user || !show) {
@@ -30,25 +35,35 @@ export const create = mutation({
     }
 
     const existing = await getLogByUserAndShow(ctx, args.userId, args.showId);
+    const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
+    const createdAt = args.createdAt ?? Date.now();
     const payload = {
       userId: args.userId,
       showId: args.showId,
       rating: args.rating,
       vibes: [...args.vibes],
       note: args.note,
+      caption: args.caption,
+      song: args.song,
       showTitle: show.title,
       showDate: show.date,
       showImage: show.image,
       artistNames: [...show.artistNames],
-      createdAt: args.createdAt ?? Date.now(),
+      venueName: show.venueName,
+      city: show.city,
+      artistGenres: [...new Set(artists.flatMap((artist) => artist?.genres ?? []))],
+      createdAt,
     };
 
     if (existing) {
       await ctx.db.patch(existing._id, payload);
+      await upsertAttendance(ctx, args.userId, args.showId, "logged", createdAt);
       return existing._id;
     }
 
-    return ctx.db.insert("logs", payload);
+    const logId = await ctx.db.insert("logs", payload);
+    await upsertAttendance(ctx, args.userId, args.showId, "logged", createdAt);
+    return logId;
   },
 });
 

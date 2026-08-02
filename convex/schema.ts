@@ -29,6 +29,11 @@ export default defineSchema({
     jambaseId: v.string(),
     title: v.string(),
     date: v.string(), // ISO date
+    day: v.optional(v.string()),
+    time: v.optional(v.string()),
+    memoryPrompt: v.optional(v.string()),
+    ticketUrl: v.optional(v.string()),
+    venueId: v.optional(v.id("venues")),
     venueName: v.string(),
     city: v.string(),
     image: v.optional(v.string()),
@@ -55,15 +60,30 @@ export default defineSchema({
     rating: v.number(), // 0.5 - 5.0, half steps
     vibes: v.array(v.string()),
     note: v.optional(v.string()),
+    caption: v.optional(v.string()),
+    song: v.optional(v.string()),
     // denormalized so the diary grid and taste matching need no lookups
     showTitle: v.string(),
     showDate: v.string(),
     showImage: v.optional(v.string()),
     artistNames: v.array(v.string()),
+    venueName: v.optional(v.string()),
+    city: v.optional(v.string()),
+    artistGenres: v.optional(v.array(v.string())),
     createdAt: v.number(),
   })
     .index("by_user", ["userId"])
     .index("by_show", ["showId"]),
+
+  attendance: defineTable({
+    userId: v.id("users"),
+    showId: v.id("shows"),
+    status: v.union(v.literal("interested"), v.literal("going"), v.literal("logged")),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_show", ["showId"])
+    .index("by_user_show", ["userId", "showId"]),
 
   media: defineTable({
     logId: v.id("logs"),

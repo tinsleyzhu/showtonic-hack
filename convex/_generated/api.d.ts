@@ -8,12 +8,16 @@
  * @module
  */
 
+import type * as attendance from "../attendance.js";
 import type * as jambase from "../jambase.js";
-import type * as media from "../media.js";
+import type * as jambaseUtils from "../jambaseUtils.js";
 import type * as logs from "../logs.js";
+import type * as media from "../media.js";
+import type * as mediaUtils from "../mediaUtils.js";
 import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
 import type * as shows from "../shows.js";
+import type * as showtonicUtils from "../showtonicUtils.js";
 import type * as taste from "../taste.js";
 import type * as tasteMath from "../tasteMath.js";
 import type * as users from "../users.js";
@@ -25,12 +29,16 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  attendance: typeof attendance;
   jambase: typeof jambase;
-  media: typeof media;
+  jambaseUtils: typeof jambaseUtils;
   logs: typeof logs;
+  media: typeof media;
+  mediaUtils: typeof mediaUtils;
   seed: typeof seed;
   seedData: typeof seedData;
   shows: typeof shows;
+  showtonicUtils: typeof showtonicUtils;
   taste: typeof taste;
   tasteMath: typeof tasteMath;
   users: typeof users;

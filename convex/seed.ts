@@ -73,28 +73,42 @@ export const run = internalMutation({
 
     for (const show of seedShows) {
       const existing = await getByIndex(ctx, "shows", "by_jambase", "jambaseId", show.jambaseId);
-      const showId =
-        existing?._id ??
-        (await ctx.db.insert("shows", {
-          jambaseId: show.jambaseId,
-          title: show.title,
-          date: show.date,
-          venueName: show.venueName,
-          city: show.city,
-          image: show.image,
-          festivalId: show.festivalId,
-          stage: show.stage,
-          isHeadliner: show.isHeadliner,
-          artistIds: show.artistJambaseIds.map((jambaseId) => {
-            const artistId = artistIds.get(jambaseId);
-            if (!artistId) {
-              throw new Error(`Missing artist ${jambaseId} for show ${show.jambaseId}`);
-            }
-            return artistId as any;
-          }),
-          artistNames: [...show.artistNames],
-          jambaseUrl: show.jambaseUrl,
-        }));
+      const venueId = venueIds.get(show.venueJambaseId);
+      if (!venueId) {
+        throw new Error(`Missing venue ${show.venueJambaseId} for show ${show.jambaseId}`);
+      }
+      const payload = {
+        jambaseId: show.jambaseId,
+        title: show.title,
+        date: show.date,
+        day: show.day,
+        time: show.time,
+        memoryPrompt: show.memoryPrompt,
+        ticketUrl: show.ticketUrl,
+        venueId: venueId as Id<"venues">,
+        venueName: show.venueName,
+        city: show.city,
+        image: show.image,
+        festivalId: show.festivalId,
+        stage: show.stage,
+        isHeadliner: show.isHeadliner,
+        artistIds: show.artistJambaseIds.map((jambaseId) => {
+          const artistId = artistIds.get(jambaseId);
+          if (!artistId) {
+            throw new Error(`Missing artist ${jambaseId} for show ${show.jambaseId}`);
+          }
+          return artistId as Id<"artists">;
+        }),
+        artistNames: [...show.artistNames],
+        jambaseUrl: show.jambaseUrl,
+      };
+      let showId: Id<"shows">;
+      if (existing) {
+        await ctx.db.patch(existing._id, payload);
+        showId = existing._id;
+      } else {
+        showId = await ctx.db.insert("shows", payload);
+      }
 
       showIds.set(show.jambaseId, showId);
     }
@@ -120,6 +134,7 @@ export const run = internalMutation({
         .filter((q: any) => q.eq(q.field("showId"), showId))
         .unique();
 
+      const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
       const payload = {
         userId,
         showId,
@@ -130,6 +145,9 @@ export const run = internalMutation({
         showDate: show.date,
         showImage: show.image,
         artistNames: [...show.artistNames],
+        venueName: show.venueName,
+        city: show.city,
+        artistGenres: [...new Set(artists.flatMap((artist) => artist?.genres ?? []))],
         createdAt: log.createdAt,
       };
 
@@ -139,6 +157,24 @@ export const run = internalMutation({
       } else {
         await ctx.db.insert("logs", payload);
         insertedLogs += 1;
+      }
+
+      const existingAttendance = await ctx.db
+        .query("attendance")
+        .withIndex("by_user_show", (q: any) => q.eq("userId", userId).eq("showId", showId))
+        .unique();
+      if (existingAttendance) {
+        await ctx.db.patch(existingAttendance._id, {
+          status: "logged",
+          updatedAt: log.createdAt,
+        });
+      } else {
+        await ctx.db.insert("attendance", {
+          userId,
+          showId,
+          status: "logged",
+          updatedAt: log.createdAt,
+        });
       }
     }
 
