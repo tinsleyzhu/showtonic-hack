@@ -43,17 +43,25 @@ export const run = internalMutation({
 
     for (const venue of seedVenues) {
       const existing = await getByIndex(ctx, "venues", "by_jambase", "jambaseId", venue.jambaseId);
-      const venueId =
-        existing?._id ??
-        (await ctx.db.insert("venues", {
-          jambaseId: venue.jambaseId,
-          name: venue.name,
-          city: venue.city,
-          region: venue.region,
-          latitude: venue.latitude,
-          longitude: venue.longitude,
-          image: venue.image,
-        }));
+      const payload = {
+        jambaseId: venue.jambaseId,
+        name: venue.name,
+        city: venue.city,
+        region: venue.region,
+        latitude: venue.latitude,
+        longitude: venue.longitude,
+        image: venue.image,
+        description: venue.description,
+        website: venue.website,
+        jambaseUrl: venue.jambaseUrl,
+      };
+      let venueId: Id<"venues">;
+      if (existing) {
+        await ctx.db.patch(existing._id, payload);
+        venueId = existing._id;
+      } else {
+        venueId = await ctx.db.insert("venues", payload);
+      }
 
       venueIds.set(venue.jambaseId, venueId);
     }

@@ -23,6 +23,9 @@ export default defineSchema({
     latitude: v.optional(v.number()),
     longitude: v.optional(v.number()),
     image: v.optional(v.string()),
+    description: v.optional(v.string()),
+    website: v.optional(v.string()),
+    jambaseUrl: v.optional(v.string()),
   }).index("by_jambase", ["jambaseId"]),
 
   shows: defineTable({

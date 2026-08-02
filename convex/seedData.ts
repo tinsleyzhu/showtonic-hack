@@ -92,6 +92,9 @@ export const seedVenues = [
     latitude: 37.7694,
     longitude: -122.4862,
     image: "/window.svg",
+    description: "Outside Lands turns Golden Gate Park into a multi-stage live music city.",
+    website: "https://www.sfoutsidelands.com/",
+    jambaseUrl: "https://www.jambase.com/venue/golden-gate-park",
   },
   {
     jambaseId: "venue-sutro-stage",
@@ -101,6 +104,9 @@ export const seedVenues = [
     latitude: 37.7679,
     longitude: -122.4586,
     image: "/globe.svg",
+    description: "A wooded Outside Lands stage known for close crowds and discovery sets.",
+    website: "https://www.sfoutsidelands.com/",
+    jambaseUrl: "https://www.jambase.com/venue/sutro-stage",
   },
   {
     jambaseId: "venue-lands-end",
@@ -110,6 +116,9 @@ export const seedVenues = [
     latitude: 37.7804,
     longitude: -122.5139,
     image: "/file.svg",
+    description: "The festival's largest field and home to its biggest headline moments.",
+    website: "https://www.sfoutsidelands.com/",
+    jambaseUrl: "https://www.jambase.com/venue/lands-end",
   },
 ] as const;
 

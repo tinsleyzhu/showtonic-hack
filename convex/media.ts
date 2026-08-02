@@ -64,3 +64,22 @@ export const listByLog = query({
     );
   },
 });
+
+export const listByShow = query({
+  args: {
+    showId: v.id("shows"),
+  },
+  handler: async (ctx, args) => {
+    const media = await ctx.db
+      .query("media")
+      .withIndex("by_show", (q) => q.eq("showId", args.showId))
+      .collect();
+
+    return Promise.all(
+      media.map(async (item) => ({
+        ...item,
+        url: await ctx.storage.getUrl(item.storageId),
+      })),
+    );
+  },
+});

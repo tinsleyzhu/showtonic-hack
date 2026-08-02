@@ -41,8 +41,70 @@ function normalizeSearchTerm(value) {
     .toLowerCase();
 }
 
+function stableId(show) {
+  return String(show.id ?? show._id ?? "");
+}
+
+function stableSort(shows, score) {
+  return [...shows].sort((left, right) => {
+    const byScore = score(right) - score(left);
+    if (byScore !== 0) {
+      return byScore;
+    }
+    const byDate = String(left.date).localeCompare(String(right.date));
+    return byDate !== 0 ? byDate : stableId(left).localeCompare(stableId(right));
+  });
+}
+
+function buildDiscoveryShelves(shows) {
+  const limit = (items) => items.slice(0, 6);
+  return {
+    popularThisWeek: limit(
+      stableSort(
+        shows,
+        (show) => (show.ratingCount ?? 0) * 2 + (show.goingCount ?? 0) + (show.loggedCount ?? 0),
+      ),
+    ),
+    trendingAmongFriends: limit(
+      stableSort(shows, (show) => (show.goingCount ?? 0) + (show.loggedCount ?? 0)),
+    ),
+    followedArtists: limit(
+      stableSort(shows, (show) => (show.rating ?? 0) * 10 + (show.ratingCount ?? 0)),
+    ),
+    nearby: limit(
+      [...shows].sort(
+        (left, right) =>
+          String(left.city).localeCompare(String(right.city)) ||
+          String(left.date).localeCompare(String(right.date)) ||
+          stableId(left).localeCompare(stableId(right)),
+      ),
+    ),
+    thisWeekend: limit(
+      [...shows].sort(
+        (left, right) =>
+          String(left.date).localeCompare(String(right.date)) ||
+          stableId(left).localeCompare(stableId(right)),
+      ),
+    ),
+  };
+}
+
+function matchesSearch(show, query) {
+  const term = normalizeSearchTerm(query);
+  if (!term) {
+    return true;
+  }
+  return normalizeSearchTerm(
+    [show.title, ...(show.artistNames ?? []), show.venueName, show.city]
+      .filter(Boolean)
+      .join(" "),
+  ).includes(term);
+}
+
 module.exports = {
   VIBE_VOCABULARY,
+  buildDiscoveryShelves,
+  matchesSearch,
   normalizeSearchTerm,
   summarizeRatings,
   validateLogInput,
