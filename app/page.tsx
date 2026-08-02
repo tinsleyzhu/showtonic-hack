@@ -2,18 +2,33 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  ArrowLeft,
+  AtSign,
   Bookmark,
   CalendarDays,
   Camera,
   Check,
-  Clock3,
-  Images,
+  ChevronRight,
+  CircleUserRound,
+  Compass,
+  ExternalLink,
+  Grid3X3,
+  Heart,
+  Library,
+  ListFilter,
   MapPin,
+  MessageCircle,
   Music2,
-  Radio,
+  Pause,
+  Play,
+  Plus,
+  Search,
   Share2,
   Sparkles,
-  Users,
+  Star,
+  Ticket,
+  Trophy,
+  X,
 } from "lucide-react";
 import {
   artists,
@@ -25,844 +40,647 @@ import {
   type Artist,
   type DemoLog,
   type Show,
+  type Venue,
 } from "./data";
+
+type View = "discover" | "show" | "diary" | "leaderboard" | "profile" | "artist" | "venue";
+type Attendance = "interested" | "going" | "logged";
+type DiaryFilter = "Artist" | "City" | "Genre" | "Calendar" | "Rating" | "Venue" | "Photo";
 
 type Memory = {
   id: string;
   showId: string;
   rating: number;
-  vibes: string[];
   note: string;
-  media: { name: string; url: string; kind: "photo" | "video" }[];
+  caption: string;
+  song: string;
+  vibes: string[];
+  photo: string;
+  date: string;
 };
-
-type View = "festival" | "show" | "diary" | "recap" | "twins" | "artist" | "venue";
-type ShowDesign = "pulse" | "scrapbook" | "archive";
 
 const artistById = new Map(artists.map((artist) => [artist.id, artist]));
 const venueById = new Map(venues.map((venue) => [venue.id, venue]));
+
 const defaultMemories: Memory[] = [
   {
-    id: "seed-charli",
+    id: "memory-charli",
     showId: "charli-outside-lands",
     rating: 5,
-    vibes: ["transcendent", "sweaty", "surprise guest"],
-    note: "Logged from the rail. Everyone around us knew the assignment.",
-    media: [
-      {
-        name: "festival lights",
-        url: "https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?auto=format&fit=crop&w=900&q=80",
-        kind: "photo",
-      },
-    ],
+    note: "The whole hill screamed every word. Instant favorite.",
+    caption: "brat in the fog",
+    song: "360",
+    vibes: ["transcendent", "sweaty"],
+    photo: "https://images.unsplash.com/photo-1504704911898-68304a7d2807?auto=format&fit=crop&w=900&q=80",
+    date: "2026-08-07",
   },
   {
-    id: "seed-doechii",
+    id: "memory-doechii",
     showId: "doechii-outside-lands",
     rating: 4.5,
-    vibes: ["sound was insane", "sunset set"],
-    note: "The set that made me text three friends to come over.",
-    media: [
-      {
-        name: "crowd",
-        url: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=900&q=80",
-        kind: "photo",
-      },
-    ],
+    note: "Best crowd control of the weekend, and it was not close.",
+    caption: "main stage energy at Sutro",
+    song: "Nissan Altima",
+    vibes: ["sound was insane"],
+    photo: "https://images.unsplash.com/photo-1505236858219-8359eb29e329?auto=format&fit=crop&w=900&q=80",
+    date: "2026-08-08",
+  },
+  {
+    id: "memory-rufus",
+    showId: "rufus-outside-lands",
+    rating: 4,
+    note: "Fog arrived at exactly the right moment.",
+    caption: "innerbloom, outer fog",
+    song: "Innerbloom",
+    vibes: ["sunset set"],
+    photo: "https://images.unsplash.com/photo-1530103862676-de8c9debad1d?auto=format&fit=crop&w=900&q=80",
+    date: "2026-08-08",
   },
 ];
 
+const tracksByArtist: Record<string, string[]> = {
+  "charli-xcx": ["360", "Apple", "Von dutch"],
+  "rufus-du-sol": ["Innerbloom", "Next to Me", "On My Knees"],
+  doechii: ["Nissan Altima", "Denial Is a River", "Alter Ego"],
+  "the-strokes": ["Last Nite", "Someday", "Reptilia"],
+  tyla: ["Water", "Jump", "Truth or Dare"],
+  "glass-beams": ["Mahal", "Taurus", "Mirage"],
+};
+
+const friendNotes: Record<string, { name: string; color: string; note: string }[]> = {
+  "charli-outside-lands": [
+    { name: "Maya", color: "#ff8a00", note: "going early for the left rail" },
+    { name: "Jo", color: "#44c3a1", note: "meet by the windmill at 7:45" },
+    { name: "Eli", color: "#4ea7ff", note: "bringing three friends from Oakland" },
+  ],
+  "rufus-outside-lands": [
+    { name: "Jo", color: "#44c3a1", note: "this is my non-negotiable set" },
+    { name: "Sam", color: "#f15bb5", note: "Twin Peaks sunset crew" },
+  ],
+  "doechii-outside-lands": [
+    { name: "Maya", color: "#ff8a00", note: "everyone is talking about this set" },
+    { name: "Nia", color: "#c5ee4f", note: "coming straight from Panhandle" },
+  ],
+};
+
+const gallery = [
+  { label: "Artist", image: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=80", likes: 284 },
+  { label: "Crowd", image: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=900&q=80", likes: 191 },
+  { label: "Fits", image: "https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?auto=format&fit=crop&w=900&q=80", likes: 146 },
+  { label: "Venue", image: "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?auto=format&fit=crop&w=900&q=80", likes: 98 },
+];
+
 function getShowArtists(show: Show): Artist[] {
-  return show.artistIds
-    .map((artistId) => artistById.get(artistId))
-    .filter(Boolean) as Artist[];
+  return show.artistIds.map((id) => artistById.get(id)).filter(Boolean) as Artist[];
 }
 
-function unique<T>(items: T[]) {
-  return Array.from(new Set(items));
+function getPrimaryArtist(show: Show) {
+  return getShowArtists(show)[0];
 }
 
 function formatDate(date: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-  }).format(new Date(`${date}T12:00:00`));
-}
-
-function Stars({ value, setValue, tone = "dark" }: { value: number; setValue?: (value: number) => void; tone?: "dark" | "light" }) {
-  return (
-    <div className="flex gap-1" aria-label={`${value} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          className={`h-9 w-9 rounded border text-lg transition ${
-            value >= star
-              ? "border-lime-300 bg-lime-300 text-black"
-              : tone === "light"
-                ? "border-black/25 bg-transparent text-black/35"
-                : "border-stone-700 bg-stone-950 text-stone-500"
-          } ${setValue ? "hover:border-lime-200" : "cursor-default"}`}
-          disabled={!setValue}
-          key={star}
-          onClick={() => setValue?.(star)}
-          type="button"
-        >
-          *
-        </button>
-      ))}
-    </div>
-  );
+  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("festival");
+  const [view, setView] = useState<View>("discover");
   const [selectedShowId, setSelectedShowId] = useState("charli-outside-lands");
   const [selectedArtistId, setSelectedArtistId] = useState("charli-xcx");
   const [selectedVenueId, setSelectedVenueId] = useState("golden-gate-park");
-  const [showDesign, setShowDesign] = useState<ShowDesign>("pulse");
-  const [savedShows, setSavedShows] = useState<string[]>(["doechii-outside-lands"]);
+  const [query, setQuery] = useState("");
+  const [attendance, setAttendance] = useState<Record<string, Attendance>>({
+    "doechii-outside-lands": "going",
+    "charli-outside-lands": "interested",
+  });
   const [memories, setMemories] = useState<Memory[]>(defaultMemories);
+  const [logOpen, setLogOpen] = useState(false);
   const [rating, setRating] = useState(5);
+  const [review, setReview] = useState("");
+  const [caption, setCaption] = useState("");
   const [selectedVibes, setSelectedVibes] = useState<string[]>(["transcendent"]);
-  const [note, setNote] = useState("");
-  const [media, setMedia] = useState<Memory["media"]>([]);
+  const [selectedSong, setSelectedSong] = useState("360");
+  const [mediaPreview, setMediaPreview] = useState("");
+  const [diaryFilter, setDiaryFilter] = useState<DiaryFilter>("Photo");
+  const [leaderScope, setLeaderScope] = useState("City");
+  const [playingTrack, setPlayingTrack] = useState("");
 
   const selectedShow = shows.find((show) => show.id === selectedShowId) ?? shows[0];
-  const selectedArtists = getShowArtists(selectedShow);
+  const selectedArtist = artistById.get(selectedArtistId) ?? artists[0];
   const selectedVenue = venueById.get(selectedVenueId) ?? venues[0];
-  const myShowIds = unique(memories.map((memory) => memory.showId));
-  const myArtists = unique(
-    memories.flatMap((memory) => {
-      const show = shows.find((item) => item.id === memory.showId);
-      return show ? getShowArtists(show).map((artist) => artist.name) : [];
-    }),
-  );
 
-  const matches = useMemo(() => {
-    const mySet = new Set(myArtists);
-    return fakeUsers
-      .map((user) => {
-        const sharedArtists = user.favoriteArtists.filter((artist) => mySet.has(artist));
-        const union = unique([...myArtists, ...user.favoriteArtists]).length || 1;
-        const sharedShows = user.shows.filter((showId) => myShowIds.includes(showId));
-        const score = Math.min(99, Math.round((sharedArtists.length / union) * 100 + sharedShows.length * 15));
-        return { ...user, sharedArtists, sharedShows, score };
-      })
-      .sort((a, b) => b.score - a.score);
-  }, [myArtists, myShowIds]);
+  const searchResults = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return [];
+    return shows.filter((show) => {
+      const artist = getPrimaryArtist(show);
+      const venue = venueById.get(show.venueId);
+      return [show.title, artist.name, venue?.name, venue?.city].some((value) => value?.toLowerCase().includes(term));
+    });
+  }, [query]);
 
-  const showMemories = memories.filter((memory) => memory.showId === selectedShow.id);
-  const communityLogs = demoLogs.filter((log) => log.showId === selectedShow.id);
-  const diaryItems = memories
-    .map((memory) => ({ memory, show: shows.find((show) => show.id === memory.showId) }))
-    .filter((item): item is { memory: Memory; show: Show } => Boolean(item.show));
+  function navigate(next: View) {
+    setView(next);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
-  function openShow(showId: string) {
-    setSelectedShowId(showId);
+  function openShow(showId: string, openLogger = false) {
+    const show = shows.find((item) => item.id === showId) ?? shows[0];
+    setSelectedShowId(show.id);
+    setSelectedSong(getPrimaryArtist(show).topSong);
     setView("show");
+    setLogOpen(openLogger);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function toggleSavedShow(showId: string) {
-    setSavedShows((current) =>
-      current.includes(showId) ? current.filter((id) => id !== showId) : [...current, showId],
-    );
+  function openArtist(id: string) {
+    setSelectedArtistId(id);
+    navigate("artist");
   }
 
-  function openArtist(artistId: string) {
-    setSelectedArtistId(artistId);
-    setView("artist");
+  function openVenue(id: string) {
+    setSelectedVenueId(id);
+    navigate("venue");
   }
 
-  function openVenue(venueId: string) {
-    setSelectedVenueId(venueId);
-    setView("venue");
+  function setShowAttendance(status: Attendance) {
+    setAttendance((current) => ({ ...current, [selectedShow.id]: status }));
+    if (status === "logged") setLogOpen(true);
   }
 
-  function logMemory() {
+  function toggleVibe(vibe: string) {
+    setSelectedVibes((current) => current.includes(vibe) ? current.filter((item) => item !== vibe) : [...current, vibe]);
+  }
+
+  function handleMedia(files: FileList | null) {
+    const file = files?.[0];
+    if (file) setMediaPreview(URL.createObjectURL(file));
+  }
+
+  function saveLog() {
     setMemories((current) => [
       {
         id: crypto.randomUUID(),
         showId: selectedShow.id,
         rating,
+        note: review || selectedShow.memoryPrompt,
+        caption: caption || "one for the diary",
+        song: selectedSong,
         vibes: selectedVibes,
-        note: note || selectedShow.memoryPrompt,
-        media,
+        photo: mediaPreview || selectedShow.image,
+        date: selectedShow.date,
       },
       ...current,
     ]);
-    setNote("");
-    setMedia([]);
-    setSelectedVibes(["transcendent"]);
-    setRating(5);
-    setView("diary");
-  }
-
-  function handleFiles(files: FileList | null) {
-    if (!files) return;
-    const nextMedia: Memory["media"] = Array.from(files).map((file) => ({
-      name: file.name,
-      url: URL.createObjectURL(file),
-      kind: file.type.startsWith("video") ? "video" : "photo",
-    }));
-    setMedia((current) => [
-      ...current,
-      ...nextMedia,
-    ]);
-  }
-
-  function toggleVibe(vibe: string) {
-    setSelectedVibes((current) =>
-      current.includes(vibe) ? current.filter((item) => item !== vibe) : [...current, vibe],
-    );
-  }
-
-  async function shareRecap() {
-    const text = `My Outside Lands diary on Showtonic: ${myArtists.join(", ")}.`;
-    if (navigator.share) {
-      await navigator.share({ title: "My Showtonic recap", text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      alert("Recap text copied.");
-    }
+    setAttendance((current) => ({ ...current, [selectedShow.id]: "logged" }));
+    setReview("");
+    setCaption("");
+    setMediaPreview("");
+    setLogOpen(false);
+    navigate("diary");
   }
 
   return (
-    <main className="min-h-screen bg-[#0A0908] text-[#F5F1E8]">
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0A0908]/90 backdrop-blur">
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <button className="text-left" onClick={() => setView("festival")} type="button">
-            <p className="font-mono text-[10px] uppercase tracking-[0.3em] text-[#8A8177]">Outside Lands demo</p>
-            <h1 className="font-serif text-2xl font-semibold">Showtonic</h1>
-          </button>
-          <div className="flex gap-1 rounded border border-white/10 bg-white/[0.03] p-1">
-            {[
-              ["festival", "Lineup"],
-              ["diary", "Diary"],
-              ["recap", "Recap"],
-              ["twins", "Twins"],
-            ].map(([target, label]) => (
-              <button
-                className={`rounded px-3 py-2 text-xs font-semibold uppercase tracking-wide transition ${
-                  view === target ? "bg-[#FF3B0E] text-white" : "text-[#8A8177] hover:text-[#F5F1E8]"
-                }`}
-                key={target}
-                onClick={() => setView(target as View)}
-                type="button"
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </nav>
-      </header>
+    <main className="min-h-screen bg-[#14181C] pb-24 text-[#F4F6F8]">
+      <AppHeader onDiscover={() => navigate("discover")} onProfile={() => navigate("profile")} />
 
-      {view === "festival" && (
-        <section>
-          <div className="relative min-h-[76vh] overflow-hidden">
-            <img
-              alt="Crowd at a music festival"
-              className="absolute inset-0 h-full w-full object-cover opacity-55"
-              src="https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?auto=format&fit=crop&w=1800&q=80"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-[#0A0908]/60 to-[#0A0908]" />
-            <div className="relative mx-auto flex min-h-[76vh] max-w-7xl flex-col justify-end px-4 pb-10 pt-24 sm:px-6">
-              <p className="font-mono text-xs uppercase tracking-[0.35em] text-[#B8F14A]">Aug 7-9, 2026 / Golden Gate Park</p>
-              <h2 className="mt-4 max-w-4xl font-serif text-6xl leading-none text-white sm:text-8xl">
-                Your festival memory, not just your schedule.
-              </h2>
-              <p className="mt-5 max-w-2xl text-lg leading-8 text-stone-200">
-                Discover the set, log the feeling, upload the photo, and turn the weekend into a
-                shareable diary people actually want to post.
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <button className="bg-[#FF3B0E] px-5 py-3 text-sm font-bold uppercase tracking-wide text-white" onClick={() => openShow("charli-outside-lands")} type="button">
-                  Log a set
-                </button>
-                <button className="border border-white/20 px-5 py-3 text-sm font-bold uppercase tracking-wide text-white" onClick={() => setView("twins")} type="button">
-                  Find taste twins
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[1fr_360px]">
-            <section>
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#8A8177]">JamBase historical + upcoming data</p>
-                  <h3 className="mt-2 font-serif text-4xl">Outside Lands lineup</h3>
-                </div>
-                <button className="border border-white/15 px-4 py-2 text-xs uppercase tracking-wide text-[#F5F1E8]" onClick={() => openVenue("golden-gate-park")} type="button">
-                  Venue
-                </button>
-              </div>
-              <div className="mt-6 grid gap-4 md:grid-cols-2">
-                {["Friday", "Saturday", "Sunday"].map((day) => (
-                  <div className="border border-white/10 bg-[#141210]" key={day}>
-                    <div className="border-b border-white/10 px-4 py-3 font-mono text-xs uppercase tracking-[0.25em] text-[#8A8177]">{day}</div>
-                    <div className="divide-y divide-white/10">
-                      {shows
-                        .filter((show) => show.day === day && show.venueId === "golden-gate-park")
-                        .map((show) => {
-                          const artist = getShowArtists(show)[0];
-                          return (
-                            <button className="grid w-full grid-cols-[72px_1fr] gap-4 p-4 text-left transition hover:bg-white/[0.04]" key={show.id} onClick={() => openShow(show.id)} type="button">
-                              <img alt={show.title} className="h-20 w-[72px] object-cover" src={show.image} />
-                              <span>
-                                <span className="block font-serif text-2xl">{artist.name}</span>
-                                <span className="mt-2 block font-mono text-xs uppercase tracking-wide text-[#8A8177]">{show.time} / {show.stage}</span>
-                                <span className="mt-2 block text-sm text-stone-300">{artist.vibe}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <aside className="border border-white/10 bg-[#141210] p-5">
-              <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#8A8177]">Discover next</p>
-              <h3 className="mt-2 font-serif text-3xl">Upcoming SF shows</h3>
-              <div className="mt-5 space-y-3">
-                {shows
-                  .filter((show) => show.venueId !== "golden-gate-park")
-                  .map((show) => (
-                    <button className="w-full border border-white/10 p-4 text-left hover:border-[#FF3B0E]" key={show.id} onClick={() => openShow(show.id)} type="button">
-                      <span className="font-serif text-xl">{show.title}</span>
-                      <span className="mt-2 block font-mono text-xs uppercase tracking-wide text-[#8A8177]">{formatDate(show.date)} / {venueById.get(show.venueId)?.name}</span>
-                    </button>
-                  ))}
-              </div>
-            </aside>
-          </div>
-        </section>
-      )}
-
-      {view === "show" && (
-        <ShowExperience
-          communityLogs={communityLogs}
-          design={showDesign}
-          isSaved={savedShows.includes(selectedShow.id)}
-          media={media}
-          note={note}
-          onFiles={handleFiles}
-          onOpenArtist={openArtist}
-          onOpenVenue={openVenue}
-          onSaveMemory={logMemory}
-          onToggleSaved={() => toggleSavedShow(selectedShow.id)}
-          onToggleVibe={toggleVibe}
-          rating={rating}
-          selectedVibes={selectedVibes}
-          setDesign={setShowDesign}
-          setNote={setNote}
-          setRating={setRating}
-          show={selectedShow}
-          showArtists={selectedArtists}
-          showMemories={showMemories}
+      {view === "discover" && (
+        <DiscoverView
+          openShow={openShow}
+          query={query}
+          searchResults={searchResults}
+          setQuery={setQuery}
         />
       )}
-
+      {view === "show" && (
+        <ShowView
+          attendance={attendance[selectedShow.id]}
+          memories={memories.filter((memory) => memory.showId === selectedShow.id)}
+          onBack={() => navigate("discover")}
+          onLog={() => setShowAttendance("logged")}
+          onOpenArtist={openArtist}
+          onOpenVenue={openVenue}
+          onSetAttendance={setShowAttendance}
+          onShowSelect={openShow}
+          playingTrack={playingTrack}
+          setPlayingTrack={setPlayingTrack}
+          show={selectedShow}
+        />
+      )}
       {view === "diary" && (
-        <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
-          <Stats title="Your live show diary" subtitle="Photo-first, IG-grid ready" memories={memories} artistsCount={myArtists.length} />
-          <div className="mt-8 grid grid-cols-3 gap-2 sm:gap-4">
-            {diaryItems.map(({ memory, show }) => (
-              <button className="group relative aspect-square overflow-hidden bg-[#141210]" key={memory.id} onClick={() => openShow(show.id)} type="button">
-                <img alt={show.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" src={memory.media[0]?.url ?? show.image} />
-                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-3 text-left">
-                  <span className="block font-serif text-base sm:text-2xl">{getShowArtists(show)[0].name}</span>
-                  <span className="font-mono text-[10px] uppercase tracking-wide text-[#B8F14A]">{memory.rating}/5</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
+        <DiaryView filter={diaryFilter} memories={memories} onFilter={setDiaryFilter} openShow={openShow} />
+      )}
+      {view === "leaderboard" && (
+        <LeaderboardView onScope={setLeaderScope} scope={leaderScope} />
+      )}
+      {view === "profile" && <ProfileView memories={memories} openShow={openShow} />}
+      {view === "artist" && (
+        <ArtistView artist={selectedArtist} onBack={() => navigate("show")} openShow={openShow} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} />
+      )}
+      {view === "venue" && (
+        <VenueView onBack={() => navigate("show")} openShow={openShow} venue={selectedVenue} />
       )}
 
-      {view === "recap" && (
-        <section className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-[420px_1fr]">
-          <div className="aspect-[9/16] border border-white/10 bg-[#F5F1E8] p-6 text-[#0A0908]">
-            <div className="flex h-full flex-col">
-              <p className="font-mono text-xs uppercase tracking-[0.35em]">Showtonic wrap / @tinsley</p>
-              <h2 className="mt-5 font-serif text-5xl leading-none">Outside Lands 2026</h2>
-              <div className="my-6 border-t border-dashed border-[#0A0908]" />
-              <div className="grid grid-cols-3 gap-2">
-                {diaryItems.slice(0, 6).map(({ memory, show }) => (
-                  <img alt={show.title} className="aspect-square object-cover" key={memory.id} src={memory.media[0]?.url ?? show.image} />
-                ))}
-              </div>
-              <div className="mt-auto">
-                <p className="font-serif text-6xl">{memories.length}</p>
-                <p className="font-mono text-xs uppercase tracking-[0.25em]">sets logged / {myArtists.length} artists / {matches[0]?.score ?? 0}% twin match</p>
-                <p className="mt-4 text-sm">Top artists: {myArtists.slice(0, 4).join(", ")}</p>
-              </div>
-            </div>
-          </div>
-          <div className="self-center">
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#8A8177]">Viral artifact</p>
-            <h2 className="mt-2 font-serif text-5xl">A festival recap that feels like a ticket stub and an IG story had a baby.</h2>
-            <p className="mt-5 max-w-2xl text-stone-300">This is the share moment: user photos, ratings, top artists, handle, and a clean Showtonic stamp. In production this exports as PNG; for the hackathon demo the native share action carries the story.</p>
-            <button className="mt-7 bg-[#FF3B0E] px-5 py-4 text-sm font-bold uppercase tracking-wide text-white" onClick={shareRecap} type="button">Share recap</button>
-          </div>
-        </section>
-      )}
+      <BottomNav
+        current={view}
+        onAdd={() => openShow(selectedShow.id, true)}
+        onNavigate={navigate}
+      />
 
-      {view === "twins" && (
-        <section className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#8A8177]">Jaccard taste matching demo</p>
-          <h2 className="mt-2 font-serif text-6xl">People who were probably near you in the crowd.</h2>
-          <div className="mt-8 space-y-4">
-            {matches.map((match) => (
-              <article className="grid gap-4 border border-white/10 bg-[#141210] p-5 sm:grid-cols-[96px_1fr_auto]" key={match.handle}>
-                <div className="flex h-20 w-20 items-center justify-center rounded-full font-serif text-3xl text-black" style={{ background: match.color }}>
-                  {match.handle[0].toUpperCase()}
-                </div>
-                <div>
-                  <h3 className="font-serif text-3xl">@{match.handle}</h3>
-                  <p className="mt-2 text-sm text-stone-300">Receipts: {match.sharedArtists.length ? match.sharedArtists.join(", ") : "shared festival energy"}{match.sharedShows.length ? ` plus ${match.sharedShows.length} overlapping sets` : ""}.</p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {match.sharedArtists.map((artist) => <span className="border border-white/10 px-3 py-1 text-xs uppercase tracking-wide text-[#B8F14A]" key={artist}>{artist}</span>)}
-                  </div>
-                </div>
-                <p className="font-serif text-5xl text-[#B8F14A]">{match.score}%</p>
-              </article>
-            ))}
-          </div>
-        </section>
+      {logOpen && (
+        <LogSheet
+          caption={caption}
+          mediaPreview={mediaPreview}
+          onCaption={setCaption}
+          onClose={() => setLogOpen(false)}
+          onMedia={handleMedia}
+          onRating={setRating}
+          onReview={setReview}
+          onSave={saveLog}
+          onSong={setSelectedSong}
+          onToggleVibe={toggleVibe}
+          rating={rating}
+          review={review}
+          selectedSong={selectedSong}
+          selectedVibes={selectedVibes}
+          show={selectedShow}
+        />
       )}
-
-      {view === "artist" && <ArtistView artistId={selectedArtistId} openShow={openShow} />}
-      {view === "venue" && <VenueView venueId={selectedVenue.id} openShow={openShow} />}
     </main>
   );
 }
 
-type ShowExperienceProps = {
-  communityLogs: DemoLog[];
-  design: ShowDesign;
-  isSaved: boolean;
-  media: Memory["media"];
-  note: string;
-  onFiles: (files: FileList | null) => void;
-  onOpenArtist: (artistId: string) => void;
-  onOpenVenue: (venueId: string) => void;
-  onSaveMemory: () => void;
-  onToggleSaved: () => void;
-  onToggleVibe: (vibe: string) => void;
-  rating: number;
-  selectedVibes: string[];
-  setDesign: (design: ShowDesign) => void;
-  setNote: (note: string) => void;
-  setRating: (rating: number) => void;
-  show: Show;
-  showArtists: Artist[];
-  showMemories: Memory[];
-};
-
-const designOptions: { id: ShowDesign; label: string; description: string }[] = [
-  { id: "pulse", label: "Festival pulse", description: "During the show" },
-  { id: "scrapbook", label: "Memory collage", description: "After the show" },
-  { id: "archive", label: "Show archive", description: "Research + history" },
-];
-
-function ShowExperience(props: ShowExperienceProps) {
+function AppHeader({ onDiscover, onProfile }: { onDiscover: () => void; onProfile: () => void }) {
   return (
-    <section>
-      <div className="sticky top-[65px] z-20 border-b border-white/10 bg-[#0A0908]/95 px-4 py-3 backdrop-blur sm:px-6">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 overflow-x-auto">
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.25em] text-[#8A8177]">Show page concepts</span>
-          <div className="flex min-w-max border border-white/10 bg-white/[0.03] p-1">
-            {designOptions.map((option) => (
-              <button
-                className={`px-4 py-2 text-left transition ${props.design === option.id ? "bg-[#F5F1E8] text-black" : "text-stone-400 hover:text-white"}`}
-                key={option.id}
-                onClick={() => props.setDesign(option.id)}
-                type="button"
-              >
-                <span className="block text-xs font-bold uppercase tracking-wide">{option.label}</span>
-                <span className="mt-1 block text-[10px] opacity-60">{option.description}</span>
-              </button>
-            ))}
-          </div>
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#14181C]/95 backdrop-blur">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <button className="flex items-center gap-2" onClick={onDiscover} type="button">
+          <span className="flex gap-1"><i className="h-3 w-3 rounded-full bg-[#FF8A00]" /><i className="h-3 w-3 rounded-full bg-[#20D6AA]" /><i className="h-3 w-3 rounded-full bg-[#47B7EF]" /></span>
+          <span className="text-xl font-black">showtonic</span>
+        </button>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-[#9AA8B4] sm:block">San Francisco</span>
+          <button aria-label="Open profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#29323A]" onClick={onProfile} type="button"><CircleUserRound className="h-5 w-5" /></button>
         </div>
       </div>
+    </header>
+  );
+}
 
-      {props.design === "pulse" && <PulseShow {...props} />}
-      {props.design === "scrapbook" && <ScrapbookShow {...props} />}
-      {props.design === "archive" && <ArchiveShow {...props} />}
+function BottomNav({ current, onAdd, onNavigate }: { current: View; onAdd: () => void; onNavigate: (view: View) => void }) {
+  const items: { view: View; label: string; icon: ReactNode }[] = [
+    { view: "discover", label: "Discover", icon: <Compass /> },
+    { view: "diary", label: "Diary", icon: <Library /> },
+    { view: "leaderboard", label: "Leaders", icon: <Trophy /> },
+    { view: "profile", label: "Profile", icon: <CircleUserRound /> },
+  ];
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#202830]/98 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+      <div className="mx-auto grid h-20 max-w-xl grid-cols-5 items-center px-2">
+        {items.slice(0, 2).map((item) => <NavItem current={current} item={item} key={item.view} onNavigate={onNavigate} />)}
+        <button aria-label="Log a show" className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#20D6AA] text-[#20D6AA]" onClick={onAdd} type="button"><Plus className="h-7 w-7" /></button>
+        {items.slice(2).map((item) => <NavItem current={current} item={item} key={item.view} onNavigate={onNavigate} />)}
+      </div>
+    </nav>
+  );
+}
+
+function NavItem({ current, item, onNavigate }: { current: View; item: { view: View; label: string; icon: ReactNode }; onNavigate: (view: View) => void }) {
+  const active = current === item.view;
+  return (
+    <button aria-label={item.label} className={`flex h-full flex-col items-center justify-center gap-1 text-[10px] font-semibold ${active ? "text-[#47B7EF]" : "text-[#9AA8B4]"}`} onClick={() => onNavigate(item.view)} type="button">
+      <span className="[&>svg]:h-6 [&>svg]:w-6">{item.icon}</span>{item.label}
+    </button>
+  );
+}
+
+function DiscoverView({ query, setQuery, searchResults, openShow }: { query: string; setQuery: (value: string) => void; searchResults: Show[]; openShow: (id: string) => void }) {
+  const outsideLands = shows.filter((show) => show.venueId === "golden-gate-park");
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <p className="text-sm text-[#9AA8B4]">Next weekend in San Francisco</p>
+          <h1 className="mt-1 text-3xl font-black">Find your next show</h1>
+        </div>
+        <button className="text-xs font-bold text-[#47B7EF]" type="button">Filters</button>
+      </div>
+
+      <label className="mt-5 flex h-12 items-center gap-3 border border-[#34414D] bg-[#202830] px-4">
+        <Search className="h-5 w-5 text-[#9AA8B4]" />
+        <input className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[#748391]" onChange={(event) => setQuery(event.target.value)} placeholder="Search artists, shows, or venues" value={query} />
+        {query && <button aria-label="Clear search" onClick={() => setQuery("")} type="button"><X className="h-4 w-4" /></button>}
+      </label>
+
+      {query ? (
+        <ShowRail eyebrow={`${searchResults.length} matches`} openShow={openShow} showsList={searchResults} title="Search results" />
+      ) : (
+        <>
+          <section className="mt-8 overflow-hidden border border-[#34414D] bg-[#202830]">
+            <div className="grid sm:grid-cols-[1fr_280px]">
+              <div className="p-5 sm:p-7">
+                <p className="text-xs font-bold uppercase text-[#20D6AA]">Festival focus</p>
+                <h2 className="mt-2 text-3xl font-black">Outside Lands 2026</h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-[#B8C2CC]">Five sets your friends are saving, with live plans now and a shared weekend diary after.</p>
+                <div className="mt-5 flex -space-x-2"><FriendFaces names={["Maya", "Jo", "Eli", "Nia"]} /><span className="ml-4 self-center text-xs text-[#9AA8B4]">12 friends building plans</span></div>
+              </div>
+              <button className="relative min-h-44 overflow-hidden text-left" onClick={() => openShow("charli-outside-lands")} type="button">
+                <img alt="Outside Lands" className="absolute inset-0 h-full w-full object-cover" src={shows[0].image} />
+                <span className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                <span className="absolute bottom-4 left-4 text-sm font-bold">Open festival pick <ChevronRight className="inline h-4 w-4" /></span>
+              </button>
+            </div>
+          </section>
+
+          <ShowRail eyebrow="Most logged in the Bay" openShow={openShow} showsList={[shows[0], shows[2], shows[1], shows[4]]} title="Popular this week" />
+          <ShowRail eyebrow="Maya, Jo, and 9 others made plans" friends openShow={openShow} showsList={[shows[2], shows[0], shows[5], shows[1]]} title="Trending among friends" />
+          <ShowRail eyebrow="Based on RUFUS DU SOL and Glass Beams" openShow={openShow} showsList={[shows[1], shows[5], shows[3], shows[2]]} title="Artists you follow" />
+          <ShowRail eyebrow="Within 5 miles" openShow={openShow} showsList={[shows[5], shows[0], shows[2], shows[4]]} title="Nearby" />
+          <ShowRail eyebrow="Friday through Sunday" openShow={openShow} showsList={outsideLands} title="This weekend" />
+
+          <section className="mt-10 border-t border-white/10 pt-6">
+            <SectionTitle eyebrow="Fresh ratings and one-line reviews" title="From friends" />
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {demoLogs.map((log) => <FriendReviewCard key={`${log.user}-${log.showId}`} log={log} openShow={openShow} />)}
+            </div>
+          </section>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ShowRail({ title, eyebrow, showsList, openShow, friends = false }: { title: string; eyebrow: string; showsList: Show[]; openShow: (id: string) => void; friends?: boolean }) {
+  return (
+    <section className="mt-10 border-t border-white/10 pt-6">
+      <SectionTitle eyebrow={eyebrow} title={title} />
+      <div className="hide-scrollbar mt-4 flex gap-3 overflow-x-auto pb-2">
+        {showsList.map((show) => <PosterCard friends={friends} key={show.id} openShow={openShow} show={show} />)}
+      </div>
     </section>
   );
 }
 
-function PulseShow(props: ShowExperienceProps) {
-  const artist = props.showArtists[0];
-  const venue = venueById.get(props.show.venueId);
-  const allMemories = [...props.showMemories, ...props.communityLogs.map(logToMemory)];
-
+function SectionTitle({ title, eyebrow }: { title: string; eyebrow: string }) {
   return (
-    <div className="bg-[#070706]">
-      <div className="relative min-h-[72vh] overflow-hidden">
-        <img alt={props.show.title} className="absolute inset-0 h-full w-full object-cover" src={props.show.image} />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-black/35 to-[#070706]" />
-        <div className="relative mx-auto flex min-h-[72vh] max-w-7xl flex-col justify-between px-4 pb-9 pt-8 sm:px-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 bg-[#B8F14A] px-3 py-2 text-xs font-bold uppercase tracking-wide text-black">
-              <Radio className="h-4 w-4" /> Outside Lands live
-            </div>
-            <button className="flex items-center gap-2 border border-white/30 bg-black/25 px-4 py-2 text-xs font-bold uppercase tracking-wide backdrop-blur" onClick={props.onToggleSaved} type="button">
-              {props.isSaved ? <Check className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-              {props.isSaved ? "In my plan" : "Add to plan"}
-            </button>
-          </div>
-          <div>
-            <div className="mb-5 flex flex-wrap gap-2 font-mono text-xs uppercase tracking-[0.2em] text-white">
-              <span className="bg-[#FF3B0E] px-3 py-2">Starts in 2h 18m</span>
-              <span className="border border-white/25 bg-black/25 px-3 py-2 backdrop-blur">{props.show.day} {props.show.time}</span>
-            </div>
-            <h2 className="max-w-5xl font-serif text-7xl leading-[0.9] text-white sm:text-9xl">{artist.name}</h2>
-            <button className="mt-5 flex items-center gap-2 text-sm text-white" onClick={() => props.onOpenVenue(props.show.venueId)} type="button">
-              <MapPin className="h-4 w-4 text-[#B8F14A]" /> {props.show.stage} at {venue?.name}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 pb-14 pt-4 sm:px-6 lg:grid-cols-[1fr_400px]">
-        <div className="space-y-10">
-          <section className="grid border-y border-white/10 py-5 sm:grid-cols-3">
-            <LiveFact icon={<Music2 className="h-5 w-5" />} label="Preview before the set" value={artist.topSong} />
-            <LiveFact icon={<Users className="h-5 w-5" />} label="Friends planning this" value="Maya + 4 others" />
-            <LiveFact icon={<Clock3 className="h-5 w-5" />} label="Walk from Sutro" value="12 min through Polo Field" />
-          </section>
-
-          <section>
-            <div className="flex items-end justify-between gap-4">
-              <div>
-                <p className="font-mono text-xs uppercase tracking-[0.25em] text-[#8A8177]">Community signal</p>
-                <h3 className="mt-2 font-serif text-4xl">Crowd pulse</h3>
-              </div>
-              <p className="text-sm text-[#B8F14A]">184 people checked in</p>
-            </div>
-            <div className="mt-5 flex flex-wrap gap-2">
-              {["front left is moving", "sound is crisp", "room in the back", "fog incoming"].map((signal, index) => (
-                <span className={`border px-3 py-2 text-xs uppercase tracking-wide ${index === 0 ? "border-[#B8F14A] text-[#B8F14A]" : "border-white/15 text-stone-300"}`} key={signal}>{signal}</span>
-              ))}
-            </div>
-          </section>
-
-          <section>
-            <div className="flex items-center gap-3">
-              <Images className="h-5 w-5 text-[#FF3B0E]" />
-              <h3 className="font-serif text-4xl">The view from the crowd</h3>
-            </div>
-            <MemoryStrip memories={allMemories} fallback={props.show.image} />
-          </section>
-        </div>
-        <MemoryComposer {...props} />
-      </div>
+    <div className="flex items-end justify-between gap-4">
+      <div><h2 className="text-xl font-black sm:text-2xl">{title}</h2><p className="mt-1 text-xs text-[#81909D]">{eyebrow}</p></div>
+      <button aria-label={`See all ${title}`} className="text-[#748391]" type="button"><ChevronRight /></button>
     </div>
   );
 }
 
-function ScrapbookShow(props: ShowExperienceProps) {
-  const artist = props.showArtists[0];
-  const venue = venueById.get(props.show.venueId);
-  const allMemories = [...props.showMemories, ...props.communityLogs.map(logToMemory)];
-
+function PosterCard({ show, openShow, friends }: { show: Show; openShow: (id: string) => void; friends: boolean }) {
+  const artist = getPrimaryArtist(show);
+  const venue = venueById.get(show.venueId);
   return (
-    <div className="bg-[#F1E9D7] text-[#191714]">
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-16">
-        <div className="grid min-h-[70vh] items-center gap-10 lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="relative min-h-[480px] sm:min-h-[620px]">
-            <div className="absolute left-[4%] top-[4%] w-[68%] rotate-[-4deg] bg-white p-3 pb-14 shadow-xl">
-              <img alt={props.show.title} className="aspect-[4/5] w-full object-cover" src={props.show.image} />
-              <p className="mt-4 font-mono text-xs uppercase tracking-[0.2em]">{props.show.day} / {props.show.time}</p>
-            </div>
-            <div className="absolute bottom-[5%] right-[3%] w-[48%] rotate-[5deg] bg-[#FF5A35] p-3 shadow-xl">
-              <img alt="A crowd memory" className="aspect-square w-full object-cover grayscale" src={allMemories[0]?.media[0]?.url ?? artist.image} />
-              <p className="mt-3 font-serif text-2xl text-white">we were here</p>
-            </div>
-            <div className="absolute right-[5%] top-[7%] max-w-44 rotate-[7deg] bg-[#B8F14A] p-4 font-mono text-xs uppercase leading-5 shadow-lg">
-              {props.show.memoryPrompt}
-            </div>
-          </div>
-
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-black/55">Show no. 08 / Outside Lands</p>
-            <h2 className="mt-4 font-serif text-7xl leading-[0.9] sm:text-9xl">{artist.name}</h2>
-            <p className="mt-6 max-w-xl font-serif text-2xl leading-8">{artist.vibe}</p>
-            <div className="mt-8 grid grid-cols-2 gap-px border border-black/20 bg-black/20">
-              <ScrapFact icon={<CalendarDays className="h-4 w-4" />} label="When" value={`${formatDate(props.show.date)}, ${props.show.time}`} />
-              <ScrapFact icon={<MapPin className="h-4 w-4" />} label="Where" value={`${props.show.stage}, ${venue?.name}`} />
-              <ScrapFact icon={<Music2 className="h-4 w-4" />} label="Song on repeat" value={artist.topSong} />
-              <ScrapFact icon={<Sparkles className="h-4 w-4" />} label="The feeling" value={props.selectedVibes[0] ?? "still deciding"} />
-            </div>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <button className="flex items-center gap-2 bg-black px-5 py-3 text-sm font-bold uppercase tracking-wide text-white" onClick={props.onToggleSaved} type="button">
-                {props.isSaved ? <Check className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-                {props.isSaved ? "Saved to weekend" : "Save show"}
-              </button>
-              <button className="flex items-center gap-2 border border-black/30 px-5 py-3 text-sm font-bold uppercase tracking-wide" onClick={() => navigator.share?.({ title: props.show.title })} type="button">
-                <Share2 className="h-4 w-4" /> Share
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-10 border-t border-black/20 py-12 lg:grid-cols-[1fr_400px]">
-          <section>
-            <p className="font-mono text-xs uppercase tracking-[0.25em] text-black/50">Community contact sheet</p>
-            <h3 className="mt-2 font-serif text-5xl">One set, many versions</h3>
-            <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3">
-              {allMemories.map((memory, index) => (
-                <article className={`bg-white p-2 pb-5 shadow-md ${index % 2 ? "rotate-[1deg]" : "rotate-[-1deg]"}`} key={memory.id}>
-                  <img alt={memory.note} className="aspect-square w-full object-cover" src={memory.media[0]?.url ?? props.show.image} />
-                  <p className="mt-3 px-1 font-serif text-lg leading-5">{memory.note}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-          <MemoryComposer {...props} tone="light" />
-        </div>
-      </div>
-    </div>
+    <button className="w-[138px] shrink-0 text-left sm:w-[176px]" onClick={() => openShow(show.id)} type="button">
+      <span className="relative block aspect-[2/3] overflow-hidden border border-[#34414D] bg-[#202830]">
+        <img alt={show.title} className="h-full w-full object-cover transition duration-300 hover:scale-105" src={show.image} />
+        <span className="absolute bottom-2 left-2 bg-black/80 px-2 py-1 text-[10px] font-bold uppercase">{formatDate(show.date)}</span>
+        {friends && <span className="absolute right-2 top-2 rounded-full bg-[#20D6AA] px-2 py-1 text-[9px] font-black text-black">{friendNotes[show.id]?.length ?? 3} going</span>}
+      </span>
+      <span className="mt-2 block truncate text-sm font-bold">{artist.name}</span>
+      <span className="mt-0.5 block truncate text-[11px] text-[#81909D]">{venue?.name}</span>
+      <span className="mt-1 flex items-center gap-1 text-[10px] text-[#20D6AA]"><Star className="h-3 w-3 fill-current" /> {(4.2 + (show.id.length % 7) / 10).toFixed(1)}</span>
+    </button>
   );
 }
 
-function ArchiveShow(props: ShowExperienceProps) {
-  const allMemories = [...props.showMemories, ...props.communityLogs.map(logToMemory)];
-  const venue = venueById.get(props.show.venueId);
+function FriendReviewCard({ log, openShow }: { log: DemoLog; openShow: (id: string) => void }) {
+  const show = shows.find((item) => item.id === log.showId) ?? shows[0];
+  return (
+    <button className="grid grid-cols-[72px_1fr] gap-3 border border-[#34414D] bg-[#202830] p-3 text-left" onClick={() => openShow(show.id)} type="button">
+      <img alt={show.title} className="aspect-[2/3] w-full object-cover" src={show.image} />
+      <span>
+        <span className="flex items-center gap-2"><Avatar name={log.user} /><b className="text-sm">@{log.user}</b></span>
+        <span className="mt-2 flex text-[#20D6AA]">{Array.from({ length: 5 }).map((_, index) => <Star className={`h-3 w-3 ${index < Math.round(log.rating) ? "fill-current" : "opacity-25"}`} key={index} />)}</span>
+        <span className="mt-2 line-clamp-3 block text-xs leading-5 text-[#B8C2CC]">“{log.note}”</span>
+      </span>
+    </button>
+  );
+}
 
+function ShowView({ show, attendance, memories, onBack, onSetAttendance, onLog, onOpenArtist, onOpenVenue, onShowSelect, playingTrack, setPlayingTrack }: {
+  show: Show; attendance?: Attendance; memories: Memory[]; onBack: () => void; onSetAttendance: (status: Attendance) => void; onLog: () => void; onOpenArtist: (id: string) => void; onOpenVenue: (id: string) => void; onShowSelect: (id: string) => void; playingTrack: string; setPlayingTrack: (track: string) => void;
+}) {
+  const artist = getPrimaryArtist(show);
+  const venue = venueById.get(show.venueId) ?? venues[0];
+  const friends = friendNotes[show.id] ?? friendNotes["charli-outside-lands"];
+  const community = demoLogs.filter((log) => log.showId === show.id);
+  const featured = memories[0];
+  const otherShows = shows.filter((item) => item.id !== show.id).slice(0, 4);
   return (
     <div>
-      <div className="border-b border-white/10 bg-[#141210]">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[260px_1fr_auto]">
-          <img alt={props.show.title} className="aspect-square w-full object-cover" src={props.show.image} />
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#B8F14A]">Verified via JamBase</p>
-            <h2 className="mt-3 font-serif text-6xl leading-none">{props.showArtists.map((artist) => artist.name).join(" + ")}</h2>
-            <button className="mt-5 flex items-center gap-2 text-sm text-stone-300" onClick={() => props.onOpenVenue(props.show.venueId)} type="button"><MapPin className="h-4 w-4" /> {venue?.name}, {venue?.city}</button>
+      <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+        <button className="flex items-center gap-2 text-sm text-[#9AA8B4]" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Discover</button>
+      </div>
+
+      <section className="border-y border-white/10 bg-[#202830]">
+        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-6 sm:grid-cols-[220px_1fr] sm:px-6">
+          <div className="mx-auto w-44 sm:mx-0 sm:w-full"><img alt={show.title} className="aspect-[2/3] w-full border border-[#42505D] object-cover" src={show.image} /></div>
+          <div className="self-end">
+            <p className="text-xs font-bold uppercase text-[#20D6AA]">Outside Lands 2026</p>
+            <h1 className="mt-2 text-4xl font-black sm:text-6xl">{artist.name}</h1>
+            <button className="mt-3 flex items-center gap-2 text-left text-sm text-[#B8C2CC]" onClick={() => onOpenVenue(show.venueId)} type="button"><MapPin className="h-4 w-4" /> {show.stage} · {venue.name}</button>
+            <p className="mt-2 text-sm text-[#9AA8B4]">{show.day}, {formatDate(show.date)} · {show.time}</p>
+            <div className="mt-5 flex items-center gap-4"><strong className="text-3xl">4.7</strong><div><RatingStars value={5} /><p className="mt-1 text-[11px] text-[#81909D]">1,842 verified ratings</p></div></div>
           </div>
-          <button className="flex h-fit items-center gap-2 border border-white/15 px-4 py-3 text-xs font-bold uppercase tracking-wide" onClick={props.onToggleSaved} type="button">
-            {props.isSaved ? <Check className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}{props.isSaved ? "Planned" : "Plan it"}
-          </button>
+        </div>
+      </section>
+
+      <div className="sticky top-16 z-30 border-b border-white/10 bg-[#14181C]/95 backdrop-blur">
+        <div className="mx-auto grid max-w-xl grid-cols-3 px-4 py-3">
+          <StatusButton active={attendance === "interested"} icon={<Bookmark />} label="Interested" onClick={() => onSetAttendance("interested")} />
+          <StatusButton active={attendance === "going"} icon={<Check />} label="Going" onClick={() => onSetAttendance("going")} />
+          <StatusButton active={attendance === "logged"} icon={<Plus />} label="Log" onClick={onLog} />
         </div>
       </div>
 
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_400px]">
-        <div className="space-y-10">
-          <section className="grid gap-px border border-white/10 bg-white/10 sm:grid-cols-4">
-            <ArchiveFact label="Date" value={`${props.show.day}, ${formatDate(props.show.date)}`} />
-            <ArchiveFact label="Set time" value={props.show.time} />
-            <ArchiveFact label="Stage" value={props.show.stage} />
-            <ArchiveFact label="Community logs" value={String(allMemories.length + 181)} />
-          </section>
-
-          {props.showArtists.map((artist) => (
-            <article className="grid gap-5 border-y border-white/10 py-6 md:grid-cols-[180px_1fr]" key={artist.id}>
-              <img alt={artist.name} className="h-56 w-full object-cover md:h-full" src={artist.image} />
-              <div>
-                <button className="text-left font-serif text-4xl" onClick={() => props.onOpenArtist(artist.id)} type="button">{artist.name}</button>
-                <p className="mt-3 max-w-2xl text-stone-300">{artist.bio}</p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                  <Info label="From" value={artist.hometown} />
-                  <Info label="Top song" value={artist.topSong} />
-                  <Info label="Vibe" value={artist.vibe} />
-                </div>
-                <a className="mt-5 inline-block text-sm text-[#FF3B0E]" href={artist.jambaseUrl} rel="noreferrer" target="_blank">Open JamBase artist record</a>
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <section>
+          <SectionTitle eyebrow="Friends and friends-of-friends" title="Who’s going" />
+          <div className="mt-4 divide-y divide-white/10 border-y border-white/10">
+            {friends.map((friend) => (
+              <div className="flex items-start gap-3 py-4" key={friend.name}>
+                <Avatar color={friend.color} name={friend.name} /><div className="min-w-0 flex-1"><p className="text-sm font-bold">{friend.name}</p><p className="mt-1 text-sm text-[#9AA8B4]">{friend.note}</p></div><button aria-label={`Message ${friend.name}`} className="text-[#748391]" type="button"><MessageCircle className="h-5 w-5" /></button>
               </div>
-            </article>
-          ))}
-
-          <section>
-            <h3 className="font-serif text-4xl">Show memories</h3>
-            <MemoryStrip memories={allMemories} fallback={props.show.image} />
-          </section>
-        </div>
-        <MemoryComposer {...props} />
-      </div>
-    </div>
-  );
-}
-
-function MemoryComposer(props: ShowExperienceProps & { tone?: "dark" | "light" }) {
-  const light = props.tone === "light";
-  return (
-    <aside className={`h-fit border p-5 lg:sticky lg:top-44 ${light ? "border-black/20 bg-[#FFFDF7] text-black" : "border-white/10 bg-[#141210]"}`}>
-      <div className="flex items-center gap-2">
-        <Camera className={`h-5 w-5 ${light ? "text-[#E83D18]" : "text-[#B8F14A]"}`} />
-        <p className={`font-mono text-xs uppercase tracking-[0.25em] ${light ? "text-black/50" : "text-[#8A8177]"}`}>Log this set</p>
-      </div>
-      <h3 className="mt-3 font-serif text-3xl leading-8">{props.show.memoryPrompt}</h3>
-      <div className="mt-5 space-y-5">
-        <Stars tone={light ? "light" : "dark"} value={props.rating} setValue={props.setRating} />
-        <div className="flex flex-wrap gap-2">
-          {vibes.map((vibe) => (
-            <button
-              className={`border px-3 py-2 text-xs uppercase tracking-wide transition ${props.selectedVibes.includes(vibe) ? "border-[#FF3B0E] bg-[#FF3B0E] text-white" : light ? "border-black/20 text-black/65" : "border-white/10 text-stone-300"}`}
-              key={vibe}
-              onClick={() => props.onToggleVibe(vibe)}
-              type="button"
-            >{vibe}</button>
-          ))}
-        </div>
-        <textarea
-          className={`min-h-28 w-full border p-3 text-sm outline-none focus:border-[#FF3B0E] ${light ? "border-black/20 bg-white text-black placeholder:text-black/40" : "border-white/10 bg-[#0A0908] text-[#F5F1E8] placeholder:text-[#8A8177]"}`}
-          onChange={(event) => props.setNote(event.target.value)}
-          placeholder="Tiny memory, best lyric, who you were with..."
-          value={props.note}
-        />
-        <label className={`flex cursor-pointer items-center justify-center gap-2 border border-dashed p-4 text-center text-sm hover:border-[#FF3B0E] ${light ? "border-black/25 text-black/60" : "border-white/20 text-stone-300"}`}>
-          <Camera className="h-4 w-4" /> Upload photos or videos
-          <input accept="image/*,video/*" className="sr-only" multiple onChange={(event) => props.onFiles(event.target.files)} type="file" />
-        </label>
-        {props.media.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {props.media.map((item) => item.kind === "video" ? <video className="aspect-square object-cover" key={item.url} src={item.url} /> : <img alt={item.name} className="aspect-square object-cover" key={item.url} src={item.url} />)}
-          </div>
-        )}
-        <button className="w-full bg-[#FF3B0E] px-5 py-4 text-sm font-bold uppercase tracking-wide text-white" onClick={props.onSaveMemory} type="button">Save memory</button>
-        <p className={`text-center text-xs ${light ? "text-black/45" : "text-[#8A8177]"}`}>Private by default. Choose what joins the community collage.</p>
-      </div>
-    </aside>
-  );
-}
-
-function MemoryStrip({ memories, fallback }: { memories: Memory[]; fallback: string }) {
-  return (
-    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {memories.slice(0, 3).map((memory) => (
-        <article className="group relative aspect-square overflow-hidden bg-[#141210]" key={memory.id}>
-          <img alt={memory.note} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" src={memory.media[0]?.url ?? fallback} />
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-3">
-            <p className="line-clamp-2 text-sm text-white">{memory.note}</p>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function LiveFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex gap-3 border-white/10 py-4 sm:border-r sm:px-5 sm:first:pl-0 sm:last:border-r-0">
-      <span className="text-[#B8F14A]">{icon}</span>
-      <div><p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8A8177]">{label}</p><p className="mt-1 text-sm text-stone-200">{value}</p></div>
-    </div>
-  );
-}
-
-function ScrapFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return <div className="bg-[#F1E9D7] p-4"><div className="flex items-center gap-2 text-black/50">{icon}<p className="font-mono text-[10px] uppercase tracking-[0.2em]">{label}</p></div><p className="mt-2 text-sm">{value}</p></div>;
-}
-
-function ArchiveFact({ label, value }: { label: string; value: string }) {
-  return <div className="bg-[#0A0908] p-4"><p className="font-mono text-[10px] uppercase tracking-[0.25em] text-[#8A8177]">{label}</p><p className="mt-2 font-serif text-2xl">{value}</p></div>;
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-white/10 bg-[#0A0908] p-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.25em] text-[#8A8177]">{label}</p>
-      <p className="mt-2 text-sm text-stone-200">{value}</p>
-    </div>
-  );
-}
-
-function Stats({ title, subtitle, memories, artistsCount }: { title: string; subtitle: string; memories: Memory[]; artistsCount: number }) {
-  const average = memories.reduce((sum, memory) => sum + memory.rating, 0) / memories.length;
-  return (
-    <div className="grid gap-6 border-b border-white/10 pb-8 md:grid-cols-[1fr_auto_auto_auto]">
-      <div>
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#8A8177]">{subtitle}</p>
-        <h2 className="mt-2 font-serif text-6xl">{title}</h2>
-      </div>
-      <Stat label="sets" value={String(memories.length)} />
-      <Stat label="artists" value={String(artistsCount)} />
-      <Stat label="avg" value={average.toFixed(1)} />
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-28 border border-white/10 bg-[#141210] p-4">
-      <p className="font-serif text-5xl text-[#B8F14A]">{value}</p>
-      <p className="font-mono text-xs uppercase tracking-[0.25em] text-[#8A8177]">{label}</p>
-    </div>
-  );
-}
-
-function logToMemory(log: DemoLog): Memory {
-  return {
-    id: `${log.user}-${log.showId}`,
-    showId: log.showId,
-    rating: log.rating,
-    vibes: log.vibes,
-    note: `@${log.user}: ${log.note}`,
-    media: [{ name: log.user, url: log.photo, kind: "photo" }],
-  };
-}
-
-function ArtistView({ artistId, openShow }: { artistId: string; openShow: (showId: string) => void }) {
-  const artist = artistById.get(artistId) ?? artists[0];
-  const artistShows = shows.filter((show) => show.artistIds.includes(artist.id));
-  return (
-    <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
-      <div className="grid gap-8 lg:grid-cols-[360px_1fr]">
-        <img alt={artist.name} className="aspect-[4/5] w-full object-cover" src={artist.image} />
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#8A8177]">{artist.hometown}</p>
-          <h2 className="mt-2 font-serif text-7xl">{artist.name}</h2>
-          <p className="mt-5 max-w-3xl text-lg leading-8 text-stone-300">{artist.bio}</p>
-          <div className="mt-6 flex flex-wrap gap-2">
-            {artist.genres.map((genre) => <span className="border border-white/10 px-3 py-1 text-xs uppercase tracking-wide text-stone-300" key={genre}>{genre}</span>)}
-          </div>
-          <a className="mt-6 inline-block text-[#FF3B0E]" href={artist.jambaseUrl} rel="noreferrer" target="_blank">JamBase profile</a>
-          <h3 className="mt-10 font-serif text-4xl">Shows</h3>
-          <div className="mt-4 grid gap-3">
-            {artistShows.map((show) => (
-              <button className="border border-white/10 bg-[#141210] p-4 text-left hover:border-[#FF3B0E]" key={show.id} onClick={() => openShow(show.id)} type="button">
-                <span className="font-serif text-2xl">{show.title}</span>
-                <span className="mt-2 block font-mono text-xs uppercase tracking-wide text-[#8A8177]">{formatDate(show.date)} / {show.stage}</span>
-              </button>
             ))}
           </div>
-        </div>
+        </section>
+
+        <section className="mt-10 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <SectionTitle eyebrow="One photo · one caption · one song" title="Featured moment" />
+            <article className="mt-4 border border-[#34414D] bg-[#202830]">
+              <img alt="Featured show moment" className="aspect-square w-full object-cover sm:aspect-[4/3]" src={featured?.photo ?? community[0]?.photo ?? gallery[0].image} />
+              <div className="p-4">
+                <div className="flex items-center justify-between"><span className="flex items-center gap-2"><Avatar name="maya" /><b className="text-sm">@maya</b></span><span className="flex items-center gap-1 text-xs text-[#9AA8B4]"><Heart className="h-4 w-4 fill-[#FF8A00] text-[#FF8A00]" /> 284</span></div>
+                <p className="mt-4 text-lg font-bold">{featured?.caption ?? "the entire hill understood the assignment"}</p>
+                <button className="mt-4 flex w-full items-center gap-3 bg-[#14181C] p-3 text-left" onClick={() => setPlayingTrack(playingTrack === artist.topSong ? "" : artist.topSong)} type="button">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#20D6AA] text-black">{playingTrack === artist.topSong ? <Pause className="h-4 w-4" /> : <Play className="ml-0.5 h-4 w-4" />}</span><span><b className="block text-sm">{featured?.song ?? artist.topSong}</b><span className="text-xs text-[#81909D]">{artist.name} · preview</span></span>
+                </button>
+              </div>
+            </article>
+          </div>
+
+          <div>
+            <SectionTitle eyebrow="Most liked from verified attendees" title="Show gallery" />
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {gallery.map((item) => (
+                <button className="group relative aspect-square overflow-hidden text-left" key={item.label} type="button"><img alt={`${item.label} photos`} className="h-full w-full object-cover transition group-hover:scale-105" src={item.image} /><span className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" /><span className="absolute inset-x-3 bottom-3 flex items-end justify-between"><b className="text-sm">{item.label}</b><small className="flex items-center gap-1"><Heart className="h-3 w-3" /> {item.likes}</small></span></button>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-10 grid gap-6 lg:grid-cols-[1fr_340px]">
+          <div>
+            <SectionTitle eyebrow="Summarized from 418 verified reviews" title="What people remember" />
+            <div className="mt-4 border-l-4 border-[#20D6AA] bg-[#202830] p-5">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase text-[#20D6AA]"><Sparkles className="h-4 w-4" /> AI review summary</div>
+              <p className="mt-3 text-sm leading-6 text-[#D2D9DF]">People consistently call out the crowd-wide singalongs, sharp production, and a set that felt bigger than its runtime. The main caveat is density near the front; longtime attendees recommend watching from the left hill for better sound and room to move.</p>
+              <div className="mt-4 flex flex-wrap gap-2">{["electric crowd", "great sound", "packed front", "worth the wait"].map((tag) => <span className="bg-[#14181C] px-2 py-1 text-[11px] text-[#B8C2CC]" key={tag}>{tag}</span>)}</div>
+            </div>
+            <div className="mt-3 divide-y divide-white/10">
+              {(community.length ? community : demoLogs.slice(0, 2)).map((log) => <ReviewRow key={`${log.user}-${log.showId}`} log={log} />)}
+            </div>
+          </div>
+          <aside className="border border-[#34414D] bg-[#202830] p-5">
+            <div className="flex items-center gap-2"><Ticket className="h-5 w-5 text-[#FF8A00]" /><h3 className="font-bold">Ticket info</h3></div>
+            <dl className="mt-4 space-y-4 text-sm"><FactRow label="Festival pass" value="3-Day GA" /><FactRow label="Doors" value="11:00 AM" /><FactRow label="Set" value={`${show.time} · ${show.stage}`} /><FactRow label="Host" value="Another Planet Entertainment" /></dl>
+            <a className="mt-5 flex w-full items-center justify-center gap-2 bg-[#47B7EF] px-4 py-3 text-sm font-bold text-[#0E151B]" href={show.jambaseUrl} target="_blank">View on JamBase <ExternalLink className="h-4 w-4" /></a>
+          </aside>
+        </section>
+
+        <section className="mt-10 border-t border-white/10 pt-7">
+          <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+            <div>
+              <div className="flex items-start gap-4"><img alt={artist.name} className="h-24 w-24 object-cover" src={artist.image} /><div><p className="text-xs font-bold uppercase text-[#81909D]">Artist</p><button className="mt-1 text-left text-2xl font-black" onClick={() => onOpenArtist(artist.id)} type="button">{artist.name}</button><p className="mt-2 line-clamp-2 text-sm text-[#9AA8B4]">{artist.bio}</p></div></div>
+              <TrackList artist={artist} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} />
+            </div>
+            <div className="border border-[#34414D] p-5">
+              <p className="text-xs font-bold uppercase text-[#81909D]">Expected set list</p>
+              <ol className="mt-3 space-y-2 text-sm">{tracksByArtist[artist.id].concat(["Club classics", "Everything is romantic"]).map((track, index) => <li className="flex gap-3 border-b border-white/10 pb-2" key={track}><span className="text-[#748391]">{String(index + 1).padStart(2, "0")}</span>{track}</li>)}</ol>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-10 border-t border-white/10 pt-7">
+          <div className="grid gap-5 sm:grid-cols-[180px_1fr_auto]"><img alt={venue.name} className="h-40 w-full object-cover" src={venue.image} /><div><p className="text-xs font-bold uppercase text-[#81909D]">Venue</p><button className="mt-1 text-left text-2xl font-black" onClick={() => onOpenVenue(venue.id)} type="button">{venue.name}</button><p className="mt-2 text-sm text-[#9AA8B4]">{venue.city}, {venue.region}</p><p className="mt-3 text-sm leading-6 text-[#B8C2CC]">{venue.description}</p></div><div className="self-start text-right"><strong className="text-3xl text-[#20D6AA]">4.4</strong><p className="text-[11px] text-[#81909D]">venue rating</p></div></div>
+        </section>
+
+        <ShowRail eyebrow={`Because you like ${artist.genres.slice(0, 2).join(" and ")}`} openShow={onShowSelect} showsList={otherShows} title="What to see next" />
       </div>
-    </section>
+    </div>
   );
 }
 
-function VenueView({ venueId, openShow }: { venueId: string; openShow: (showId: string) => void }) {
-  const venue = venueById.get(venueId) ?? venues[0];
-  const venueShows = shows.filter((show) => show.venueId === venue.id);
+function StatusButton({ icon, label, active, onClick }: { icon: ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return <button aria-label={label} className={`flex flex-col items-center gap-1 border-r border-white/10 py-1 text-[11px] font-bold last:border-r-0 ${active ? "text-[#20D6AA]" : "text-[#9AA8B4]"}`} onClick={onClick} type="button"><span className="[&>svg]:h-5 [&>svg]:w-5">{icon}</span>{label}</button>;
+}
+
+function LogSheet({ show, rating, onRating, review, onReview, caption, onCaption, selectedSong, onSong, selectedVibes, onToggleVibe, mediaPreview, onMedia, onClose, onSave }: {
+  show: Show; rating: number; onRating: (value: number) => void; review: string; onReview: (value: string) => void; caption: string; onCaption: (value: string) => void; selectedSong: string; onSong: (value: string) => void; selectedVibes: string[]; onToggleVibe: (value: string) => void; mediaPreview: string; onMedia: (files: FileList | null) => void; onClose: () => void; onSave: () => void;
+}) {
+  const artist = getPrimaryArtist(show);
   return (
-    <section>
-      <div className="relative min-h-[48vh] overflow-hidden">
-        <img alt={venue.name} className="absolute inset-0 h-full w-full object-cover opacity-60" src={venue.image} />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/20 to-[#0A0908]" />
-        <div className="relative mx-auto flex min-h-[48vh] max-w-7xl flex-col justify-end px-4 pb-8 sm:px-6">
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-[#B8F14A]">{venue.city}, {venue.region}</p>
-          <h2 className="mt-2 font-serif text-7xl">{venue.name}</h2>
-          <p className="mt-4 max-w-2xl text-stone-200">{venue.description}</p>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 sm:items-center sm:p-6">
+      <section aria-modal="true" className="max-h-[92vh] w-full max-w-xl overflow-y-auto border border-[#42505D] bg-[#202830]" role="dialog">
+        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-[#202830] px-4 py-4"><div><p className="text-xs text-[#81909D]">Log show</p><h2 className="text-lg font-black">{artist.name}</h2></div><button aria-label="Close log" onClick={onClose} type="button"><X /></button></header>
+        <div className="space-y-6 p-4 sm:p-6">
+          <div><p className="mb-2 text-xs font-bold uppercase text-[#81909D]">Your rating</p><RatingStars interactive onChange={onRating} value={rating} /></div>
+          <div><p className="mb-2 text-xs font-bold uppercase text-[#81909D]">Who were you with?</p><div className="flex items-center gap-2"><FriendFaces names={["Maya", "Jo", "Eli"]} /><button className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-[#748391]" type="button"><Plus className="h-4 w-4" /></button><span className="text-xs text-[#9AA8B4]">from contacts</span></div></div>
+          <div><p className="mb-2 text-xs font-bold uppercase text-[#81909D]">Show vibes</p><div className="flex flex-wrap gap-2">{vibes.map((vibe) => <button className={`border px-3 py-2 text-xs ${selectedVibes.includes(vibe) ? "border-[#20D6AA] bg-[#20D6AA] text-black" : "border-[#42505D] text-[#B8C2CC]"}`} key={vibe} onClick={() => onToggleVibe(vibe)} type="button">{vibe}</button>)}</div></div>
+          <label className="block"><span className="mb-2 block text-xs font-bold uppercase text-[#81909D]">Review</span><textarea className="min-h-24 w-full border border-[#42505D] bg-[#14181C] p-3 text-sm outline-none focus:border-[#20D6AA]" onChange={(event) => onReview(event.target.value)} placeholder={show.memoryPrompt} value={review} /></label>
+          <div><p className="mb-2 text-xs font-bold uppercase text-[#81909D]">Your poster</p><div className="grid gap-3 sm:grid-cols-[140px_1fr]">
+            <label className="flex aspect-square cursor-pointer items-center justify-center overflow-hidden border border-dashed border-[#748391] bg-[#14181C]">{mediaPreview ? <img alt="Upload preview" className="h-full w-full object-cover" src={mediaPreview} /> : <span className="flex flex-col items-center gap-2 text-xs text-[#9AA8B4]"><Camera /> Add one photo</span>}<input accept="image/*,video/*" className="sr-only" onChange={(event) => onMedia(event.target.files)} type="file" /></label>
+            <div className="space-y-3"><input className="w-full border border-[#42505D] bg-[#14181C] p-3 text-sm outline-none focus:border-[#20D6AA]" onChange={(event) => onCaption(event.target.value)} placeholder="One-line caption" value={caption} /><div className="space-y-2">{tracksByArtist[artist.id].map((track) => <button className={`flex w-full items-center gap-2 border p-2 text-left text-sm ${selectedSong === track ? "border-[#20D6AA] text-[#20D6AA]" : "border-[#42505D]"}`} key={track} onClick={() => onSong(track)} type="button"><Music2 className="h-4 w-4" />{track}{selectedSong === track && <Check className="ml-auto h-4 w-4" />}</button>)}</div></div>
+          </div></div>
+          <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-[#0E151B]" onClick={onSave} type="button">Save to diary</button>
         </div>
-      </div>
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
-        <h3 className="font-serif text-4xl">Shows at this venue</h3>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          {venueShows.map((show) => (
-            <button className="grid grid-cols-[96px_1fr] gap-4 border border-white/10 bg-[#141210] p-4 text-left hover:border-[#FF3B0E]" key={show.id} onClick={() => openShow(show.id)} type="button">
-              <img alt={show.title} className="h-24 w-24 object-cover" src={show.image} />
-              <span>
-                <span className="font-serif text-2xl">{getShowArtists(show).map((artist) => artist.name).join(" + ")}</span>
-                <span className="mt-2 block font-mono text-xs uppercase tracking-wide text-[#8A8177]">{formatDate(show.date)} / {show.time} / {show.stage}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
+}
+
+function DiaryView({ memories, filter, onFilter, openShow }: { memories: Memory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void }) {
+  const filters: DiaryFilter[] = ["Artist", "City", "Genre", "Calendar", "Rating", "Venue", "Photo"];
+  const average = memories.reduce((sum, memory) => sum + memory.rating, 0) / Math.max(1, memories.length);
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6">
+      <div className="flex items-end justify-between"><div><p className="text-sm text-[#9AA8B4]">Your live music life</p><h1 className="mt-1 text-3xl font-black">Diary</h1></div><button aria-label="Share diary" type="button"><Share2 /></button></div>
+      <section className="mt-6 grid grid-cols-3 border border-[#34414D] bg-[#202830] p-5 text-center"><ProfileStat label="shows" value={String(memories.length)} /><ProfileStat label="artists" value={String(new Set(memories.map((memory) => getPrimaryArtist(shows.find((show) => show.id === memory.showId) ?? shows[0]).id)).size)} /><ProfileStat label="average" value={average.toFixed(1)} /></section>
+
+      <section className="mt-8"><SectionTitle eyebrow="Your Letterboxd-style top four" title="Favorite shows" /><div className="mt-4 grid grid-cols-4 gap-2">{memories.slice(0, 4).map((memory) => { const show = shows.find((item) => item.id === memory.showId) ?? shows[0]; return <button className="aspect-[2/3] overflow-hidden border border-[#34414D]" key={memory.id} onClick={() => openShow(show.id)} type="button"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /></button>; })}</div></section>
+
+      <section className="mt-8 border-t border-white/10 pt-6">
+        <div className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-[#47B7EF]" /><h2 className="text-xl font-black">See diary by</h2></div>
+        <div className="hide-scrollbar mt-4 flex gap-2 overflow-x-auto">{filters.map((item) => <button className={`shrink-0 border px-4 py-2 text-xs font-bold ${filter === item ? "border-[#47B7EF] bg-[#47B7EF] text-[#0E151B]" : "border-[#42505D] text-[#B8C2CC]"}`} key={item} onClick={() => onFilter(item)} type="button">{item}</button>)}</div>
+      </section>
+
+      {filter === "Calendar" ? <DiaryCalendar memories={memories} /> : (
+        <section className="mt-6">
+          <div className="flex items-center justify-between"><div><p className="text-xs uppercase text-[#81909D]">Grouped by {filter.toLowerCase()}</p><h2 className="mt-1 text-2xl font-black">{filter === "Photo" ? "Moments" : filter === "Rating" ? "Highest rated first" : `Your ${filter.toLowerCase()}s`}</h2></div><Grid3X3 className="text-[#748391]" /></div>
+          <div className="mt-4 grid grid-cols-3 gap-1 sm:gap-3 md:grid-cols-4">{memories.concat(memories).map((memory, index) => { const show = shows.find((item) => item.id === memory.showId) ?? shows[0]; return <button className="group relative aspect-square overflow-hidden bg-[#202830]" key={`${memory.id}-${index}`} onClick={() => openShow(show.id)} type="button"><img alt={memory.caption} className="h-full w-full object-cover transition group-hover:scale-105" src={memory.photo} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-left"><b className="block truncate text-xs">{getPrimaryArtist(show).name}</b><small className="text-[#20D6AA]">{memory.rating} · {formatDate(memory.date)}</small></span></button>; })}</div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function DiaryCalendar({ memories }: { memories: Memory[] }) {
+  const activeDays = new Set(memories.map((memory) => Number(memory.date.slice(-2))));
+  return <section className="mt-6 border border-[#34414D] bg-[#202830] p-5"><div className="flex items-center justify-between"><h2 className="text-xl font-black">August 2026</h2><CalendarDays className="text-[#47B7EF]" /></div><div className="mt-5 grid grid-cols-7 gap-2 text-center text-xs">{["S", "M", "T", "W", "T", "F", "S"].map((day, index) => <b className="py-2 text-[#81909D]" key={`${day}-${index}`}>{day}</b>)}{Array.from({ length: 31 }).map((_, index) => { const day = index + 1; return <span className={`flex aspect-square items-center justify-center ${activeDays.has(day) ? "rounded-full bg-[#20D6AA] font-black text-black" : "text-[#D2D9DF]"}`} key={day}>{day}</span>; })}</div></section>;
+}
+
+function LeaderboardView({ scope, onScope }: { scope: string; onScope: (scope: string) => void }) {
+  const rows = [
+    { name: "@maya", value: "18 shows", note: "San Francisco", color: "#FF8A00" },
+    { name: "@jo", value: "15 shows", note: "Oakland", color: "#20D6AA" },
+    { name: "@eli", value: "13 shows", note: "San Francisco", color: "#47B7EF" },
+    { name: "@tinsley", value: "11 shows", note: "San Francisco", color: "#F15BB5" },
+  ];
+  return <div className="mx-auto max-w-3xl px-4 py-7 sm:px-6"><p className="text-sm text-[#9AA8B4]">August 2026</p><h1 className="mt-1 text-3xl font-black">Member leaderboard</h1><div className="mt-6 grid grid-cols-3 border border-[#42505D] p-1">{["City", "Artist", "Venue"].map((item) => <button className={`px-3 py-2 text-xs font-bold ${scope === item ? "bg-[#47B7EF] text-black" : "text-[#9AA8B4]"}`} key={item} onClick={() => onScope(item)} type="button">{item}</button>)}</div><section className="mt-8"><SectionTitle eyebrow={`Top showgoers by ${scope.toLowerCase()}`} title="Most active this month" /><div className="mt-4 divide-y divide-white/10">{rows.map((row, index) => <div className="grid grid-cols-[32px_44px_1fr_auto] items-center gap-3 py-4" key={row.name}><strong className="text-xl text-[#748391]">{index + 1}</strong><Avatar color={row.color} name={row.name} /><div><b>{row.name}</b><p className="text-xs text-[#81909D]">{row.note}</p></div><b className="text-sm text-[#20D6AA]">{row.value}</b></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Taste match · location unlocked" title="Most similar near you" /><div className="mt-4 space-y-3">{fakeUsers.map((user, index) => <div className="flex items-center gap-3 border border-[#34414D] bg-[#202830] p-4" key={user.handle}><Avatar color={user.color} name={user.handle} /><div className="flex-1"><b>@{user.handle}</b><p className="mt-1 text-xs text-[#9AA8B4]">Also logged {user.favoriteArtists.slice(0, 2).join(" and ")}</p></div><strong className="text-2xl text-[#20D6AA]">{94 - index * 7}%</strong></div>)}</div></section></div>;
+}
+
+function ProfileView({ memories, openShow }: { memories: Memory[]; openShow: (id: string) => void }) {
+  return <div className="mx-auto max-w-4xl px-4 py-7 sm:px-6"><div className="flex items-center justify-between"><div><p className="text-sm text-[#9AA8B4]">@tinsley</p><h1 className="mt-1 text-3xl font-black">Tinsley Zhu</h1></div><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${memories.length} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#34414D] bg-[#263139] p-6"><p className="text-xs font-bold uppercase text-[#47B7EF]">All-time · San Francisco</p><h2 className="mt-2 text-3xl font-black">Top 8% showgoer</h2><div className="mt-7 grid grid-cols-3"><ProfileStat label="shows" value={String(memories.length + 24)} /><ProfileStat label="artists" value="21" /><ProfileStat label="venues" value="14" /></div><p className="mt-6 text-sm text-[#B8C2CC]">More active than 92% of showgoers in San Francisco.</p></section><section className="mt-8"><SectionTitle eyebrow="Your identity in four posters" title="Favorite shows" /><div className="mt-4 grid grid-cols-4 gap-2">{memories.concat(memories).slice(0, 4).map((memory, index) => { const show = shows.find((item) => item.id === memory.showId) ?? shows[0]; return <button className="aspect-[2/3] overflow-hidden border border-[#34414D]" key={`${memory.id}-${index}`} onClick={() => openShow(show.id)} type="button"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /></button>; })}</div></section><section className="mt-8 border-t border-white/10 pt-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase text-[#81909D]">One photo per show</p><h2 className="mt-1 text-2xl font-black">Live grid</h2></div><span className="text-sm text-[#9AA8B4]">{memories.length} moments</span></div><div className="mt-4 grid grid-cols-3 gap-1">{memories.concat(memories, memories).map((memory, index) => <button className="aspect-square overflow-hidden" key={`${memory.id}-${index}`} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover" src={memory.photo} /></button>)}</div></section></div>;
+}
+
+function ArtistView({ artist, onBack, openShow, playingTrack, setPlayingTrack }: { artist: Artist; onBack: () => void; openShow: (id: string) => void; playingTrack: string; setPlayingTrack: (track: string) => void }) {
+  const artistShows = shows.filter((show) => show.artistIds.includes(artist.id));
+  return <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6"><button className="flex items-center gap-2 text-sm text-[#9AA8B4]" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Show</button><section className="mt-5 grid gap-5 sm:grid-cols-[180px_1fr]"><img alt={artist.name} className="aspect-square w-full object-cover" src={artist.image} /><div><p className="text-xs font-bold uppercase text-[#20D6AA]">Artist</p><h1 className="mt-2 text-4xl font-black">{artist.name}</h1><p className="mt-2 text-sm text-[#9AA8B4]">{artist.hometown} · {artist.genres.join(" · ")}</p><p className="mt-4 max-w-2xl text-sm leading-6 text-[#B8C2CC]">{artist.bio}</p><div className="mt-5 flex gap-3"><button className="bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" type="button">Follow</button><button aria-label="Open Instagram" className="border border-[#42505D] px-4" type="button"><AtSign className="h-5 w-5" /></button></div></div></section><section className="mt-9"><SectionTitle eyebrow="Spotify preview concept" title="Popular songs" /><TrackList artist={artist} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} /></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Faded posters are shows you attended" title="Shows" /><div className="mt-4 flex gap-3 overflow-x-auto">{(artistShows.length ? artistShows : shows.slice(0, 4)).map((show, index) => <div className={index === 0 ? "opacity-45" : ""} key={show.id}><PosterCard friends={false} openShow={openShow} show={show} /></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Only verified attendees can review" title="Show photos and highlights" /><div className="mt-4 grid grid-cols-3 gap-2">{gallery.slice(0, 3).map((item) => <img alt={item.label} className="aspect-square w-full object-cover" key={item.label} src={item.image} />)}</div></section></div>;
+}
+
+function VenueView({ venue, onBack, openShow }: { venue: Venue; onBack: () => void; openShow: (id: string) => void }) {
+  const venueShows = shows.filter((show) => show.venueId === venue.id);
+  return <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6"><button className="flex items-center gap-2 text-sm text-[#9AA8B4]" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Show</button><section className="mt-5"><img alt={venue.name} className="aspect-[16/7] w-full object-cover" src={venue.image} /><div className="mt-5 flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase text-[#47B7EF]">Venue</p><h1 className="mt-2 text-4xl font-black">{venue.name}</h1><p className="mt-2 flex items-center gap-2 text-sm text-[#9AA8B4]"><MapPin className="h-4 w-4" /> {venue.city}, {venue.region}</p></div><div className="text-right"><strong className="text-3xl text-[#20D6AA]">4.4</strong><p className="text-[10px] text-[#81909D]">2,019 ratings</p></div></div><p className="mt-5 max-w-3xl text-sm leading-6 text-[#B8C2CC]">{venue.description}</p><div className="mt-5 flex flex-wrap gap-3"><button className="bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" type="button">Follow</button><button className="border border-[#42505D] px-5 py-3 text-sm font-bold" type="button">Save to watchlist</button><button className="flex items-center gap-2 border border-[#42505D] px-4 text-sm" type="button">Website <ExternalLink className="h-4 w-4" /></button></div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Upcoming and historical via JamBase" title="Shows at this venue" /><div className="mt-4 flex gap-3 overflow-x-auto">{venueShows.map((show) => <PosterCard friends={false} key={show.id} openShow={openShow} show={show} />)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Artist · crowd · sightlines · food" title="Venue photos" /><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{gallery.map((item) => <div className="relative aspect-square" key={item.label}><img alt={item.label} className="h-full w-full object-cover" src={item.image} /><span className="absolute bottom-2 left-2 bg-black/75 px-2 py-1 text-xs font-bold">{item.label}</span></div>)}</div></section><section className="mt-9 border-l-4 border-[#47B7EF] bg-[#202830] p-5"><div className="flex items-center gap-2 text-xs font-bold uppercase text-[#47B7EF]"><Check className="h-4 w-4" /> Verified review</div><p className="mt-3 text-sm leading-6 text-[#D2D9DF]">“Beautiful setting and surprisingly good sightlines from the hill. Leave extra time for the walk between stages.”</p><p className="mt-3 text-xs text-[#81909D]">@maya · attended 4 shows here</p></section></div>;
+}
+
+function TrackList({ artist, playingTrack, setPlayingTrack }: { artist: Artist; playingTrack: string; setPlayingTrack: (track: string) => void }) {
+  return <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{tracksByArtist[artist.id].map((track, index) => <button className="flex w-full items-center gap-3 py-3 text-left" key={track} onClick={() => setPlayingTrack(playingTrack === track ? "" : track)} type="button"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#29323A] text-[#20D6AA]">{playingTrack === track ? <Pause className="h-3 w-3" /> : <Play className="ml-0.5 h-3 w-3" />}</span><span className="flex-1"><b className="block text-sm">{track}</b><span className="text-xs text-[#81909D]">{artist.name}</span></span><span className="text-xs text-[#748391]">0:{28 + index * 3}</span></button>)}</div>;
+}
+
+function RatingStars({ value, interactive = false, onChange }: { value: number; interactive?: boolean; onChange?: (value: number) => void }) {
+  return <div aria-label={`${value} out of 5 stars`} className="flex gap-1">{[1, 2, 3, 4, 5].map((star) => <button aria-label={`${star} stars`} className={interactive ? "cursor-pointer" : "cursor-default"} disabled={!interactive} key={star} onClick={() => onChange?.(star)} type="button"><Star className={`h-6 w-6 ${value >= star ? "fill-[#20D6AA] text-[#20D6AA]" : "text-[#596875]"}`} /></button>)}</div>;
+}
+
+function ReviewRow({ log }: { log: DemoLog }) {
+  return <div className="flex gap-3 py-4"><Avatar name={log.user} /><div className="flex-1"><div className="flex items-center justify-between"><b className="text-sm">@{log.user}</b><span className="flex items-center gap-1 text-xs text-[#20D6AA]"><Star className="h-3 w-3 fill-current" /> {log.rating}</span></div><p className="mt-2 text-sm text-[#B8C2CC]">{log.note}</p></div></div>;
+}
+
+function FriendFaces({ names }: { names: string[] }) {
+  return <>{names.map((name, index) => <Avatar color={["#FF8A00", "#20D6AA", "#47B7EF", "#F15BB5"][index % 4]} key={name} name={name} />)}</>;
+}
+
+function Avatar({ name, color }: { name: string; color?: string }) {
+  return <span aria-label={name} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#202830] text-xs font-black text-black" style={{ backgroundColor: color ?? ["#FF8A00", "#20D6AA", "#47B7EF"][name.length % 3] }}>{name.replace("@", "").slice(0, 1).toUpperCase()}</span>;
+}
+
+function FactRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4 border-b border-white/10 pb-3"><dt className="text-[#81909D]">{label}</dt><dd className="text-right font-bold">{value}</dd></div>;
+}
+
+function ProfileStat({ value, label }: { value: string; label: string }) {
+  return <div className="border-r border-white/10 px-2 last:border-r-0"><strong className="block text-2xl font-black sm:text-3xl">{value}</strong><span className="mt-1 block text-[10px] uppercase text-[#81909D]">{label}</span></div>;
 }
