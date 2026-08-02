@@ -93,7 +93,40 @@ function toMemory(log) {
   };
 }
 
+function filterMemories(memories, filter) {
+  const persisted = memories.filter((memory) => memory && memory.id);
+  if (filter === "Rating") {
+    return [...persisted].sort(
+      (left, right) => right.rating - left.rating || right.date.localeCompare(left.date),
+    );
+  }
+  if (filter === "Photo") {
+    return persisted
+      .filter((memory) => Boolean(memory.photo))
+      .sort((left, right) => right.date.localeCompare(left.date));
+  }
+  const field = {
+    Artist: (memory) => memory.artistNames?.[0] ?? "",
+    City: (memory) => memory.city ?? "",
+    Genre: (memory) => memory.artistGenres?.[0] ?? "",
+    Venue: (memory) => memory.venueName ?? "",
+  }[filter];
+  if (field) {
+    return [...persisted].sort(
+      (left, right) =>
+        field(left).localeCompare(field(right)) ||
+        right.rating - left.rating ||
+        right.date.localeCompare(left.date),
+    );
+  }
+  return [...persisted].sort(
+    (left, right) =>
+      right.date.localeCompare(left.date) || String(left.id).localeCompare(String(right.id)),
+  );
+}
+
 module.exports = {
+  filterMemories,
   getStoredHandle,
   normalizeHandle,
   parseUploadResponse,

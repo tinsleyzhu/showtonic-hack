@@ -1,17 +1,23 @@
 import { mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { upsertAttendance } from "./attendance";
 import { validateLogInput } from "./showtonicUtils.js";
 
-async function getLogByUserAndShow(ctx: any, userId: string, showId: string) {
+async function getLogByUserAndShow(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  showId: Id<"shows">,
+) {
   return ctx.db
     .query("logs")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .filter((q: any) => q.eq(q.field("showId"), showId))
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .filter((q) => q.eq(q.field("showId"), showId))
     .unique();
 }
 
-async function hydrateUser(ctx: any, userId: string) {
+async function hydrateUser(ctx: QueryCtx, userId: Id<"users">) {
   return ctx.db.get(userId);
 }
 

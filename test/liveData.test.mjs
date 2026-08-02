@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  filterMemories,
   getStoredHandle,
   parseUploadResponse,
   toMemory,
@@ -42,4 +43,38 @@ test("toMemory uses uploaded media before the show fallback", () => {
 
   assert.equal(memory.photo, "/upload.jpg");
   assert.equal(memory.caption, "Fog");
+});
+
+test("filterMemories sorts ratings and keeps only persisted records", () => {
+  const memories = [
+    {
+      id: "low",
+      rating: 3,
+      artistNames: ["A"],
+      artistGenres: ["rock"],
+      city: "SF",
+      venueName: "Park",
+      date: "2026-08-08",
+      photo: "/low.jpg",
+    },
+    {
+      id: "high",
+      rating: 5,
+      artistNames: ["B"],
+      artistGenres: ["pop"],
+      city: "SF",
+      venueName: "Room",
+      date: "2026-08-07",
+      photo: "/high.jpg",
+    },
+  ];
+
+  assert.deepEqual(
+    filterMemories(memories, "Rating").map((item) => item.id),
+    ["high", "low"],
+  );
+  assert.deepEqual(
+    filterMemories(memories, "City").map((item) => item.id),
+    ["high", "low"],
+  );
 });

@@ -8,13 +8,6 @@ import {
   seedVenues,
 } from "./seedData";
 
-async function getByIndex(ctx: any, table: string, index: string, field: string, value: string) {
-  return ctx.db
-    .query(table)
-    .withIndex(index, (q: any) => q.eq(field, value))
-    .unique();
-}
-
 export const run = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -24,7 +17,10 @@ export const run = internalMutation({
     const userIds = new Map<string, string>();
 
     for (const artist of seedArtists) {
-      const existing = await getByIndex(ctx, "artists", "by_jambase", "jambaseId", artist.jambaseId);
+      const existing = await ctx.db
+        .query("artists")
+        .withIndex("by_jambase", (q) => q.eq("jambaseId", artist.jambaseId))
+        .unique();
       const artistId =
         existing?._id ??
         (await ctx.db.insert("artists", {
@@ -42,7 +38,10 @@ export const run = internalMutation({
     }
 
     for (const venue of seedVenues) {
-      const existing = await getByIndex(ctx, "venues", "by_jambase", "jambaseId", venue.jambaseId);
+      const existing = await ctx.db
+        .query("venues")
+        .withIndex("by_jambase", (q) => q.eq("jambaseId", venue.jambaseId))
+        .unique();
       const payload = {
         jambaseId: venue.jambaseId,
         name: venue.name,
@@ -67,7 +66,10 @@ export const run = internalMutation({
     }
 
     for (const user of seedUsers) {
-      const existing = await getByIndex(ctx, "users", "by_handle", "handle", user.handle);
+      const existing = await ctx.db
+        .query("users")
+        .withIndex("by_handle", (q) => q.eq("handle", user.handle))
+        .unique();
       const userId =
         existing?._id ??
         (await ctx.db.insert("users", {
@@ -80,7 +82,10 @@ export const run = internalMutation({
     }
 
     for (const show of seedShows) {
-      const existing = await getByIndex(ctx, "shows", "by_jambase", "jambaseId", show.jambaseId);
+      const existing = await ctx.db
+        .query("shows")
+        .withIndex("by_jambase", (q) => q.eq("jambaseId", show.jambaseId))
+        .unique();
       const venueId = venueIds.get(show.venueJambaseId);
       if (!venueId) {
         throw new Error(`Missing venue ${show.venueJambaseId} for show ${show.jambaseId}`);
@@ -138,8 +143,8 @@ export const run = internalMutation({
 
       const existingLog = await ctx.db
         .query("logs")
-        .withIndex("by_user", (q: any) => q.eq("userId", userId))
-        .filter((q: any) => q.eq(q.field("showId"), showId))
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .filter((q) => q.eq(q.field("showId"), showId))
         .unique();
 
       const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
@@ -169,7 +174,7 @@ export const run = internalMutation({
 
       const existingAttendance = await ctx.db
         .query("attendance")
-        .withIndex("by_user_show", (q: any) => q.eq("userId", userId).eq("showId", showId))
+        .withIndex("by_user_show", (q) => q.eq("userId", userId).eq("showId", showId))
         .unique();
       if (existingAttendance) {
         await ctx.db.patch(existingAttendance._id, {

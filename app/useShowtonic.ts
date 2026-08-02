@@ -46,7 +46,6 @@ export function useShowtonic({
   useEffect(() => {
     let active = true;
     const handle = getStoredHandle(window.localStorage);
-    setIdentityError("");
     getOrCreateUser({ handle })
       .then((nextUser) => {
         if (active && nextUser) {

@@ -27,10 +27,20 @@ export type Show = {
   time: string;
   stage: string;
   venueId: string;
+  venueName?: string;
+  city?: string;
   artistIds: string[];
+  artistNames?: string[];
   image: string;
   jambaseUrl: string;
+  ticketUrl?: string;
   memoryPrompt: string;
+  rating?: number;
+  ratingCount?: number;
+  interestedCount?: number;
+  goingCount?: number;
+  loggedCount?: number;
+  attendanceStatus?: "interested" | "going" | "logged";
 };
 
 export type DemoLog = {

@@ -21,6 +21,7 @@ export type LiveMemory = {
   city: string;
 };
 
+export function filterMemories(memories: LiveMemory[], filter: string): LiveMemory[];
 export function getStoredHandle(storage: StorageLike): string;
 export function normalizeHandle(value: unknown): string;
 export function parseUploadResponse(value: unknown): string;
