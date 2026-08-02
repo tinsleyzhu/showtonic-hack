@@ -20,7 +20,7 @@ Next.js 16 (App Router) · React 19 · Tailwind 4 · Convex · Vercel
 Already scaffolded (Next.js + TS + Tailwind). Remaining setup:
 
 ```bash
-npm install convex html-to-image
+npm install
 ```
 
 ```bash
@@ -41,6 +41,8 @@ Run the app:
 ```bash
 npm run dev
 ```
+
+The recap-card pass will add `html-to-image`; the backend foundation only needs Convex for now.
 
 ## Ground rules for this build
 
