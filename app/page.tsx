@@ -24,6 +24,7 @@ import {
 import type { Id } from "../convex/_generated/dataModel";
 import { vibes, type Show } from "./data";
 import {
+  describeSaveResult,
   filterMemories,
   resolveShowImage,
   toMemory,
@@ -83,6 +84,12 @@ export default function Home() {
   const [mediaPreview, setMediaPreview] = useState("");
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
+  const [pendingMedia, setPendingMedia] = useState<{
+    logId: Id<"logs">;
+    showId: Id<"shows">;
+    file: File;
+    caption?: string;
+  }>();
 
   const live = useShowtonic({
     selectedShowId,
@@ -172,16 +179,53 @@ export default function Home() {
         song: selectedSong,
         file: selectedFile,
       });
+      const saveResult = describeSaveResult({
+        logId: result.logId,
+        mediaError: result.mediaError,
+      });
       setLogOpen(false);
       setReview("");
       setCaption("");
       setSelectedVibes(["transcendent"]);
-      setSelectedFile(undefined);
-      setMediaPreview("");
-      setNotice(result.mediaError ? `Show saved. ${result.mediaError}` : "Show saved to your diary.");
+      if (result.mediaError && selectedFile) {
+        setPendingMedia({
+          logId: result.logId,
+          showId: selectedShowId as Id<"shows">,
+          file: selectedFile,
+          caption: caption.trim() || undefined,
+        });
+        setNotice(`Show saved. Poster needs a retry: ${saveResult.message}`);
+      } else {
+        setPendingMedia(undefined);
+        setSelectedFile(undefined);
+        setMediaPreview("");
+        setNotice(saveResult.message);
+      }
       navigate("diary");
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not save this show");
+    }
+  }
+
+  async function retryPoster() {
+    if (!pendingMedia || live.operation !== "idle") return;
+    try {
+      await live.retryMedia(
+        pendingMedia.logId,
+        pendingMedia.showId,
+        pendingMedia.file,
+        pendingMedia.caption,
+      );
+      setPendingMedia(undefined);
+      setSelectedFile(undefined);
+      setMediaPreview("");
+      setNotice("Poster attached to your saved show.");
+    } catch (error) {
+      setNotice(
+        `Show is still saved. Poster retry failed: ${
+          error instanceof Error ? error.message : "Upload failed"
+        }`,
+      );
     }
   }
 
@@ -206,8 +250,18 @@ export default function Home() {
 
       {notice && (
         <div className="mx-auto mt-4 max-w-6xl px-4 sm:px-6">
-          <div className="border border-[#20D6AA] bg-[#17352F] px-4 py-3 text-sm text-[#BDF8E9]">
-            {notice}
+          <div className="flex items-center justify-between gap-4 border border-[#20D6AA] bg-[#17352F] px-4 py-3 text-sm text-[#BDF8E9]">
+            <span>{notice}</span>
+            {pendingMedia && (
+              <button
+                className="shrink-0 border border-[#20D6AA] px-3 py-2 text-xs font-black"
+                disabled={live.operation !== "idle"}
+                onClick={retryPoster}
+                type="button"
+              >
+                {live.operation === "uploading" ? "Retrying..." : "Retry poster"}
+              </button>
+            )}
           </div>
         </div>
       )}

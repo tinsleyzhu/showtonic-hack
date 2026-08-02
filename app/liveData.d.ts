@@ -21,6 +21,11 @@ export type LiveMemory = {
   city: string;
 };
 
+export function describeSaveResult(result: { logId: string; mediaError?: string }): {
+  saved: true;
+  phase: "saved" | "saved-with-media-error";
+  message: string;
+};
 export function filterMemories(memories: LiveMemory[], filter: string): LiveMemory[];
 export function getStoredHandle(storage: StorageLike): string;
 export function normalizeHandle(value: unknown): string;

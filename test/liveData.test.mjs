@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  describeSaveResult,
   filterMemories,
   getStoredHandle,
   parseUploadResponse,
@@ -77,4 +78,12 @@ test("filterMemories sorts ratings and keeps only persisted records", () => {
     filterMemories(memories, "City").map((item) => item.id),
     ["high", "low"],
   );
+});
+
+test("describeSaveResult preserves a saved log when media fails", () => {
+  assert.deepEqual(describeSaveResult({ logId: "log1", mediaError: "Upload failed" }), {
+    saved: true,
+    phase: "saved-with-media-error",
+    message: "Upload failed",
+  });
 });

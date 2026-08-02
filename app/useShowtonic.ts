@@ -155,6 +155,20 @@ export function useShowtonic({
     }
   }
 
+  async function retryMedia(
+    logId: Id<"logs">,
+    showId: Id<"shows">,
+    file: File,
+    caption?: string,
+  ) {
+    setOperation("uploading");
+    try {
+      await attachFile(logId, showId, file, caption);
+    } finally {
+      setOperation("idle");
+    }
+  }
+
   return {
     artistDetail,
     diary,
@@ -164,6 +178,7 @@ export function useShowtonic({
     leaderboard,
     operation,
     profile,
+    retryMedia,
     searchResults: searchResults ?? [],
     setAttendance,
     showDetail,

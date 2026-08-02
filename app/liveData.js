@@ -125,7 +125,23 @@ function filterMemories(memories, filter) {
   );
 }
 
+function describeSaveResult(result) {
+  if (result.mediaError) {
+    return {
+      saved: true,
+      phase: "saved-with-media-error",
+      message: result.mediaError,
+    };
+  }
+  return {
+    saved: true,
+    phase: "saved",
+    message: "Show saved to your diary.",
+  };
+}
+
 module.exports = {
+  describeSaveResult,
   filterMemories,
   getStoredHandle,
   normalizeHandle,

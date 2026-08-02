@@ -17,7 +17,7 @@ Next.js 16 (App Router) · React 19 · Tailwind 4 · Convex · Vercel
 
 ## Setup
 
-Already scaffolded (Next.js + TS + Tailwind). Remaining setup:
+Install the project dependencies:
 
 ```bash
 npm install
@@ -27,8 +27,9 @@ npm install
 npx convex dev
 ```
 
-That creates the deployment, writes `.env.local` with `NEXT_PUBLIC_CONVEX_URL`, and watches
-`convex/`. Leave it running in its own terminal.
+That creates or selects the development deployment, writes `.env.local` with
+`NEXT_PUBLIC_CONVEX_URL`, deploys the schema and functions, and watches `convex/`. Leave it
+running in its own terminal.
 
 Then seed the database (JamBase lineup + fake users):
 
@@ -42,7 +43,19 @@ Run the app:
 npm run dev
 ```
 
-The recap-card pass will add `html-to-image`; the backend foundation only needs Convex for now.
+The browser stores the local handle `tinsley` in `localStorage` and resolves the corresponding
+Convex user on every load. There is deliberately no authentication in the hackathon build.
+
+JamBase artist, venue, and event data is baked into the idempotent seed so the demo does not
+depend on an external API call. JamBase source links remain visible in the interface.
+
+## Live flows
+
+- Discover and search the seeded lineup.
+- Set interested or going status.
+- Log and rate a show with vibes, review, song, caption, and one optional poster.
+- Retry an optional media upload without losing the saved show log.
+- Browse the reactive diary, profile, artist, venue, leaderboard, and taste-match views.
 
 ## Ground rules for this build
 
