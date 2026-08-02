@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 const app = defineApp({
   env: {
-    JAMBASE_API_KEY: v.string(),
+    JAMBASE_API_KEY: v.optional(v.string()),
   },
 });
 

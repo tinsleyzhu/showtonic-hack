@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import {
   ArrowLeft,
   AtSign,
@@ -42,6 +43,9 @@ import {
   type Show,
   type Venue,
 } from "./data";
+import { api } from "../convex/_generated/api";
+import type { Doc, Id } from "../convex/_generated/dataModel";
+import { isConvexConfigured } from "./ConvexClientProvider";
 
 type View = "discover" | "show" | "diary" | "leaderboard" | "profile" | "artist" | "venue";
 type Attendance = "interested" | "going" | "logged";
@@ -57,6 +61,36 @@ type Memory = {
   vibes: string[];
   photo: string;
   date: string;
+};
+
+type PersistLogInput = {
+  show: Show;
+  rating: number;
+  review: string;
+  caption: string;
+  song: string;
+  vibes: string[];
+  file: File | null;
+};
+
+type TasteMatch = {
+  handle: string;
+  avatarColor: string;
+  score: number;
+  sharedArtistNames: string[];
+  sharedShowCount: number;
+};
+
+type ShowtonicAppProps = {
+  backendConnected?: boolean;
+  communityLogs?: DemoLog[];
+  currentHandle?: string;
+  dataShows?: Show[];
+  dataStatus?: string;
+  onPersistLog?: (input: PersistLogInput) => Promise<void>;
+  onSyncJamBase?: () => Promise<void>;
+  remoteMemories?: Memory[];
+  tasteMatches?: TasteMatch[];
 };
 
 const artistById = new Map(artists.map((artist) => [artist.id, artist]));
@@ -131,7 +165,7 @@ const gallery = [
 ];
 
 function getShowArtists(show: Show): Artist[] {
-  return show.artistIds.map((id) => artistById.get(id)).filter(Boolean) as Artist[];
+  return show.artists ?? (show.artistIds.map((id) => artistById.get(id)).filter(Boolean) as Artist[]);
 }
 
 function getPrimaryArtist(show: Show) {
@@ -142,9 +176,207 @@ function formatDate(date: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(`${date}T12:00:00`));
 }
 
+function getShowVenue(show: Show) {
+  return show.venue ?? venueById.get(show.venueId) ?? venues[0];
+}
+
+function getArtistTracks(artist: Artist) {
+  return tracksByArtist[artist.id] ?? [artist.topSong, "Live favorite", "Festival closer"];
+}
+
+function normalizeName(value: string) {
+  return value.toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function slug(value: string) {
+  return normalizeName(value).replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function adaptLiveShow(live: Doc<"shows">): Show {
+  const knownShow = shows.find((show) =>
+    live.artistNames.some((name) => normalizeName(getPrimaryArtist(show).name) === normalizeName(name)),
+  );
+  const embeddedArtists = live.artistNames.map((name) => {
+    const known = artists.find((artist) => normalizeName(artist.name) === normalizeName(name));
+    return known ?? {
+      id: slug(name),
+      name,
+      hometown: "",
+      genres: ["live"],
+      vibe: "A live set worth adding to the diary.",
+      bio: `${name} live show data is supplied by JamBase.`,
+      topSong: "Top track",
+      image: live.image ?? knownShow?.image ?? shows[0].image,
+      jambaseUrl: live.jambaseUrl ?? "https://www.jambase.com",
+    };
+  });
+  const knownVenue = venues.find((venue) => normalizeName(venue.name) === normalizeName(live.venueName));
+  const embeddedVenue: Venue = knownVenue ?? {
+    id: `venue-${slug(`${live.venueName}-${live.city}`)}`,
+    name: live.venueName,
+    city: live.city,
+    region: "",
+    image: live.image ?? shows[0].image,
+    description: `${live.venueName} show history and upcoming events are supplied by JamBase.`,
+  };
+
+  return {
+    id: live._id,
+    backendId: live._id,
+    title: live.title,
+    date: live.date,
+    day: new Intl.DateTimeFormat("en", { weekday: "long" }).format(new Date(`${live.date}T12:00:00`)),
+    time: knownShow?.time ?? "Time TBA",
+    stage: live.stage ?? live.venueName,
+    venueId: embeddedVenue.id,
+    artistIds: embeddedArtists.map((artist) => artist.id),
+    artists: embeddedArtists,
+    venue: embeddedVenue,
+    image: live.image?.startsWith("http") ? live.image : knownShow?.image ?? embeddedArtists[0].image,
+    jambaseUrl: live.jambaseUrl ?? "https://www.jambase.com",
+    memoryPrompt: `What will you remember about ${embeddedArtists.map((artist) => artist.name).join(" + ")}?`,
+  };
+}
+
 export default function Home() {
+  return isConvexConfigured ? <ConnectedHome /> : <ShowtonicApp />;
+}
+
+function ConnectedHome() {
+  const [handle] = useState(() =>
+    typeof window === "undefined" ? "tinsley" : window.localStorage.getItem("showtonic-handle") ?? "tinsley",
+  );
+  const [syncStatus, setSyncStatus] = useState("Live via Convex");
+  const getOrCreateUser = useMutation(api.users.getOrCreate);
+  const createLog = useMutation(api.logs.create);
+  const generateUploadUrl = useMutation(api.media.generateUploadUrl);
+  const attachMedia = useMutation(api.media.attach);
+  const syncUpcoming = useAction(api.jambase.syncUpcoming);
+  const liveShows = useQuery(api.shows.listByFestival, { festivalId: "outside-lands-2026" });
+  const currentUser = useQuery(api.users.getByHandle, { handle });
+  const userLogs = useQuery(api.logs.listByUser, currentUser ? { userId: currentUser._id } : "skip");
+  const userMedia = useQuery(api.media.listByUser, currentUser ? { userId: currentUser._id } : "skip");
+  const recentLogs = useQuery(api.logs.listRecent, { limit: 40 });
+  const tasteMatches = useQuery(api.taste.similar, currentUser ? { userId: currentUser._id } : "skip");
+
+  useEffect(() => {
+    if (currentUser === null) {
+      void getOrCreateUser({ handle }).then(() => window.localStorage.setItem("showtonic-handle", handle));
+    }
+  }, [currentUser, getOrCreateUser, handle]);
+
+  const dataShows = useMemo(
+    () => liveShows?.length ? liveShows.map(adaptLiveShow) : shows,
+    [liveShows],
+  );
+  const remoteMemories = useMemo(() => {
+    if (!userLogs) return undefined;
+    const mediaByLog = new Map((userMedia ?? []).map((item) => [item.logId, item.url]));
+    return userLogs.map((log): Memory => {
+      const show = dataShows.find((item) => item.id === log.showId);
+      const artist = show ? getPrimaryArtist(show) : artists[0];
+      return {
+        id: log._id,
+        showId: log.showId,
+        rating: log.rating,
+        note: log.note ?? "A show worth remembering.",
+        caption: log.caption ?? log.note ?? "one for the diary",
+        song: log.song ?? artist.topSong,
+        vibes: log.vibes,
+        photo: mediaByLog.get(log._id) ?? log.showImage ?? show?.image ?? shows[0].image,
+        date: log.showDate,
+      };
+    });
+  }, [dataShows, userLogs, userMedia]);
+  const communityLogs = useMemo(
+    () => (recentLogs ?? []).map((log): DemoLog => ({
+      user: log.user?.handle ?? "showgoer",
+      showId: log.showId,
+      rating: log.rating,
+      vibes: log.vibes,
+      note: log.note ?? "Logged this show.",
+      photo: log.mediaUrl ?? log.showImage ?? dataShows.find((show) => show.id === log.showId)?.image ?? shows[0].image,
+    })),
+    [dataShows, recentLogs],
+  );
+
+  async function persistLog(input: PersistLogInput) {
+    if (!currentUser) throw new Error("Your profile is still connecting");
+    if (!input.show.backendId) throw new Error("This show has not synced to Convex yet");
+    const showId = input.show.backendId as Id<"shows">;
+    const logId = await createLog({
+      userId: currentUser._id,
+      showId,
+      rating: input.rating,
+      vibes: input.vibes,
+      note: input.review || undefined,
+      caption: input.caption || undefined,
+      song: input.song || undefined,
+    });
+
+    if (input.file) {
+      const uploadUrl = await generateUploadUrl({});
+      const response = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": input.file.type },
+        body: input.file,
+      });
+      if (!response.ok) throw new Error("Media upload failed");
+      const { storageId } = await response.json();
+      await attachMedia({
+        logId,
+        userId: currentUser._id,
+        showId,
+        storageId: storageId as Id<"_storage">,
+        contentType: input.file.type,
+        caption: input.caption || undefined,
+      });
+    }
+  }
+
+  async function syncJamBase() {
+    const sourceUrl = process.env.NEXT_PUBLIC_JAMBASE_SOURCE_URL;
+    if (!sourceUrl) {
+      setSyncStatus("Add NEXT_PUBLIC_JAMBASE_SOURCE_URL to sync");
+      return;
+    }
+    setSyncStatus("Syncing JamBase…");
+    try {
+      const result = await syncUpcoming({ sourceUrl, festivalId: "outside-lands-2026" });
+      setSyncStatus(`JamBase synced · ${result.inserted} new, ${result.updated} updated`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "JamBase sync failed");
+    }
+  }
+
+  return (
+    <ShowtonicApp
+      backendConnected
+      communityLogs={communityLogs.length ? communityLogs : demoLogs}
+      currentHandle={handle}
+      dataShows={dataShows}
+      dataStatus={syncStatus}
+      onPersistLog={persistLog}
+      onSyncJamBase={syncJamBase}
+      remoteMemories={remoteMemories}
+      tasteMatches={tasteMatches ?? undefined}
+    />
+  );
+}
+
+function ShowtonicApp({
+  backendConnected = false,
+  communityLogs = demoLogs,
+  currentHandle = "tinsley",
+  dataShows = shows,
+  dataStatus = "Demo data",
+  onPersistLog,
+  onSyncJamBase,
+  remoteMemories,
+  tasteMatches,
+}: ShowtonicAppProps = {}) {
   const [view, setView] = useState<View>("discover");
-  const [selectedShowId, setSelectedShowId] = useState("charli-outside-lands");
+  const [selectedShowId, setSelectedShowId] = useState(dataShows[0]?.id ?? "charli-outside-lands");
   const [selectedArtistId, setSelectedArtistId] = useState("charli-xcx");
   const [selectedVenueId, setSelectedVenueId] = useState("golden-gate-park");
   const [query, setQuery] = useState("");
@@ -152,7 +384,7 @@ export default function Home() {
     "doechii-outside-lands": "going",
     "charli-outside-lands": "interested",
   });
-  const [memories, setMemories] = useState<Memory[]>(defaultMemories);
+  const [localMemories, setLocalMemories] = useState<Memory[]>(backendConnected ? [] : defaultMemories);
   const [logOpen, setLogOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState("");
@@ -160,23 +392,41 @@ export default function Home() {
   const [selectedVibes, setSelectedVibes] = useState<string[]>(["transcendent"]);
   const [selectedSong, setSelectedSong] = useState("360");
   const [mediaPreview, setMediaPreview] = useState("");
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveNotice, setSaveNotice] = useState("");
   const [diaryFilter, setDiaryFilter] = useState<DiaryFilter>("Photo");
   const [leaderScope, setLeaderScope] = useState("City");
   const [playingTrack, setPlayingTrack] = useState("");
 
-  const selectedShow = shows.find((show) => show.id === selectedShowId) ?? shows[0];
-  const selectedArtist = artistById.get(selectedArtistId) ?? artists[0];
-  const selectedVenue = venueById.get(selectedVenueId) ?? venues[0];
+  const allArtists = useMemo(() => {
+    const byId = new Map(artists.map((artist) => [artist.id, artist]));
+    dataShows.flatMap(getShowArtists).forEach((artist) => byId.set(artist.id, artist));
+    return [...byId.values()];
+  }, [dataShows]);
+  const allVenues = useMemo(() => {
+    const byId = new Map(venues.map((venue) => [venue.id, venue]));
+    dataShows.map(getShowVenue).forEach((venue) => byId.set(venue.id, venue));
+    return [...byId.values()];
+  }, [dataShows]);
+  const memories = useMemo(() => {
+    const byId = new Map<string, Memory>();
+    [...(remoteMemories ?? []), ...localMemories].forEach((memory) => byId.set(memory.id, memory));
+    return [...byId.values()].sort((a, b) => b.date.localeCompare(a.date));
+  }, [localMemories, remoteMemories]);
+  const selectedShow = dataShows.find((show) => show.id === selectedShowId) ?? dataShows[0] ?? shows[0];
+  const selectedArtist = allArtists.find((artist) => artist.id === selectedArtistId) ?? getPrimaryArtist(selectedShow);
+  const selectedVenue = allVenues.find((venue) => venue.id === selectedVenueId) ?? getShowVenue(selectedShow);
 
   const searchResults = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return [];
-    return shows.filter((show) => {
+    return dataShows.filter((show) => {
       const artist = getPrimaryArtist(show);
-      const venue = venueById.get(show.venueId);
+      const venue = getShowVenue(show);
       return [show.title, artist.name, venue?.name, venue?.city].some((value) => value?.toLowerCase().includes(term));
     });
-  }, [query]);
+  }, [dataShows, query]);
 
   function navigate(next: View) {
     setView(next);
@@ -184,8 +434,10 @@ export default function Home() {
   }
 
   function openShow(showId: string, openLogger = false) {
-    const show = shows.find((item) => item.id === showId) ?? shows[0];
+    const show = dataShows.find((item) => item.id === showId) ?? dataShows[0] ?? shows[0];
     setSelectedShowId(show.id);
+    setSelectedArtistId(getPrimaryArtist(show).id);
+    setSelectedVenueId(getShowVenue(show).id);
     setSelectedSong(getPrimaryArtist(show).topSong);
     setView("show");
     setLogOpen(openLogger);
@@ -213,12 +465,33 @@ export default function Home() {
 
   function handleMedia(files: FileList | null) {
     const file = files?.[0];
-    if (file) setMediaPreview(URL.createObjectURL(file));
+    if (file) {
+      setMediaFile(file);
+      setMediaPreview(URL.createObjectURL(file));
+    }
   }
 
-  function saveLog() {
-    setMemories((current) => [
-      {
+  async function saveLog() {
+    setSaving(true);
+    setSaveNotice("");
+    let savedRemotely = false;
+    try {
+      await onPersistLog?.({
+        show: selectedShow,
+        rating,
+        review,
+        caption,
+        song: selectedSong,
+        vibes: selectedVibes,
+        file: mediaFile,
+      });
+      savedRemotely = Boolean(onPersistLog);
+      setSaveNotice(backendConnected ? "Saved to Convex" : "Saved on this device");
+    } catch (error) {
+      setSaveNotice(error instanceof Error ? `${error.message} · saved locally` : "Cloud save failed · saved locally");
+    }
+    if (!savedRemotely) {
+      setLocalMemories((current) => [{
         id: crypto.randomUUID(),
         showId: selectedShow.id,
         rating,
@@ -228,13 +501,14 @@ export default function Home() {
         vibes: selectedVibes,
         photo: mediaPreview || selectedShow.image,
         date: selectedShow.date,
-      },
-      ...current,
-    ]);
+      }, ...current]);
+    }
     setAttendance((current) => ({ ...current, [selectedShow.id]: "logged" }));
     setReview("");
     setCaption("");
     setMediaPreview("");
+    setMediaFile(null);
+    setSaving(false);
     setLogOpen(false);
     navigate("diary");
   }
@@ -245,10 +519,14 @@ export default function Home() {
 
       {view === "discover" && (
         <DiscoverView
+          communityLogs={communityLogs}
+          dataStatus={dataStatus}
           openShow={openShow}
+          onSyncJamBase={onSyncJamBase}
           query={query}
           searchResults={searchResults}
           setQuery={setQuery}
+          showsList={dataShows}
         />
       )}
       {view === "show" && (
@@ -264,20 +542,22 @@ export default function Home() {
           playingTrack={playingTrack}
           setPlayingTrack={setPlayingTrack}
           show={selectedShow}
+          showsList={dataShows}
+          communityLogs={communityLogs}
         />
       )}
       {view === "diary" && (
-        <DiaryView filter={diaryFilter} memories={memories} onFilter={setDiaryFilter} openShow={openShow} />
+        <DiaryView filter={diaryFilter} memories={memories} onFilter={setDiaryFilter} openShow={openShow} showsList={dataShows} />
       )}
       {view === "leaderboard" && (
-        <LeaderboardView onScope={setLeaderScope} scope={leaderScope} />
+        <LeaderboardView matches={tasteMatches} onScope={setLeaderScope} scope={leaderScope} />
       )}
-      {view === "profile" && <ProfileView memories={memories} openShow={openShow} />}
+      {view === "profile" && <ProfileView handle={currentHandle} memories={memories} openShow={openShow} showsList={dataShows} />}
       {view === "artist" && (
-        <ArtistView artist={selectedArtist} onBack={() => navigate("show")} openShow={openShow} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} />
+        <ArtistView artist={selectedArtist} onBack={() => navigate("show")} openShow={openShow} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} showsList={dataShows} />
       )}
       {view === "venue" && (
-        <VenueView onBack={() => navigate("show")} openShow={openShow} venue={selectedVenue} />
+        <VenueView onBack={() => navigate("show")} openShow={openShow} showsList={dataShows} venue={selectedVenue} />
       )}
 
       <BottomNav
@@ -303,8 +583,10 @@ export default function Home() {
           selectedSong={selectedSong}
           selectedVibes={selectedVibes}
           show={selectedShow}
+          saving={saving}
         />
       )}
+      {saveNotice && <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 bg-[#20D6AA] px-4 py-2 text-xs font-bold text-black">{saveNotice}</div>}
     </main>
   );
 }
@@ -353,8 +635,11 @@ function NavItem({ current, item, onNavigate }: { current: View; item: { view: V
   );
 }
 
-function DiscoverView({ query, setQuery, searchResults, openShow }: { query: string; setQuery: (value: string) => void; searchResults: Show[]; openShow: (id: string) => void }) {
-  const outsideLands = shows.filter((show) => show.venueId === "golden-gate-park");
+function DiscoverView({ query, setQuery, searchResults, openShow, showsList, communityLogs, dataStatus, onSyncJamBase }: { query: string; setQuery: (value: string) => void; searchResults: Show[]; openShow: (id: string) => void; showsList: Show[]; communityLogs: DemoLog[]; dataStatus: string; onSyncJamBase?: () => Promise<void> }) {
+  const availableShows = showsList.length ? showsList : shows;
+  const pick = (indices: number[]) => indices.map((index) => availableShows[index % availableShows.length]);
+  const outsideLands = availableShows;
+  const featuredShow = availableShows[0];
   return (
     <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6">
       <div className="flex items-end justify-between gap-4">
@@ -363,6 +648,11 @@ function DiscoverView({ query, setQuery, searchResults, openShow }: { query: str
           <h1 className="mt-1 text-3xl font-black">Find your next show</h1>
         </div>
         <button className="text-xs font-bold text-[#47B7EF]" type="button">Filters</button>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-y border-white/10 py-3 text-xs">
+        <span className="flex items-center gap-2 text-[#9AA8B4]"><i className="h-2 w-2 rounded-full bg-[#20D6AA]" />{dataStatus}</span>
+        {onSyncJamBase && <button className="font-bold text-[#20D6AA]" onClick={() => void onSyncJamBase()} type="button">Sync JamBase</button>}
       </div>
 
       <label className="mt-5 flex h-12 items-center gap-3 border border-[#34414D] bg-[#202830] px-4">
@@ -383,24 +673,24 @@ function DiscoverView({ query, setQuery, searchResults, openShow }: { query: str
                 <p className="mt-2 max-w-xl text-sm leading-6 text-[#B8C2CC]">Five sets your friends are saving, with live plans now and a shared weekend diary after.</p>
                 <div className="mt-5 flex -space-x-2"><FriendFaces names={["Maya", "Jo", "Eli", "Nia"]} /><span className="ml-4 self-center text-xs text-[#9AA8B4]">12 friends building plans</span></div>
               </div>
-              <button className="relative min-h-44 overflow-hidden text-left" onClick={() => openShow("charli-outside-lands")} type="button">
-                <img alt="Outside Lands" className="absolute inset-0 h-full w-full object-cover" src={shows[0].image} />
+              <button className="relative min-h-44 overflow-hidden text-left" onClick={() => openShow(featuredShow.id)} type="button">
+                <img alt="Outside Lands" className="absolute inset-0 h-full w-full object-cover" src={featuredShow.image} />
                 <span className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
                 <span className="absolute bottom-4 left-4 text-sm font-bold">Open festival pick <ChevronRight className="inline h-4 w-4" /></span>
               </button>
             </div>
           </section>
 
-          <ShowRail eyebrow="Most logged in the Bay" openShow={openShow} showsList={[shows[0], shows[2], shows[1], shows[4]]} title="Popular this week" />
-          <ShowRail eyebrow="Maya, Jo, and 9 others made plans" friends openShow={openShow} showsList={[shows[2], shows[0], shows[5], shows[1]]} title="Trending among friends" />
-          <ShowRail eyebrow="Based on RUFUS DU SOL and Glass Beams" openShow={openShow} showsList={[shows[1], shows[5], shows[3], shows[2]]} title="Artists you follow" />
-          <ShowRail eyebrow="Within 5 miles" openShow={openShow} showsList={[shows[5], shows[0], shows[2], shows[4]]} title="Nearby" />
+          <ShowRail eyebrow="Most logged in the Bay" openShow={openShow} showsList={pick([0, 2, 1, 4])} title="Popular this week" />
+          <ShowRail eyebrow="Maya, Jo, and 9 others made plans" friends openShow={openShow} showsList={pick([2, 0, 5, 1])} title="Trending among friends" />
+          <ShowRail eyebrow="Based on your live show history" openShow={openShow} showsList={pick([1, 5, 3, 2])} title="Artists you follow" />
+          <ShowRail eyebrow="Within 5 miles" openShow={openShow} showsList={pick([5, 0, 2, 4])} title="Nearby" />
           <ShowRail eyebrow="Friday through Sunday" openShow={openShow} showsList={outsideLands} title="This weekend" />
 
           <section className="mt-10 border-t border-white/10 pt-6">
             <SectionTitle eyebrow="Fresh ratings and one-line reviews" title="From friends" />
             <div className="mt-4 grid gap-3 md:grid-cols-3">
-              {demoLogs.map((log) => <FriendReviewCard key={`${log.user}-${log.showId}`} log={log} openShow={openShow} />)}
+              {communityLogs.slice(0, 6).map((log) => <FriendReviewCard key={`${log.user}-${log.showId}`} log={log} openShow={openShow} showsList={availableShows} />)}
             </div>
           </section>
         </>
@@ -431,7 +721,7 @@ function SectionTitle({ title, eyebrow }: { title: string; eyebrow: string }) {
 
 function PosterCard({ show, openShow, friends }: { show: Show; openShow: (id: string) => void; friends: boolean }) {
   const artist = getPrimaryArtist(show);
-  const venue = venueById.get(show.venueId);
+  const venue = getShowVenue(show);
   return (
     <button className="w-[138px] shrink-0 text-left sm:w-[176px]" onClick={() => openShow(show.id)} type="button">
       <span className="relative block aspect-[2/3] overflow-hidden border border-[#34414D] bg-[#202830]">
@@ -446,8 +736,8 @@ function PosterCard({ show, openShow, friends }: { show: Show; openShow: (id: st
   );
 }
 
-function FriendReviewCard({ log, openShow }: { log: DemoLog; openShow: (id: string) => void }) {
-  const show = shows.find((item) => item.id === log.showId) ?? shows[0];
+function FriendReviewCard({ log, openShow, showsList }: { log: DemoLog; openShow: (id: string) => void; showsList: Show[] }) {
+  const show = showsList.find((item) => item.id === log.showId) ?? showsList[0] ?? shows[0];
   return (
     <button className="grid grid-cols-[72px_1fr] gap-3 border border-[#34414D] bg-[#202830] p-3 text-left" onClick={() => openShow(show.id)} type="button">
       <img alt={show.title} className="aspect-[2/3] w-full object-cover" src={show.image} />
@@ -460,15 +750,15 @@ function FriendReviewCard({ log, openShow }: { log: DemoLog; openShow: (id: stri
   );
 }
 
-function ShowView({ show, attendance, memories, onBack, onSetAttendance, onLog, onOpenArtist, onOpenVenue, onShowSelect, playingTrack, setPlayingTrack }: {
-  show: Show; attendance?: Attendance; memories: Memory[]; onBack: () => void; onSetAttendance: (status: Attendance) => void; onLog: () => void; onOpenArtist: (id: string) => void; onOpenVenue: (id: string) => void; onShowSelect: (id: string) => void; playingTrack: string; setPlayingTrack: (track: string) => void;
+function ShowView({ show, attendance, memories, onBack, onSetAttendance, onLog, onOpenArtist, onOpenVenue, onShowSelect, playingTrack, setPlayingTrack, showsList, communityLogs }: {
+  show: Show; attendance?: Attendance; memories: Memory[]; onBack: () => void; onSetAttendance: (status: Attendance) => void; onLog: () => void; onOpenArtist: (id: string) => void; onOpenVenue: (id: string) => void; onShowSelect: (id: string) => void; playingTrack: string; setPlayingTrack: (track: string) => void; showsList: Show[]; communityLogs: DemoLog[];
 }) {
   const artist = getPrimaryArtist(show);
-  const venue = venueById.get(show.venueId) ?? venues[0];
+  const venue = getShowVenue(show);
   const friends = friendNotes[show.id] ?? friendNotes["charli-outside-lands"];
-  const community = demoLogs.filter((log) => log.showId === show.id);
+  const community = communityLogs.filter((log) => log.showId === show.id);
   const featured = memories[0];
-  const otherShows = shows.filter((item) => item.id !== show.id).slice(0, 4);
+  const otherShows = showsList.filter((item) => item.id !== show.id).slice(0, 4);
   return (
     <div>
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
@@ -560,7 +850,7 @@ function ShowView({ show, attendance, memories, onBack, onSetAttendance, onLog, 
             </div>
             <div className="border border-[#34414D] p-5">
               <p className="text-xs font-bold uppercase text-[#81909D]">Expected set list</p>
-              <ol className="mt-3 space-y-2 text-sm">{tracksByArtist[artist.id].concat(["Club classics", "Everything is romantic"]).map((track, index) => <li className="flex gap-3 border-b border-white/10 pb-2" key={track}><span className="text-[#748391]">{String(index + 1).padStart(2, "0")}</span>{track}</li>)}</ol>
+              <ol className="mt-3 space-y-2 text-sm">{getArtistTracks(artist).concat(["Live favorite", "Festival closer"]).map((track, index) => <li className="flex gap-3 border-b border-white/10 pb-2" key={`${track}-${index}`}><span className="text-[#748391]">{String(index + 1).padStart(2, "0")}</span>{track}</li>)}</ol>
             </div>
           </div>
         </section>
@@ -579,8 +869,8 @@ function StatusButton({ icon, label, active, onClick }: { icon: ReactNode; label
   return <button aria-label={label} className={`flex flex-col items-center gap-1 border-r border-white/10 py-1 text-[11px] font-bold last:border-r-0 ${active ? "text-[#20D6AA]" : "text-[#9AA8B4]"}`} onClick={onClick} type="button"><span className="[&>svg]:h-5 [&>svg]:w-5">{icon}</span>{label}</button>;
 }
 
-function LogSheet({ show, rating, onRating, review, onReview, caption, onCaption, selectedSong, onSong, selectedVibes, onToggleVibe, mediaPreview, onMedia, onClose, onSave }: {
-  show: Show; rating: number; onRating: (value: number) => void; review: string; onReview: (value: string) => void; caption: string; onCaption: (value: string) => void; selectedSong: string; onSong: (value: string) => void; selectedVibes: string[]; onToggleVibe: (value: string) => void; mediaPreview: string; onMedia: (files: FileList | null) => void; onClose: () => void; onSave: () => void;
+function LogSheet({ show, rating, onRating, review, onReview, caption, onCaption, selectedSong, onSong, selectedVibes, onToggleVibe, mediaPreview, onMedia, onClose, onSave, saving }: {
+  show: Show; rating: number; onRating: (value: number) => void; review: string; onReview: (value: string) => void; caption: string; onCaption: (value: string) => void; selectedSong: string; onSong: (value: string) => void; selectedVibes: string[]; onToggleVibe: (value: string) => void; mediaPreview: string; onMedia: (files: FileList | null) => void; onClose: () => void; onSave: () => void; saving: boolean;
 }) {
   const artist = getPrimaryArtist(show);
   return (
@@ -594,24 +884,24 @@ function LogSheet({ show, rating, onRating, review, onReview, caption, onCaption
           <label className="block"><span className="mb-2 block text-xs font-bold uppercase text-[#81909D]">Review</span><textarea className="min-h-24 w-full border border-[#42505D] bg-[#14181C] p-3 text-sm outline-none focus:border-[#20D6AA]" onChange={(event) => onReview(event.target.value)} placeholder={show.memoryPrompt} value={review} /></label>
           <div><p className="mb-2 text-xs font-bold uppercase text-[#81909D]">Your poster</p><div className="grid gap-3 sm:grid-cols-[140px_1fr]">
             <label className="flex aspect-square cursor-pointer items-center justify-center overflow-hidden border border-dashed border-[#748391] bg-[#14181C]">{mediaPreview ? <img alt="Upload preview" className="h-full w-full object-cover" src={mediaPreview} /> : <span className="flex flex-col items-center gap-2 text-xs text-[#9AA8B4]"><Camera /> Add one photo</span>}<input accept="image/*,video/*" className="sr-only" onChange={(event) => onMedia(event.target.files)} type="file" /></label>
-            <div className="space-y-3"><input className="w-full border border-[#42505D] bg-[#14181C] p-3 text-sm outline-none focus:border-[#20D6AA]" onChange={(event) => onCaption(event.target.value)} placeholder="One-line caption" value={caption} /><div className="space-y-2">{tracksByArtist[artist.id].map((track) => <button className={`flex w-full items-center gap-2 border p-2 text-left text-sm ${selectedSong === track ? "border-[#20D6AA] text-[#20D6AA]" : "border-[#42505D]"}`} key={track} onClick={() => onSong(track)} type="button"><Music2 className="h-4 w-4" />{track}{selectedSong === track && <Check className="ml-auto h-4 w-4" />}</button>)}</div></div>
+            <div className="space-y-3"><input className="w-full border border-[#42505D] bg-[#14181C] p-3 text-sm outline-none focus:border-[#20D6AA]" onChange={(event) => onCaption(event.target.value)} placeholder="One-line caption" value={caption} /><div className="space-y-2">{getArtistTracks(artist).map((track) => <button className={`flex w-full items-center gap-2 border p-2 text-left text-sm ${selectedSong === track ? "border-[#20D6AA] text-[#20D6AA]" : "border-[#42505D]"}`} key={track} onClick={() => onSong(track)} type="button"><Music2 className="h-4 w-4" />{track}{selectedSong === track && <Check className="ml-auto h-4 w-4" />}</button>)}</div></div>
           </div></div>
-          <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-[#0E151B]" onClick={onSave} type="button">Save to diary</button>
+          <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-[#0E151B] disabled:opacity-60" disabled={saving} onClick={onSave} type="button">{saving ? "Saving to Convex…" : "Save to diary"}</button>
         </div>
       </section>
     </div>
   );
 }
 
-function DiaryView({ memories, filter, onFilter, openShow }: { memories: Memory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void }) {
+function DiaryView({ memories, filter, onFilter, openShow, showsList }: { memories: Memory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; showsList: Show[] }) {
   const filters: DiaryFilter[] = ["Artist", "City", "Genre", "Calendar", "Rating", "Venue", "Photo"];
   const average = memories.reduce((sum, memory) => sum + memory.rating, 0) / Math.max(1, memories.length);
   return (
     <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6">
       <div className="flex items-end justify-between"><div><p className="text-sm text-[#9AA8B4]">Your live music life</p><h1 className="mt-1 text-3xl font-black">Diary</h1></div><button aria-label="Share diary" type="button"><Share2 /></button></div>
-      <section className="mt-6 grid grid-cols-3 border border-[#34414D] bg-[#202830] p-5 text-center"><ProfileStat label="shows" value={String(memories.length)} /><ProfileStat label="artists" value={String(new Set(memories.map((memory) => getPrimaryArtist(shows.find((show) => show.id === memory.showId) ?? shows[0]).id)).size)} /><ProfileStat label="average" value={average.toFixed(1)} /></section>
+      <section className="mt-6 grid grid-cols-3 border border-[#34414D] bg-[#202830] p-5 text-center"><ProfileStat label="shows" value={String(memories.length)} /><ProfileStat label="artists" value={String(new Set(memories.map((memory) => getPrimaryArtist(showsList.find((show) => show.id === memory.showId) ?? showsList[0] ?? shows[0]).id)).size)} /><ProfileStat label="average" value={average.toFixed(1)} /></section>
 
-      <section className="mt-8"><SectionTitle eyebrow="Your Letterboxd-style top four" title="Favorite shows" /><div className="mt-4 grid grid-cols-4 gap-2">{memories.slice(0, 4).map((memory) => { const show = shows.find((item) => item.id === memory.showId) ?? shows[0]; return <button className="aspect-[2/3] overflow-hidden border border-[#34414D]" key={memory.id} onClick={() => openShow(show.id)} type="button"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /></button>; })}</div></section>
+      <section className="mt-8"><SectionTitle eyebrow="Your Letterboxd-style top four" title="Favorite shows" /><div className="mt-4 grid grid-cols-4 gap-2">{memories.slice(0, 4).map((memory) => { const show = showsList.find((item) => item.id === memory.showId) ?? showsList[0] ?? shows[0]; return <button className="aspect-[2/3] overflow-hidden border border-[#34414D]" key={memory.id} onClick={() => openShow(show.id)} type="button"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /></button>; })}</div></section>
 
       <section className="mt-8 border-t border-white/10 pt-6">
         <div className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-[#47B7EF]" /><h2 className="text-xl font-black">See diary by</h2></div>
@@ -621,7 +911,7 @@ function DiaryView({ memories, filter, onFilter, openShow }: { memories: Memory[
       {filter === "Calendar" ? <DiaryCalendar memories={memories} /> : (
         <section className="mt-6">
           <div className="flex items-center justify-between"><div><p className="text-xs uppercase text-[#81909D]">Grouped by {filter.toLowerCase()}</p><h2 className="mt-1 text-2xl font-black">{filter === "Photo" ? "Moments" : filter === "Rating" ? "Highest rated first" : `Your ${filter.toLowerCase()}s`}</h2></div><Grid3X3 className="text-[#748391]" /></div>
-          <div className="mt-4 grid grid-cols-3 gap-1 sm:gap-3 md:grid-cols-4">{memories.concat(memories).map((memory, index) => { const show = shows.find((item) => item.id === memory.showId) ?? shows[0]; return <button className="group relative aspect-square overflow-hidden bg-[#202830]" key={`${memory.id}-${index}`} onClick={() => openShow(show.id)} type="button"><img alt={memory.caption} className="h-full w-full object-cover transition group-hover:scale-105" src={memory.photo} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-left"><b className="block truncate text-xs">{getPrimaryArtist(show).name}</b><small className="text-[#20D6AA]">{memory.rating} · {formatDate(memory.date)}</small></span></button>; })}</div>
+          <div className="mt-4 grid grid-cols-3 gap-1 sm:gap-3 md:grid-cols-4">{memories.map((memory) => { const show = showsList.find((item) => item.id === memory.showId) ?? showsList[0] ?? shows[0]; return <button className="group relative aspect-square overflow-hidden bg-[#202830]" key={memory.id} onClick={() => openShow(show.id)} type="button"><img alt={memory.caption} className="h-full w-full object-cover transition group-hover:scale-105" src={memory.photo} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 text-left"><b className="block truncate text-xs">{getPrimaryArtist(show).name}</b><small className="text-[#20D6AA]">{memory.rating} · {formatDate(memory.date)}</small></span></button>; })}</div>
         </section>
       )}
     </div>
@@ -633,32 +923,33 @@ function DiaryCalendar({ memories }: { memories: Memory[] }) {
   return <section className="mt-6 border border-[#34414D] bg-[#202830] p-5"><div className="flex items-center justify-between"><h2 className="text-xl font-black">August 2026</h2><CalendarDays className="text-[#47B7EF]" /></div><div className="mt-5 grid grid-cols-7 gap-2 text-center text-xs">{["S", "M", "T", "W", "T", "F", "S"].map((day, index) => <b className="py-2 text-[#81909D]" key={`${day}-${index}`}>{day}</b>)}{Array.from({ length: 31 }).map((_, index) => { const day = index + 1; return <span className={`flex aspect-square items-center justify-center ${activeDays.has(day) ? "rounded-full bg-[#20D6AA] font-black text-black" : "text-[#D2D9DF]"}`} key={day}>{day}</span>; })}</div></section>;
 }
 
-function LeaderboardView({ scope, onScope }: { scope: string; onScope: (scope: string) => void }) {
+function LeaderboardView({ scope, onScope, matches }: { scope: string; onScope: (scope: string) => void; matches?: TasteMatch[] }) {
   const rows = [
     { name: "@maya", value: "18 shows", note: "San Francisco", color: "#FF8A00" },
     { name: "@jo", value: "15 shows", note: "Oakland", color: "#20D6AA" },
     { name: "@eli", value: "13 shows", note: "San Francisco", color: "#47B7EF" },
     { name: "@tinsley", value: "11 shows", note: "San Francisco", color: "#F15BB5" },
   ];
-  return <div className="mx-auto max-w-3xl px-4 py-7 sm:px-6"><p className="text-sm text-[#9AA8B4]">August 2026</p><h1 className="mt-1 text-3xl font-black">Member leaderboard</h1><div className="mt-6 grid grid-cols-3 border border-[#42505D] p-1">{["City", "Artist", "Venue"].map((item) => <button className={`px-3 py-2 text-xs font-bold ${scope === item ? "bg-[#47B7EF] text-black" : "text-[#9AA8B4]"}`} key={item} onClick={() => onScope(item)} type="button">{item}</button>)}</div><section className="mt-8"><SectionTitle eyebrow={`Top showgoers by ${scope.toLowerCase()}`} title="Most active this month" /><div className="mt-4 divide-y divide-white/10">{rows.map((row, index) => <div className="grid grid-cols-[32px_44px_1fr_auto] items-center gap-3 py-4" key={row.name}><strong className="text-xl text-[#748391]">{index + 1}</strong><Avatar color={row.color} name={row.name} /><div><b>{row.name}</b><p className="text-xs text-[#81909D]">{row.note}</p></div><b className="text-sm text-[#20D6AA]">{row.value}</b></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Taste match · location unlocked" title="Most similar near you" /><div className="mt-4 space-y-3">{fakeUsers.map((user, index) => <div className="flex items-center gap-3 border border-[#34414D] bg-[#202830] p-4" key={user.handle}><Avatar color={user.color} name={user.handle} /><div className="flex-1"><b>@{user.handle}</b><p className="mt-1 text-xs text-[#9AA8B4]">Also logged {user.favoriteArtists.slice(0, 2).join(" and ")}</p></div><strong className="text-2xl text-[#20D6AA]">{94 - index * 7}%</strong></div>)}</div></section></div>;
+  const similarityRows = matches?.length ? matches.map((match) => ({ handle: match.handle, color: match.avatarColor, artists: match.sharedArtistNames, score: Math.min(99, Math.round(match.score * 100)) })) : fakeUsers.map((user, index) => ({ handle: user.handle, color: user.color, artists: user.favoriteArtists, score: 94 - index * 7 }));
+  return <div className="mx-auto max-w-3xl px-4 py-7 sm:px-6"><p className="text-sm text-[#9AA8B4]">August 2026</p><h1 className="mt-1 text-3xl font-black">Member leaderboard</h1><div className="mt-6 grid grid-cols-3 border border-[#42505D] p-1">{["City", "Artist", "Venue"].map((item) => <button className={`px-3 py-2 text-xs font-bold ${scope === item ? "bg-[#47B7EF] text-black" : "text-[#9AA8B4]"}`} key={item} onClick={() => onScope(item)} type="button">{item}</button>)}</div><section className="mt-8"><SectionTitle eyebrow={`Top showgoers by ${scope.toLowerCase()}`} title="Most active this month" /><div className="mt-4 divide-y divide-white/10">{rows.map((row, index) => <div className="grid grid-cols-[32px_44px_1fr_auto] items-center gap-3 py-4" key={row.name}><strong className="text-xl text-[#748391]">{index + 1}</strong><Avatar color={row.color} name={row.name} /><div><b>{row.name}</b><p className="text-xs text-[#81909D]">{row.note}</p></div><b className="text-sm text-[#20D6AA]">{row.value}</b></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Taste match · location unlocked" title="Most similar near you" /><div className="mt-4 space-y-3">{similarityRows.map((user) => <div className="flex items-center gap-3 border border-[#34414D] bg-[#202830] p-4" key={user.handle}><Avatar color={user.color} name={user.handle} /><div className="flex-1"><b>@{user.handle}</b><p className="mt-1 text-xs text-[#9AA8B4]">Also logged {user.artists.slice(0, 2).join(" and ") || "a shared show"}</p></div><strong className="text-2xl text-[#20D6AA]">{user.score}%</strong></div>)}</div></section></div>;
 }
 
-function ProfileView({ memories, openShow }: { memories: Memory[]; openShow: (id: string) => void }) {
-  return <div className="mx-auto max-w-4xl px-4 py-7 sm:px-6"><div className="flex items-center justify-between"><div><p className="text-sm text-[#9AA8B4]">@tinsley</p><h1 className="mt-1 text-3xl font-black">Tinsley Zhu</h1></div><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${memories.length} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#34414D] bg-[#263139] p-6"><p className="text-xs font-bold uppercase text-[#47B7EF]">All-time · San Francisco</p><h2 className="mt-2 text-3xl font-black">Top 8% showgoer</h2><div className="mt-7 grid grid-cols-3"><ProfileStat label="shows" value={String(memories.length + 24)} /><ProfileStat label="artists" value="21" /><ProfileStat label="venues" value="14" /></div><p className="mt-6 text-sm text-[#B8C2CC]">More active than 92% of showgoers in San Francisco.</p></section><section className="mt-8"><SectionTitle eyebrow="Your identity in four posters" title="Favorite shows" /><div className="mt-4 grid grid-cols-4 gap-2">{memories.concat(memories).slice(0, 4).map((memory, index) => { const show = shows.find((item) => item.id === memory.showId) ?? shows[0]; return <button className="aspect-[2/3] overflow-hidden border border-[#34414D]" key={`${memory.id}-${index}`} onClick={() => openShow(show.id)} type="button"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /></button>; })}</div></section><section className="mt-8 border-t border-white/10 pt-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase text-[#81909D]">One photo per show</p><h2 className="mt-1 text-2xl font-black">Live grid</h2></div><span className="text-sm text-[#9AA8B4]">{memories.length} moments</span></div><div className="mt-4 grid grid-cols-3 gap-1">{memories.concat(memories, memories).map((memory, index) => <button className="aspect-square overflow-hidden" key={`${memory.id}-${index}`} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover" src={memory.photo} /></button>)}</div></section></div>;
+function ProfileView({ memories, openShow, showsList, handle }: { memories: Memory[]; openShow: (id: string) => void; showsList: Show[]; handle: string }) {
+  return <div className="mx-auto max-w-4xl px-4 py-7 sm:px-6"><div className="flex items-center justify-between"><div><p className="text-sm text-[#9AA8B4]">@{handle}</p><h1 className="mt-1 text-3xl font-black">{handle === "tinsley" ? "Tinsley Zhu" : handle}</h1></div><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${memories.length} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#34414D] bg-[#263139] p-6"><p className="text-xs font-bold uppercase text-[#47B7EF]">All-time · San Francisco</p><h2 className="mt-2 text-3xl font-black">Top 8% showgoer</h2><div className="mt-7 grid grid-cols-3"><ProfileStat label="shows" value={String(memories.length)} /><ProfileStat label="artists" value={String(new Set(memories.map((memory) => getPrimaryArtist(showsList.find((show) => show.id === memory.showId) ?? showsList[0] ?? shows[0]).id)).size)} /><ProfileStat label="venues" value={String(new Set(memories.map((memory) => getShowVenue(showsList.find((show) => show.id === memory.showId) ?? showsList[0] ?? shows[0]).id)).size)} /></div><p className="mt-6 text-sm text-[#B8C2CC]">Your live show history updates in real time through Convex.</p></section><section className="mt-8"><SectionTitle eyebrow="Your identity in four posters" title="Favorite shows" /><div className="mt-4 grid grid-cols-4 gap-2">{memories.slice(0, 4).map((memory) => { const show = showsList.find((item) => item.id === memory.showId) ?? showsList[0] ?? shows[0]; return <button className="aspect-[2/3] overflow-hidden border border-[#34414D]" key={memory.id} onClick={() => openShow(show.id)} type="button"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /></button>; })}</div></section><section className="mt-8 border-t border-white/10 pt-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase text-[#81909D]">One photo per show</p><h2 className="mt-1 text-2xl font-black">Live grid</h2></div><span className="text-sm text-[#9AA8B4]">{memories.length} moments</span></div><div className="mt-4 grid grid-cols-3 gap-1">{memories.map((memory) => <button className="aspect-square overflow-hidden" key={memory.id} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover" src={memory.photo} /></button>)}</div></section></div>;
 }
 
-function ArtistView({ artist, onBack, openShow, playingTrack, setPlayingTrack }: { artist: Artist; onBack: () => void; openShow: (id: string) => void; playingTrack: string; setPlayingTrack: (track: string) => void }) {
-  const artistShows = shows.filter((show) => show.artistIds.includes(artist.id));
-  return <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6"><button className="flex items-center gap-2 text-sm text-[#9AA8B4]" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Show</button><section className="mt-5 grid gap-5 sm:grid-cols-[180px_1fr]"><img alt={artist.name} className="aspect-square w-full object-cover" src={artist.image} /><div><p className="text-xs font-bold uppercase text-[#20D6AA]">Artist</p><h1 className="mt-2 text-4xl font-black">{artist.name}</h1><p className="mt-2 text-sm text-[#9AA8B4]">{artist.hometown} · {artist.genres.join(" · ")}</p><p className="mt-4 max-w-2xl text-sm leading-6 text-[#B8C2CC]">{artist.bio}</p><div className="mt-5 flex gap-3"><button className="bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" type="button">Follow</button><button aria-label="Open Instagram" className="border border-[#42505D] px-4" type="button"><AtSign className="h-5 w-5" /></button></div></div></section><section className="mt-9"><SectionTitle eyebrow="Spotify preview concept" title="Popular songs" /><TrackList artist={artist} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} /></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Faded posters are shows you attended" title="Shows" /><div className="mt-4 flex gap-3 overflow-x-auto">{(artistShows.length ? artistShows : shows.slice(0, 4)).map((show, index) => <div className={index === 0 ? "opacity-45" : ""} key={show.id}><PosterCard friends={false} openShow={openShow} show={show} /></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Only verified attendees can review" title="Show photos and highlights" /><div className="mt-4 grid grid-cols-3 gap-2">{gallery.slice(0, 3).map((item) => <img alt={item.label} className="aspect-square w-full object-cover" key={item.label} src={item.image} />)}</div></section></div>;
+function ArtistView({ artist, onBack, openShow, playingTrack, setPlayingTrack, showsList }: { artist: Artist; onBack: () => void; openShow: (id: string) => void; playingTrack: string; setPlayingTrack: (track: string) => void; showsList: Show[] }) {
+  const artistShows = showsList.filter((show) => getShowArtists(show).some((item) => item.id === artist.id));
+  return <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6"><button className="flex items-center gap-2 text-sm text-[#9AA8B4]" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Show</button><section className="mt-5 grid gap-5 sm:grid-cols-[180px_1fr]"><img alt={artist.name} className="aspect-square w-full object-cover" src={artist.image} /><div><p className="text-xs font-bold uppercase text-[#20D6AA]">Artist</p><h1 className="mt-2 text-4xl font-black">{artist.name}</h1><p className="mt-2 text-sm text-[#9AA8B4]">{artist.hometown} · {artist.genres.join(" · ")}</p><p className="mt-4 max-w-2xl text-sm leading-6 text-[#B8C2CC]">{artist.bio}</p><div className="mt-5 flex gap-3"><button className="bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" type="button">Follow</button><button aria-label="Open Instagram" className="border border-[#42505D] px-4" type="button"><AtSign className="h-5 w-5" /></button></div></div></section><section className="mt-9"><SectionTitle eyebrow="Spotify preview concept" title="Popular songs" /><TrackList artist={artist} playingTrack={playingTrack} setPlayingTrack={setPlayingTrack} /></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Faded posters are shows you attended" title="Shows" /><div className="mt-4 flex gap-3 overflow-x-auto">{(artistShows.length ? artistShows : showsList.slice(0, 4)).map((show, index) => <div className={index === 0 ? "opacity-45" : ""} key={show.id}><PosterCard friends={false} openShow={openShow} show={show} /></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Only verified attendees can review" title="Show photos and highlights" /><div className="mt-4 grid grid-cols-3 gap-2">{gallery.slice(0, 3).map((item) => <img alt={item.label} className="aspect-square w-full object-cover" key={item.label} src={item.image} />)}</div></section></div>;
 }
 
-function VenueView({ venue, onBack, openShow }: { venue: Venue; onBack: () => void; openShow: (id: string) => void }) {
-  const venueShows = shows.filter((show) => show.venueId === venue.id);
+function VenueView({ venue, onBack, openShow, showsList }: { venue: Venue; onBack: () => void; openShow: (id: string) => void; showsList: Show[] }) {
+  const venueShows = showsList.filter((show) => getShowVenue(show).id === venue.id);
   return <div className="mx-auto max-w-5xl px-4 py-5 sm:px-6"><button className="flex items-center gap-2 text-sm text-[#9AA8B4]" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Show</button><section className="mt-5"><img alt={venue.name} className="aspect-[16/7] w-full object-cover" src={venue.image} /><div className="mt-5 flex items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase text-[#47B7EF]">Venue</p><h1 className="mt-2 text-4xl font-black">{venue.name}</h1><p className="mt-2 flex items-center gap-2 text-sm text-[#9AA8B4]"><MapPin className="h-4 w-4" /> {venue.city}, {venue.region}</p></div><div className="text-right"><strong className="text-3xl text-[#20D6AA]">4.4</strong><p className="text-[10px] text-[#81909D]">2,019 ratings</p></div></div><p className="mt-5 max-w-3xl text-sm leading-6 text-[#B8C2CC]">{venue.description}</p><div className="mt-5 flex flex-wrap gap-3"><button className="bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" type="button">Follow</button><button className="border border-[#42505D] px-5 py-3 text-sm font-bold" type="button">Save to watchlist</button><button className="flex items-center gap-2 border border-[#42505D] px-4 text-sm" type="button">Website <ExternalLink className="h-4 w-4" /></button></div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Upcoming and historical via JamBase" title="Shows at this venue" /><div className="mt-4 flex gap-3 overflow-x-auto">{venueShows.map((show) => <PosterCard friends={false} key={show.id} openShow={openShow} show={show} />)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Artist · crowd · sightlines · food" title="Venue photos" /><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{gallery.map((item) => <div className="relative aspect-square" key={item.label}><img alt={item.label} className="h-full w-full object-cover" src={item.image} /><span className="absolute bottom-2 left-2 bg-black/75 px-2 py-1 text-xs font-bold">{item.label}</span></div>)}</div></section><section className="mt-9 border-l-4 border-[#47B7EF] bg-[#202830] p-5"><div className="flex items-center gap-2 text-xs font-bold uppercase text-[#47B7EF]"><Check className="h-4 w-4" /> Verified review</div><p className="mt-3 text-sm leading-6 text-[#D2D9DF]">“Beautiful setting and surprisingly good sightlines from the hill. Leave extra time for the walk between stages.”</p><p className="mt-3 text-xs text-[#81909D]">@maya · attended 4 shows here</p></section></div>;
 }
 
 function TrackList({ artist, playingTrack, setPlayingTrack }: { artist: Artist; playingTrack: string; setPlayingTrack: (track: string) => void }) {
-  return <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{tracksByArtist[artist.id].map((track, index) => <button className="flex w-full items-center gap-3 py-3 text-left" key={track} onClick={() => setPlayingTrack(playingTrack === track ? "" : track)} type="button"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#29323A] text-[#20D6AA]">{playingTrack === track ? <Pause className="h-3 w-3" /> : <Play className="ml-0.5 h-3 w-3" />}</span><span className="flex-1"><b className="block text-sm">{track}</b><span className="text-xs text-[#81909D]">{artist.name}</span></span><span className="text-xs text-[#748391]">0:{28 + index * 3}</span></button>)}</div>;
+  return <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{getArtistTracks(artist).map((track, index) => <button className="flex w-full items-center gap-3 py-3 text-left" key={track} onClick={() => setPlayingTrack(playingTrack === track ? "" : track)} type="button"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#29323A] text-[#20D6AA]">{playingTrack === track ? <Pause className="h-3 w-3" /> : <Play className="ml-0.5 h-3 w-3" />}</span><span className="flex-1"><b className="block text-sm">{track}</b><span className="text-xs text-[#81909D]">{artist.name}</span></span><span className="text-xs text-[#748391]">0:{28 + index * 3}</span></button>)}</div>;
 }
 
 function RatingStars({ value, interactive = false, onChange }: { value: number; interactive?: boolean; onChange?: (value: number) => void }) {

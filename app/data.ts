@@ -31,6 +31,9 @@ export type Show = {
   image: string;
   jambaseUrl: string;
   memoryPrompt: string;
+  artists?: Artist[];
+  venue?: Venue;
+  backendId?: string;
 };
 
 export type DemoLog = {

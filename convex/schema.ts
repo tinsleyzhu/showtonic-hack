@@ -55,6 +55,8 @@ export default defineSchema({
     rating: v.number(), // 0.5 - 5.0, half steps
     vibes: v.array(v.string()),
     note: v.optional(v.string()),
+    caption: v.optional(v.string()),
+    song: v.optional(v.string()),
     // denormalized so the diary grid and taste matching need no lookups
     showTitle: v.string(),
     showDate: v.string(),

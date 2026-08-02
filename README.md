@@ -36,6 +36,20 @@ Then seed the database (JamBase lineup + fake users):
 npx convex run seed:run
 ```
 
+To enable the Discover page's live JamBase sync, configure the sponsor key in Convex and add the
+upcoming-events endpoint to `.env.local`:
+
+```bash
+npx convex env set JAMBASE_API_KEY your-key
+```
+
+```dotenv
+NEXT_PUBLIC_JAMBASE_SOURCE_URL=https://your-jambase-endpoint.example/events
+```
+
+The app uses realtime Convex queries when `NEXT_PUBLIC_CONVEX_URL` exists and falls back to its
+typed local demo data when it does not.
+
 Run the app:
 
 ```bash

@@ -9,8 +9,10 @@
  */
 
 import type * as jambase from "../jambase.js";
-import type * as media from "../media.js";
+import type * as jambaseUtils from "../jambaseUtils.js";
 import type * as logs from "../logs.js";
+import type * as media from "../media.js";
+import type * as mediaUtils from "../mediaUtils.js";
 import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
 import type * as shows from "../shows.js";
@@ -26,8 +28,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   jambase: typeof jambase;
-  media: typeof media;
+  jambaseUtils: typeof jambaseUtils;
   logs: typeof logs;
+  media: typeof media;
+  mediaUtils: typeof mediaUtils;
   seed: typeof seed;
   seedData: typeof seedData;
   shows: typeof shows;

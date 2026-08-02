@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { internalMutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import {
