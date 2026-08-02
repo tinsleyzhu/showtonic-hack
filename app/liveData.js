@@ -1,0 +1,103 @@
+const HANDLE_KEY = "showtonic.handle";
+
+const SHOW_IMAGES = {
+  "Charli XCX":
+    "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=1400&q=80",
+  "RÜFÜS DU SOL":
+    "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=1400&q=80",
+  Doechii:
+    "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=1400&q=80",
+  "The Strokes":
+    "https://images.unsplash.com/photo-1508973379184-7517410fb0bc?auto=format&fit=crop&w=1400&q=80",
+  "Vampire Weekend":
+    "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=1400&q=80",
+  "Jamie xx":
+    "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1400&q=80",
+};
+
+const DEFAULT_SHOW_IMAGE =
+  "https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?auto=format&fit=crop&w=1400&q=80";
+
+function normalizeHandle(value) {
+  const handle = String(value ?? "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+  return handle || "tinsley";
+}
+
+function getStoredHandle(storage) {
+  const handle = normalizeHandle(storage.getItem(HANDLE_KEY));
+  storage.setItem(HANDLE_KEY, handle);
+  return handle;
+}
+
+function parseUploadResponse(value) {
+  if (!value || typeof value.storageId !== "string" || !value.storageId) {
+    throw new Error("Convex upload response is missing storageId");
+  }
+  return value.storageId;
+}
+
+function resolveShowImage(image, artistNames = []) {
+  if (typeof image === "string" && /^https?:\/\//.test(image)) {
+    return image;
+  }
+  return SHOW_IMAGES[artistNames[0]] ?? DEFAULT_SHOW_IMAGE;
+}
+
+function toShow(summary) {
+  return {
+    id: String(summary.id ?? summary._id),
+    title: summary.title,
+    date: summary.date,
+    day: summary.day ?? "Date TBA",
+    time: summary.time ?? "Time TBA",
+    stage: summary.stage ?? "Stage TBA",
+    venueId: String(summary.venueId ?? summary.venueName),
+    venueName: summary.venueName,
+    city: summary.city,
+    artistIds: (summary.artistIds ?? []).map(String),
+    artistNames: summary.artistNames ?? [],
+    image: resolveShowImage(summary.image, summary.artistNames),
+    jambaseUrl: summary.jambaseUrl ?? "",
+    ticketUrl: summary.ticketUrl,
+    memoryPrompt: summary.memoryPrompt ?? "What moment will you remember?",
+    rating: summary.rating ?? 0,
+    ratingCount: summary.ratingCount ?? 0,
+    interestedCount: summary.interestedCount ?? 0,
+    goingCount: summary.goingCount ?? 0,
+    loggedCount: summary.loggedCount ?? 0,
+    attendanceStatus: summary.attendanceStatus,
+  };
+}
+
+function toMemory(log) {
+  const uploadedPhoto = (log.media ?? []).find(
+    (item) => item.kind === "photo" && typeof item.url === "string" && item.url,
+  )?.url;
+  return {
+    id: String(log._id ?? log.id),
+    showId: String(log.showId),
+    rating: log.rating,
+    note: log.note ?? "",
+    caption: log.caption ?? log.note ?? "Live memory",
+    song: log.song ?? "",
+    vibes: log.vibes ?? [],
+    photo: uploadedPhoto ?? resolveShowImage(log.showImage, log.artistNames),
+    date: log.showDate,
+    artistNames: log.artistNames ?? [],
+    artistGenres: log.artistGenres ?? [],
+    venueName: log.venueName ?? "Venue",
+    city: log.city ?? "City",
+  };
+}
+
+module.exports = {
+  getStoredHandle,
+  normalizeHandle,
+  parseUploadResponse,
+  resolveShowImage,
+  toMemory,
+  toShow,
+};
