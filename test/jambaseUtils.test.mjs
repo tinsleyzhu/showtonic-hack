@@ -38,3 +38,46 @@ test("normalizeUpcomingEvents extracts the primary event url and artist names", 
     jambaseUrl: "https://www.jambase.com/show/jam-1",
   });
 });
+
+test("normalizeUpcomingEvents supports the JamBase v3 event schema", () => {
+  const [event] = normalizeUpcomingEvents(
+    {
+      events: [
+        {
+          identifier: "jambase:15583575",
+          name: "Outside Lands",
+          startDate: "2026-08-07T11:00:00",
+          location: {
+            name: "Golden Gate Park",
+            address: {
+              addressLocality: "San Francisco",
+              addressRegion: "CA",
+            },
+          },
+          performer: [
+            { name: "Doechii" },
+            { name: "Charli XCX" },
+          ],
+          image: "https://example.com/outside-lands.jpg",
+          url: "https://www.jambase.com/festival/outside-lands-2026",
+        },
+      ],
+    },
+    "outside-lands-2026",
+  );
+
+  assert.deepEqual(event, {
+    jambaseId: "jambase:15583575",
+    title: "Outside Lands",
+    date: "2026-08-07",
+    venueName: "Golden Gate Park",
+    city: "San Francisco",
+    region: "CA",
+    image: "https://example.com/outside-lands.jpg",
+    festivalId: "outside-lands-2026",
+    stage: undefined,
+    isHeadliner: false,
+    artistNames: ["Doechii", "Charli XCX"],
+    jambaseUrl: "https://www.jambase.com/festival/outside-lands-2026",
+  });
+});

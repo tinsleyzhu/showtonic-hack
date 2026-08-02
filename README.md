@@ -44,7 +44,7 @@ npx convex env set JAMBASE_API_KEY your-key
 ```
 
 ```dotenv
-NEXT_PUBLIC_JAMBASE_SOURCE_URL=https://your-jambase-endpoint.example/events
+NEXT_PUBLIC_JAMBASE_SOURCE_URL=https://api.data.jambase.com/v3/events?name=Outside%20Lands&eventDateFrom=2026-08-07&eventDateTo=2026-08-09&perPage=100
 ```
 
 The app uses realtime Convex queries when `NEXT_PUBLIC_CONVEX_URL` exists and falls back to its
