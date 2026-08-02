@@ -110,3 +110,27 @@ export const listByShow = query({
     return hydrated.sort((a, b) => b.createdAt - a.createdAt);
   },
 });
+
+export const listRecent = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const logs = await ctx.db.query("logs").order("desc").take(Math.min(args.limit ?? 30, 100));
+
+    return Promise.all(
+      logs.map(async (log) => {
+        const [user, media] = await Promise.all([
+          ctx.db.get(log.userId),
+          ctx.db.query("media").withIndex("by_log", (q) => q.eq("logId", log._id)).first(),
+        ]);
+
+        return {
+          ...log,
+          user,
+          mediaUrl: media ? await ctx.storage.getUrl(media.storageId) : null,
+        };
+      }),
+    );
+  },
+});

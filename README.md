@@ -31,10 +31,21 @@ That creates or selects the development deployment, writes `.env.local` with
 `NEXT_PUBLIC_CONVEX_URL`, deploys the schema and functions, and watches `convex/`. Leave it
 running in its own terminal.
 
-Then seed the database (JamBase lineup + fake users):
+Then seed the database (JamBase lineup + demo users):
 
 ```bash
 npx convex run seed:run
+```
+
+The demo reads JamBase data from the deterministic seed. To run an optional JamBase v3 refresh,
+configure the sponsor key in Convex and invoke the backend action explicitly:
+
+```bash
+npx convex env set JAMBASE_API_KEY your-key
+```
+
+```bash
+npx convex run jambase:syncUpcoming '{"sourceUrl":"https://api.data.jambase.com/v3/events?name=Outside%20Lands&eventDateFrom=2026-08-07&eventDateTo=2026-08-09&perPage=100","festivalId":"outside-lands-2026"}'
 ```
 
 Run the app:
@@ -60,7 +71,7 @@ depend on an external API call. JamBase source links remain visible in the inter
 ## Ground rules for this build
 
 1. **No live API calls on the demo path.** JamBase data is baked into `convex/seedData.ts`. The
-   only `fetch` lives in a Convex *action* for the Discover tab.
+   only `fetch` lives in an optional Convex refresh action.
 2. **Denormalize.** Convex has no joins. Artist names live on the log.
 3. **Demoable at 1:15.** Never break the demo to add a feature.
 4. **No auth.** Handle in `localStorage`.

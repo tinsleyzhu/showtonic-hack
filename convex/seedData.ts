@@ -259,6 +259,7 @@ export const seedShows = [
 ] as const;
 
 export const seedUsers = [
+  { handle: "tinsley", avatarColor: "#20d6aa", isFake: false },
   { handle: "maya", avatarColor: "#ff3b0e", isFake: true },
   { handle: "leo", avatarColor: "#8b5cf6", isFake: true },
   { handle: "sam", avatarColor: "#0ea5e9", isFake: true },
@@ -267,6 +268,30 @@ export const seedUsers = [
 ] as const;
 
 export const seedLogs = [
+  {
+    userHandle: "tinsley",
+    showJambaseId: "show-charli-xcx-2026-08-07",
+    rating: 5,
+    vibes: ["transcendent", "sweaty"],
+    note: "The whole hill screamed every word. Instant favorite.",
+    createdAt: 1786100200000,
+  },
+  {
+    userHandle: "tinsley",
+    showJambaseId: "show-doechii-2026-08-08",
+    rating: 4.5,
+    vibes: ["sound was insane"],
+    note: "Best crowd control of the weekend, and it was not close.",
+    createdAt: 1786188200000,
+  },
+  {
+    userHandle: "tinsley",
+    showJambaseId: "show-rufus-du-sol-2026-08-08",
+    rating: 4,
+    vibes: ["sunset set"],
+    note: "Fog arrived at exactly the right moment.",
+    createdAt: 1786186400000,
+  },
   {
     userHandle: "maya",
     showJambaseId: "show-charli-xcx-2026-08-07",

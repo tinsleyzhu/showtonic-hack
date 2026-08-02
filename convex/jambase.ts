@@ -1,6 +1,10 @@
 import { action } from "./_generated/server";
+import { api } from "./_generated/api";
 import { v } from "convex/values";
-import { normalizeUpcomingEvents } from "./jambaseUtils.js";
+import {
+  normalizeUpcomingEvents,
+  validateJamBaseSourceUrl,
+} from "./jambaseUtils.js";
 
 export const fetchUpcoming = action({
   args: {
@@ -13,7 +17,7 @@ export const fetchUpcoming = action({
       throw new Error("Missing JAMBASE_API_KEY environment variable");
     }
 
-    const response = await fetch(args.sourceUrl, {
+    const response = await fetch(validateJamBaseSourceUrl(args.sourceUrl), {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
@@ -26,5 +30,32 @@ export const fetchUpcoming = action({
 
     const payload = await response.json();
     return normalizeUpcomingEvents(payload, args.festivalId);
+  },
+});
+
+export const syncUpcoming = action({
+  args: {
+    sourceUrl: v.string(),
+    festivalId: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ inserted: number; updated: number; total: number }> => {
+    const apiKey = process.env.JAMBASE_API_KEY;
+    if (!apiKey) {
+      throw new Error("Missing JAMBASE_API_KEY environment variable");
+    }
+
+    const response = await fetch(validateJamBaseSourceUrl(args.sourceUrl), {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "User-Agent": "ShowtonicHack/1.0",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`JamBase fetch failed with status ${response.status}`);
+    }
+
+    const events = normalizeUpcomingEvents(await response.json(), args.festivalId);
+    return ctx.runMutation(api.shows.importUpcoming, { events });
   },
 });

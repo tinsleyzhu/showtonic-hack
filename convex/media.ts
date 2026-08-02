@@ -83,3 +83,22 @@ export const listByShow = query({
     );
   },
 });
+
+export const listByUser = query({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const media = await ctx.db
+      .query("media")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    return Promise.all(
+      media.map(async (item) => ({
+        ...item,
+        url: await ctx.storage.getUrl(item.storageId),
+      })),
+    );
+  },
+});
