@@ -10,6 +10,7 @@ import {
   Compass,
   ExternalLink,
   Grid3X3,
+  Heart,
   Library,
   ListFilter,
   MapPin,
@@ -35,6 +36,7 @@ import { useShowtonic } from "./useShowtonic";
 
 type View = "discover" | "show" | "diary" | "leaderboard" | "profile" | "artist" | "venue";
 type Attendance = "interested" | "going" | "logged";
+type CatalogMode = "upcoming" | "past";
 type DiaryFilter = "Artist" | "City" | "Genre" | "Calendar" | "Rating" | "Venue" | "Photo";
 type LiveState = ReturnType<typeof useShowtonic>;
 type ShowDetailPayload = NonNullable<LiveState["showDetail"]>;
@@ -65,6 +67,47 @@ function formatDate(date: string) {
   );
 }
 
+function todayIso() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
+function collapseFestivalShows(values: Show[]) {
+  const parents = new Map<string, Show>();
+  for (const show of values) {
+    if (!show.festivalId || (show.artistNames?.length ?? 0) < 2) continue;
+    const current = parents.get(show.festivalId);
+    if (!current || (show.artistNames?.length ?? 0) > (current.artistNames?.length ?? 0)) {
+      parents.set(show.festivalId, show);
+    }
+  }
+  const collapsed = new Map<string, Show>();
+  for (const show of values) {
+    const canonical = show.festivalId ? parents.get(show.festivalId) ?? show : show;
+    collapsed.set(canonical.id, canonical);
+  }
+  return [...collapsed.values()];
+}
+
+const cityCoordinates: Record<string, [number, number]> = {
+  "San Francisco": [37.7749, -122.4194],
+  Oakland: [37.8044, -122.2712],
+  "San Jose": [37.3382, -121.8863],
+  "Los Angeles": [34.0522, -118.2437],
+  "New York": [40.7128, -74.006],
+};
+
+function nearestHomeCity(latitude: number, longitude: number, available: string[]) {
+  const candidates = available.filter((city) => cityCoordinates[city]);
+  return (candidates.length ? candidates : ["San Francisco"]).reduce((closest, city) => {
+    const [lat, lng] = cityCoordinates[city];
+    const [closestLat, closestLng] = cityCoordinates[closest];
+    const distance = (lat - latitude) ** 2 + (lng - longitude) ** 2;
+    const closestDistance = (closestLat - latitude) ** 2 + (closestLng - longitude) ** 2;
+    return distance < closestDistance ? city : closest;
+  });
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("discover");
   const [selectedShowId, setSelectedShowId] = useState("");
@@ -85,6 +128,8 @@ export default function Home() {
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
   const [catalogStatus, setCatalogStatus] = useState("");
+  const [homeCity, setHomeCity] = useState("San Francisco");
+  const [locationStatus, setLocationStatus] = useState("Using your saved home base");
   const [pendingMedia, setPendingMedia] = useState<{
     logId: Id<"logs">;
     showId: Id<"shows">;
@@ -114,6 +159,30 @@ export default function Home() {
   );
 
   useEffect(() => {
+    const saved = window.localStorage.getItem("showtonic.homeCity");
+    if (saved) {
+      setHomeCity(saved);
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocationStatus("Location unavailable · defaulting to San Francisco");
+      return;
+    }
+    setLocationStatus("Finding your nearest show city...");
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const available = [...new Set(shows.map((show) => show.city).filter(Boolean))] as string[];
+        const city = nearestHomeCity(coords.latitude, coords.longitude, available);
+        setHomeCity(city);
+        window.localStorage.setItem("showtonic.homeCity", city);
+        setLocationStatus("Home base set from this device");
+      },
+      () => setLocationStatus("Location not shared · defaulting to San Francisco"),
+      { enableHighAccuracy: false, maximumAge: 3_600_000, timeout: 8_000 },
+    );
+  }, [shows]);
+
+  useEffect(() => {
     return () => {
       if (mediaPreview) URL.revokeObjectURL(mediaPreview);
     };
@@ -128,8 +197,14 @@ export default function Home() {
     const show = shows.find((item) => item.id === showId);
     setSelectedShowId(showId);
     setSelectedSong(tracksFor(show?.artistNames?.[0])[0]);
-    setLogOpen(openLogger);
+    setLogOpen(openLogger && Boolean(show && show.date < todayIso()));
     navigate("show");
+  }
+
+  function changeHomeCity(city: string) {
+    setHomeCity(city);
+    window.localStorage.setItem("showtonic.homeCity", city);
+    setLocationStatus("Home base selected by you");
   }
 
   function openArtist(artistId: string) {
@@ -283,10 +358,12 @@ export default function Home() {
         <DiscoverView
           dataStatus={catalogStatus || `JamBase catalog · ${live.discovery.catalogStats.historical} past / ${live.discovery.catalogStats.upcoming} upcoming`}
           discovery={live.discovery}
+          homeCity={homeCity}
+          locationStatus={locationStatus}
           onSyncJamBase={syncJamBase}
+          onHomeCityChange={changeHomeCity}
           openShow={openShow}
           query={query}
-          searchResults={live.searchResults.map((show) => adaptShow(show))}
           setQuery={setQuery}
         />
       )}
@@ -342,11 +419,21 @@ export default function Home() {
       )}
 
       {view === "artist" && (
-        <ArtistView detail={live.artistDetail} onBack={() => navigate("show")} openShow={openShow} />
+        <ArtistView
+          detail={live.artistDetail}
+          onBack={() => navigate("show")}
+          onFollow={(artistId) => live.toggleArtistFollow(artistId as Id<"artists">)}
+          openShow={openShow}
+        />
       )}
 
       {view === "venue" && (
-        <VenueView detail={live.venueDetail} onBack={() => navigate("show")} openShow={openShow} />
+        <VenueView
+          detail={live.venueDetail}
+          onBack={() => navigate("show")}
+          onFollow={(venueId) => live.toggleVenueFollow(venueId as Id<"venues">)}
+          openShow={openShow}
+        />
       )}
 
       <BottomNav navigate={navigate} view={view} />
@@ -394,62 +481,122 @@ function Header({ view, navigate, handle }: { view: View; navigate: (view: View)
 function DiscoverView({
   dataStatus,
   discovery,
+  homeCity,
+  locationStatus,
+  onHomeCityChange,
   onSyncJamBase,
   query,
   setQuery,
-  searchResults,
   openShow,
 }: {
   dataStatus: string;
   discovery: NonNullable<LiveState["discovery"]>;
+  homeCity: string;
+  locationStatus: string;
+  onHomeCityChange: (city: string) => void;
   onSyncJamBase: () => Promise<void>;
   query: string;
   setQuery: (value: string) => void;
-  searchResults: Show[];
   openShow: (id: string, logger?: boolean) => void;
 }) {
-  const hero = adaptShow(discovery.shelves.popularThisWeek[0] ?? discovery.shows[0]);
-  const shelves = [
-    ["Popular this week", "Verified ratings and logs", discovery.shelves.popularThisWeek],
-    ["Trending among showgoers", "Going and logged activity", discovery.shelves.trendingAmongFriends],
-    ["Taste-led picks", "Top-rated artists in the seeded lineup", discovery.shelves.followedArtists],
-    ["Nearby", "San Francisco venues", discovery.shelves.nearby],
-    ["This weekend", "Outside Lands lineup", discovery.shelves.thisWeekend],
-    ["From the last year", `${discovery.shelves.pastYear.length} shows · Past year via JamBase`, discovery.shelves.pastYear],
+  const [mode, setMode] = useState<CatalogMode>("upcoming");
+  const [artistFilter, setArtistFilter] = useState("");
+  const [venueFilter, setVenueFilter] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const allShows = collapseFestivalShows(discovery.shows.map((show) => adaptShow(show)));
+  const locations = [...new Set(allShows.map((show) => show.city).filter(Boolean))].sort() as string[];
+  const venues = [...new Set(allShows.map((show) => show.venueName).filter(Boolean))].sort() as string[];
+  const today = todayIso();
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered = allShows
+    .filter((show) => (mode === "upcoming" ? show.date >= today : show.date < today))
+    .filter((show) => !homeCity || show.city === homeCity)
+    .filter((show) => !artistFilter || show.artistNames?.some((artist) => artist.toLocaleLowerCase().includes(artistFilter.toLocaleLowerCase())))
+    .filter((show) => !venueFilter || show.venueName === venueFilter)
+    .filter((show) => !dateFrom || show.date >= dateFrom)
+    .filter((show) => !dateTo || show.date <= dateTo)
+    .filter((show) => {
+      if (!needle) return true;
+      return [show.title, show.venueName, show.city, ...(show.artistNames ?? [])]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase().includes(needle));
+    })
+    .sort((left, right) =>
+      mode === "upcoming" ? left.date.localeCompare(right.date) : right.date.localeCompare(left.date),
+    );
+  const festival = filtered.find((show) => /outside lands/i.test(show.title) && (show.artistNames?.length ?? 0) > 1)
+    ?? filtered.find((show) => show.festivalId && (show.artistNames?.length ?? 0) > 1);
+  const hero = festival ?? filtered[0] ?? allShows.find((show) => show.date >= today) ?? allShows[0];
+  const hasStructuredFilter = Boolean(query.trim() || artistFilter || venueFilter || dateFrom || dateTo);
+  const upcomingShelves = [
+    ["Popular this week", "What showgoers are saving now", discovery.shelves.popularThisWeek],
+    ["Trending among friends", "Friends interested and going", discovery.shelves.trendingAmongFriends],
+    ["Artists for your taste", "Based on artists you follow and rate", discovery.shelves.followedArtists],
+    ["This weekend", homeCity, discovery.shelves.thisWeekend],
   ] as const;
+
+  function filteredShelf(items: readonly object[]) {
+    const ids = new Set(items.map((item) => adaptShow(item).id));
+    return filtered.filter((show) => ids.has(show.id));
+  }
 
   return (
     <div>
-      <section className="relative min-h-[62vh] overflow-hidden">
+      {mode === "upcoming" && hero && <section className="relative min-h-[56vh] overflow-hidden">
         <img alt={hero.title} className="absolute inset-0 h-full w-full object-cover" src={hero.image} />
         <div className="absolute inset-0 bg-gradient-to-b from-[#14181C]/10 via-[#14181C]/55 to-[#14181C]" />
-        <div className="relative mx-auto flex min-h-[62vh] max-w-6xl flex-col justify-end px-4 pb-10 sm:px-6">
-          <p className="text-xs font-black uppercase tracking-[0.24em] text-[#20D6AA]">Outside Lands 2026</p>
-          <h2 className="mt-3 max-w-3xl text-5xl font-black leading-[0.95] sm:text-7xl">Your shows become your story.</h2>
-          <p className="mt-5 max-w-xl text-base leading-7 text-[#D2D9DF]">Discover the set, log the feeling, save one poster moment, and find the people whose taste overlaps yours.</p>
-          <button className="mt-7 w-fit bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" onClick={() => openShow(hero.id)} type="button">Open tonight&apos;s pick</button>
+        <div className="relative mx-auto flex min-h-[56vh] max-w-6xl flex-col justify-end px-4 pb-10 sm:px-6">
+          <p className="text-xs font-black uppercase tracking-[0.24em] text-[#20D6AA]">{hero.festivalId ? "Festival guide" : "Upcoming near you"}</p>
+          <h2 className="mt-3 max-w-3xl text-5xl font-black leading-[0.95] sm:text-7xl">{hero.title}</h2>
+          <p className="mt-5 max-w-xl text-base leading-7 text-[#D2D9DF]">{hero.artistNames?.length ?? 0} artists · {formatDate(hero.date)} · {hero.venueName}</p>
+          <button className="mt-7 w-fit bg-[#20D6AA] px-5 py-3 text-sm font-black text-black" onClick={() => openShow(hero.id)} type="button">{hero.festivalId ? "Explore festival" : "View show"}</button>
         </div>
-      </section>
+      </section>}
 
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <div className="grid grid-cols-2 border border-[#42505D] p-1">
+          {(["upcoming", "past"] as CatalogMode[]).map((item) => (
+            <button className={`px-4 py-3 text-sm font-black capitalize ${mode === item ? "bg-[#20D6AA] text-black" : "text-[#9AA8B4]"}`} key={item} onClick={() => setMode(item)} type="button">{item} shows</button>
+          ))}
+        </div>
+        {mode === "past" && <div className="border-b border-white/10 py-8"><p className="text-xs font-black uppercase tracking-[0.2em] text-[#47B7EF]">Your logging workflow</p><h1 className="mt-2 text-4xl font-black">Find a show you attended</h1><p className="mt-3 text-sm text-[#9AA8B4]">Rate it, write a review, and add one poster moment.</p></div>}
+
         <label className="flex items-center gap-3 border border-[#42505D] bg-[#202830] px-4 py-3">
           <Search className="h-5 w-5 text-[#47B7EF]" />
           <input className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[#748391]" onChange={(event) => setQuery(event.target.value)} placeholder="Search artists, shows, venues, or city" value={query} />
           {query && <button aria-label="Clear search" onClick={() => setQuery("")} type="button"><X className="h-4 w-4" /></button>}
         </label>
 
+        <section className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <label className="border border-[#42505D] bg-[#202830] px-3 py-2 text-[10px] font-black uppercase text-[#81909D]">Home base
+            <select className="mt-1 block w-full bg-transparent text-sm normal-case text-white outline-none" onChange={(event) => onHomeCityChange(event.target.value)} value={homeCity}>{locations.map((city) => <option className="bg-[#202830]" key={city} value={city}>{city}</option>)}</select>
+          </label>
+          <label className="border border-[#42505D] bg-[#202830] px-3 py-2 text-[10px] font-black uppercase text-[#81909D]">Artist
+            <input className="mt-1 block w-full bg-transparent text-sm normal-case text-white outline-none placeholder:text-[#748391]" onChange={(event) => setArtistFilter(event.target.value)} placeholder="Any artist" value={artistFilter} />
+          </label>
+          <label className="border border-[#42505D] bg-[#202830] px-3 py-2 text-[10px] font-black uppercase text-[#81909D]">Venue
+            <select className="mt-1 block w-full bg-transparent text-sm normal-case text-white outline-none" onChange={(event) => setVenueFilter(event.target.value)} value={venueFilter}><option className="bg-[#202830]" value="">Any venue</option>{venues.map((venue) => <option className="bg-[#202830]" key={venue} value={venue}>{venue}</option>)}</select>
+          </label>
+          <label className="border border-[#42505D] bg-[#202830] px-3 py-2 text-[10px] font-black uppercase text-[#81909D]">From
+            <input className="mt-1 block w-full bg-transparent text-sm normal-case text-white outline-none" onChange={(event) => setDateFrom(event.target.value)} type="date" value={dateFrom} />
+          </label>
+          <label className="border border-[#42505D] bg-[#202830] px-3 py-2 text-[10px] font-black uppercase text-[#81909D]">To
+            <input className="mt-1 block w-full bg-transparent text-sm normal-case text-white outline-none" onChange={(event) => setDateTo(event.target.value)} type="date" value={dateTo} />
+          </label>
+        </section>
+
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-y border-white/10 py-3 text-xs">
-          <span className="text-[#9AA8B4]">{dataStatus}</span>
+          <span className="text-[#9AA8B4]">{locationStatus} · {dataStatus}</span>
           <button className="font-black text-[#20D6AA]" onClick={() => void onSyncJamBase()} type="button">Sync JamBase</button>
         </div>
 
-        {query.trim() ? (
-          <ShowRail eyebrow={`${searchResults.length} live matches`} openShow={openShow} shows={searchResults} title="Search results" />
-        ) : (
-          shelves.map(([title, eyebrow, items]) => (
-            <ShowRail eyebrow={eyebrow} key={title} openShow={openShow} shows={items.map((item) => adaptShow(item))} title={title} />
-          ))
-        )}
+        {mode === "past" || hasStructuredFilter ? (
+          <ShowRail eyebrow={`${filtered.length} matches in ${homeCity}`} openShow={openShow} shows={filtered} title={mode === "past" ? "Past shows" : "Search results"} />
+        ) : <>
+          {upcomingShelves.map(([title, eyebrow, items]) => <ShowRail eyebrow={eyebrow} key={title} openShow={openShow} shows={filteredShelf(items)} title={title} />)}
+          <ShowRail eyebrow={`${filtered.length} upcoming events in ${homeCity}`} openShow={openShow} shows={filtered} title="All upcoming" />
+        </>}
       </div>
     </div>
   );
@@ -517,6 +664,13 @@ function ShowView({
   });
   const artist = detail.artists[0];
   const tracks = tracksFor(artist?.name);
+  const isPast = show.date < todayIso();
+  const isFestival = detail.artists.length > 1 && Boolean(
+    show.festivalId || /festival|fest|outside lands/i.test(show.title),
+  );
+  const planningAttendees = detail.attendees.filter(
+    (attendee) => attendee.status === "interested" || attendee.status === "going",
+  );
 
   return (
     <div>
@@ -524,7 +678,7 @@ function ShowView({
         <img alt={show.title} className="absolute inset-0 h-full w-full object-cover" src={show.image} />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-[#14181C]/65 to-[#14181C]" />
         <div className="relative mx-auto flex min-h-[54vh] max-w-6xl flex-col justify-end px-4 pb-8 sm:px-6">
-          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#47B7EF]">{show.day} · {show.time} · {show.stage}</p>
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-[#47B7EF]">{isFestival ? "Festival" : isPast ? "Past show" : "Upcoming show"} · {show.day} · {show.time}</p>
           <h1 className="mt-3 max-w-4xl text-5xl font-black leading-none sm:text-7xl">{show.title}</h1>
           <button className="mt-4 flex w-fit items-center gap-2 text-sm text-[#B8C2CC]" onClick={() => show.venueId && openVenue(show.venueId)} type="button"><MapPin className="h-4 w-4" /> {show.venueName}, {show.city}</button>
         </div>
@@ -533,51 +687,60 @@ function ShowView({
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_360px]">
         <div>
           <section className="grid grid-cols-3 border border-[#42505D] bg-[#202830] p-5 text-center">
-            <Stat label="rating" value={detail.ratingCount ? detail.rating.toFixed(1) : "New"} />
-            <Stat label="verified logs" value={String(detail.ratingCount)} />
-            <Stat label="going" value={String(detail.attendanceCounts.going)} />
+            {isPast ? <>
+              <Stat label="rating" value={detail.ratingCount ? detail.rating.toFixed(1) : "New"} />
+              <Stat label="verified logs" value={String(detail.ratingCount)} />
+              <Stat label="moments" value={String(detail.media.length)} />
+            </> : <>
+              <Stat label="interested" value={String(detail.attendanceCounts.interested)} />
+              <Stat label="going" value={String(detail.attendanceCounts.going)} />
+              <Stat label="artists" value={String(detail.artists.length)} />
+            </>}
           </section>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            {(["interested", "going", "logged"] as Attendance[]).map((status) => (
-              <button className={`border px-3 py-3 text-xs font-black capitalize ${detail.attendanceStatus === status ? "border-[#20D6AA] bg-[#20D6AA] text-black" : "border-[#42505D] text-[#B8C2CC]"}`} disabled={operation !== "idle"} key={status} onClick={() => status === "logged" ? setLogOpen(true) : setAttendance(status)} type="button">{status}</button>
-            ))}
-          </div>
+          {isPast ? <button className="mt-5 w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-black" onClick={() => setLogOpen(true)} type="button">{detail.attendanceStatus === "logged" ? "Edit your show log" : "Log this show"}</button> : <div className="mt-5 grid grid-cols-2 gap-2">
+            {(["interested", "going"] as Attendance[]).map((status) => <button className={`border px-3 py-3 text-xs font-black capitalize ${detail.attendanceStatus === status ? "border-[#20D6AA] bg-[#20D6AA] text-black" : "border-[#42505D] text-[#B8C2CC]"}`} disabled={operation !== "idle"} key={status} onClick={() => setAttendance(status)} type="button">{status}</button>)}
+          </div>}
           {error && <p className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
 
           <section className="mt-9">
-            <SectionTitle eyebrow="Verified attendees only" title="Community notes" />
-            <div className="mt-4 divide-y divide-white/10 border-y border-white/10">
-              {detail.logs.length ? detail.logs.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="Be the first person to log this show." />}
+            <SectionTitle eyebrow={isFestival ? `${detail.artists.length} artists on one festival page` : "Artist and song previews"} title={isFestival ? "Festival lineup" : "Lineup"} />
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {detail.artists.map((lineupArtist) => <article className="border border-[#42505D] bg-[#202830] p-4" key={lineupArtist._id}>
+                <button className="flex w-full items-center gap-3 text-left" onClick={() => openArtist(lineupArtist._id)} type="button">
+                  <img alt={lineupArtist.name} className="h-14 w-14 object-cover" src={resolveShowImage(lineupArtist.image, [lineupArtist.name])} />
+                  <span className="min-w-0"><b className="block truncate">{lineupArtist.name}</b><small className="text-[#81909D]">{lineupArtist.genres.slice(0, 2).join(" · ") || "Live artist"}</small></span>
+                </button>
+                <div className="mt-3 space-y-2">{tracksFor(lineupArtist.name).slice(0, 2).map((track) => <button className={`flex w-full items-center gap-2 border px-3 py-2 text-left text-xs ${selectedSong === track ? "border-[#20D6AA] text-[#20D6AA]" : "border-[#34414D] text-[#B8C2CC]"}`} key={track} onClick={() => setSelectedSong(track)} type="button"><Music2 className="h-3 w-3" /> Preview {track}</button>)}</div>
+              </article>)}
             </div>
           </section>
 
-          <section className="mt-9">
-            <SectionTitle eyebrow="Convex Storage" title="Poster moments" />
-            {detail.media.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">{detail.media.map((item) => item.url ? <img alt={item.caption ?? show.title} className="aspect-square w-full object-cover" key={item._id} src={item.url} /> : null)}</div> : <EmptyLine text="No uploaded posters yet." />}
-          </section>
-
-          <section className="mt-9">
-            <ShowRail eyebrow="More from the seeded lineup" openShow={openShow} shows={detail.recommendedShows.map((item) => adaptShow(item))} title="What to see next" />
-          </section>
+          {isPast ? <>
+            <section className="mt-9">
+              <SectionTitle eyebrow="Verified attendees only" title="Community notes" />
+              <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{detail.logs.length ? detail.logs.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="Be the first person to log this show." />}</div>
+            </section>
+            <section className="mt-9">
+              <SectionTitle eyebrow="Convex Storage" title="Poster moments" />
+              {detail.media.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">{detail.media.map((item) => item.url ? <img alt={item.caption ?? show.title} className="aspect-square w-full object-cover" key={item._id} src={item.url} /> : null)}</div> : <EmptyLine text="No uploaded posters yet." />}
+            </section>
+            <ShowRail eyebrow="Based on this show" openShow={openShow} shows={collapseFestivalShows(detail.recommendedShows.map((item) => adaptShow(item)))} title="What to see next" />
+          </> : <section className="mt-9">
+            <SectionTitle eyebrow="Friends and second-degree showgoers" title="Who is planning to go" />
+            {planningAttendees.length ? <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{planningAttendees.map((attendee) => <div className="flex items-center gap-3 py-4" key={attendee._id}><Avatar color={attendee.user?.avatarColor} name={attendee.user?.handle ?? "showgoer"} /><div className="flex-1"><b>@{attendee.user?.handle ?? "showgoer"}</b><p className="text-xs capitalize text-[#81909D]">{attendee.status}</p></div></div>)}</div> : <EmptyLine text="Be the first friend to mark interest." />}
+          </section>}
         </div>
 
         <aside className="space-y-5">
-          {artist && (
-            <button className="w-full border border-[#42505D] bg-[#202830] p-5 text-left" onClick={() => openArtist(artist._id)} type="button">
-              <p className="text-xs font-black uppercase text-[#20D6AA]">Artist</p>
-              <h2 className="mt-2 text-3xl font-black">{artist.name}</h2>
-              <p className="mt-2 text-sm text-[#9AA8B4]">{artist.hometown} · {artist.genres.join(" · ")}</p>
-              <p className="mt-4 text-sm leading-6 text-[#B8C2CC]">{artist.bio}</p>
-            </button>
-          )}
-          <a className="flex items-center justify-between border border-[#42505D] p-4 text-sm" href={show.jambaseUrl} rel="noreferrer" target="_blank">JamBase event data <ExternalLink className="h-4 w-4" /></a>
+          {detail.venue && <button className="w-full border border-[#42505D] bg-[#202830] p-5 text-left" onClick={() => openVenue(detail.venue!._id)} type="button"><p className="text-xs font-black uppercase text-[#47B7EF]">Venue {isPast ? "archive" : "review"}</p><h2 className="mt-2 text-2xl font-black">{detail.venue.name}</h2><p className="mt-2 text-sm text-[#9AA8B4]">{detail.venue.city}, {detail.venue.region}</p><p className="mt-4 text-sm leading-6 text-[#B8C2CC]">{detail.venue.description || "Open the venue page for its past and upcoming calendar."}</p></button>}
+          {show.jambaseUrl && <a className="flex items-center justify-between border border-[#42505D] p-4 text-sm" href={show.jambaseUrl} rel="noreferrer" target="_blank">JamBase event data <ExternalLink className="h-4 w-4" /></a>}
           {show.ticketUrl && <a className="flex items-center justify-between bg-[#47B7EF] p-4 text-sm font-black text-black" href={show.ticketUrl} rel="noreferrer" target="_blank">Tickets <Ticket className="h-4 w-4" /></a>}
-          <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-black" onClick={() => setLogOpen(true)} type="button">Log this show</button>
+          {!isPast && artist && <button className="w-full border border-[#42505D] px-5 py-4 text-sm font-black text-[#20D6AA]" onClick={() => openArtist(artist._id)} type="button">Open artist profile</button>}
         </aside>
       </div>
 
-      {logOpen && (
+      {isPast && logOpen && (
         <LogSheet
           caption={caption}
           chooseFile={chooseFile}
@@ -646,22 +809,35 @@ function ProfileView({ profile, memories, openShow }: { profile: LiveState["prof
   return <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your show identity" /><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${profile.stats.shows} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#42505D] bg-[#263139] p-6"><p className="text-xs font-black uppercase text-[#47B7EF]">All seeded activity</p><h2 className="mt-2 text-3xl font-black">Your live music archive</h2><div className="mt-7 grid grid-cols-3 text-center"><Stat label="shows" value={String(profile.stats.shows)} /><Stat label="artists" value={String(profile.stats.artists)} /><Stat label="venues" value={String(profile.stats.venues)} /></div></section><section className="mt-8"><SectionTitle eyebrow="Highest verified ratings" title="Favorite shows" />{profile.favoriteShows.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{profile.favoriteShows.map((log) => { const memory = toMemory(log as Record<string, unknown>); return <button className="aspect-[2/3] overflow-hidden border border-[#42505D]" key={log._id} onClick={() => openShow(log.showId)} type="button"><img alt={log.showTitle} className="h-full w-full object-cover" src={memory.photo} /></button>; })}</div> : <EmptyLine text="Your top shows will appear after you log them." />}</section><section className="mt-8 border-t border-white/10 pt-6"><SectionTitle eyebrow="One poster per persisted show" title="Live grid" />{memories.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">{memories.map((memory) => <button className="aspect-square overflow-hidden" key={memory.id} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover" src={memory.photo} /></button>)}</div> : <EmptyLine text="No poster moments yet." />}</section></div>;
 }
 
-function ArtistView({ detail, onBack, openShow }: { detail: LiveState["artistDetail"]; onBack: () => void; openShow: (id: string) => void }) {
+function ArtistView({ detail, onBack, openShow, onFollow }: { detail: LiveState["artistDetail"]; onBack: () => void; openShow: (id: string) => void; onFollow: (id: string) => Promise<unknown> }) {
   if (detail === undefined) return <StatusPanel title="Loading artist" detail="Reading the seeded JamBase profile..." loading />;
   if (!detail) return <StatusPanel title="Artist unavailable" detail="Return to the show and choose another artist." />;
   const artist = detail.artist;
-  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><BackButton onClick={onBack} /><section className="mt-6 grid gap-5 sm:grid-cols-[180px_1fr]"><img alt={artist.name} className="aspect-square w-full object-cover" src={resolveShowImage(artist.image, [artist.name])} /><div><p className="text-xs font-black uppercase text-[#20D6AA]">Artist · {detail.ratingCount} verified ratings</p><h1 className="mt-2 text-4xl font-black">{artist.name}</h1><p className="mt-2 text-sm text-[#9AA8B4]">{artist.hometown} · {artist.genres.join(" · ")}</p><p className="mt-4 max-w-2xl text-sm leading-6 text-[#B8C2CC]">{artist.bio}</p>{artist.jambaseUrl && <a className="mt-5 inline-flex items-center gap-2 text-sm text-[#47B7EF]" href={artist.jambaseUrl} rel="noreferrer" target="_blank">JamBase artist profile <ExternalLink className="h-4 w-4" /></a>}</div></section><ShowRail eyebrow={`${detail.rating.toFixed(1)} average rating`} openShow={openShow} shows={detail.shows.map((show) => adaptShow(show))} title="Shows" /><section className="mt-9"><SectionTitle eyebrow="Verified show logs" title="Reviews" /><div className="mt-4 divide-y divide-white/10">{detail.reviews.length ? detail.reviews.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="No artist reviews yet." />}</div></section></div>;
+  const shows = collapseFestivalShows(detail.shows.map((show) => adaptShow(show)));
+  const upcoming = shows.filter((show) => show.date >= todayIso()).sort((a, b) => a.date.localeCompare(b.date));
+  const past = shows.filter((show) => show.date < todayIso()).sort((a, b) => b.date.localeCompare(a.date));
+  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+    <BackButton onClick={onBack} />
+    <section className="mt-6 grid gap-5 sm:grid-cols-[180px_1fr]"><img alt={artist.name} className="aspect-square w-full object-cover" src={resolveShowImage(artist.image, [artist.name])} /><div><p className="text-xs font-black uppercase text-[#20D6AA]">Artist · {detail.ratingCount} verified ratings</p><div className="mt-2 flex flex-wrap items-center justify-between gap-3"><h1 className="text-4xl font-black">{artist.name}</h1><button className={`flex items-center gap-2 border px-4 py-2 text-sm font-black ${detail.isFollowing ? "border-[#20D6AA] bg-[#20D6AA] text-black" : "border-[#42505D]"}`} onClick={() => void onFollow(artist._id)} type="button"><Heart className={`h-4 w-4 ${detail.isFollowing ? "fill-current" : ""}`} /> {detail.isFollowing ? "Following" : "Follow"}</button></div><p className="mt-2 text-sm text-[#9AA8B4]">{artist.hometown} · {artist.genres.join(" · ")} · {detail.followerCount} followers</p><p className="mt-4 max-w-2xl text-sm leading-6 text-[#B8C2CC]">{artist.bio}</p><div className="mt-4 flex flex-wrap gap-2">{tracksFor(artist.name).map((track) => <span className="flex items-center gap-2 border border-[#34414D] px-3 py-2 text-xs text-[#B8C2CC]" key={track}><Music2 className="h-3 w-3" /> {track}</span>)}</div>{artist.jambaseUrl && <a className="mt-5 inline-flex items-center gap-2 text-sm text-[#47B7EF]" href={artist.jambaseUrl} rel="noreferrer" target="_blank">JamBase artist profile <ExternalLink className="h-4 w-4" /></a>}</div></section>
+    <ShowRail eyebrow={`${upcoming.length} on the calendar`} openShow={openShow} shows={upcoming} title="Upcoming shows" />
+    <ShowRail eyebrow={`${past.length} in the archive`} openShow={openShow} shows={past} title="Past shows" />
+    <section className="mt-9"><SectionTitle eyebrow="Verified show logs" title="Reviews" /><div className="mt-4 divide-y divide-white/10">{detail.reviews.length ? detail.reviews.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="No artist reviews yet." />}</div></section>
+  </div>;
 }
 
-function VenueView({ detail, onBack, openShow }: { detail: LiveState["venueDetail"]; onBack: () => void; openShow: (id: string) => void }) {
+function VenueView({ detail, onBack, openShow, onFollow }: { detail: LiveState["venueDetail"]; onBack: () => void; openShow: (id: string) => void; onFollow: (id: string) => Promise<unknown> }) {
   if (detail === undefined) return <StatusPanel title="Loading venue" detail="Reading the venue archive..." loading />;
   if (!detail) return <StatusPanel title="Venue unavailable" detail="Return to the show and choose another venue." />;
   const venue = detail.venue;
-  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><BackButton onClick={onBack} /><section className="mt-6"><img alt={venue.name} className="aspect-[16/7] w-full object-cover" src={resolveShowImage(venue.image, [venue.name])} /><div className="mt-5 flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase text-[#47B7EF]">Venue</p><h1 className="mt-2 text-4xl font-black">{venue.name}</h1><p className="mt-2 flex items-center gap-2 text-sm text-[#9AA8B4]"><MapPin className="h-4 w-4" /> {venue.city}, {venue.region}</p></div><div className="text-right"><strong className="text-3xl text-[#20D6AA]">{detail.ratingCount ? detail.rating.toFixed(1) : "New"}</strong><p className="text-[10px] text-[#81909D]">{detail.ratingCount} ratings</p></div></div><p className="mt-5 max-w-3xl text-sm leading-6 text-[#B8C2CC]">{venue.description}</p><div className="mt-5 flex gap-3">{venue.website && <a className="flex items-center gap-2 border border-[#42505D] px-4 py-3 text-sm" href={venue.website} rel="noreferrer" target="_blank">Website <ExternalLink className="h-4 w-4" /></a>}{venue.jambaseUrl && <a className="flex items-center gap-2 border border-[#42505D] px-4 py-3 text-sm" href={venue.jambaseUrl} rel="noreferrer" target="_blank">JamBase <ExternalLink className="h-4 w-4" /></a>}</div></section><ShowRail eyebrow={`${detail.shows.length} seeded events`} openShow={openShow} shows={detail.shows.map((show) => adaptShow(show))} title="Shows at this venue" /></div>;
+  const shows = collapseFestivalShows(detail.shows.map((show) => adaptShow(show)));
+  const upcoming = shows.filter((show) => show.date >= todayIso()).sort((a, b) => a.date.localeCompare(b.date));
+  const past = shows.filter((show) => show.date < todayIso()).sort((a, b) => b.date.localeCompare(a.date));
+  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><BackButton onClick={onBack} /><section className="mt-6"><img alt={venue.name} className="aspect-[16/7] w-full object-cover" src={resolveShowImage(venue.image, [venue.name])} /><div className="mt-5 flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-black uppercase text-[#47B7EF]">Venue</p><h1 className="mt-2 text-4xl font-black">{venue.name}</h1><p className="mt-2 flex items-center gap-2 text-sm text-[#9AA8B4]"><MapPin className="h-4 w-4" /> {venue.city}, {venue.region}</p></div><div className="flex items-center gap-4"><div className="text-right"><strong className="text-3xl text-[#20D6AA]">{detail.ratingCount ? detail.rating.toFixed(1) : "New"}</strong><p className="text-[10px] text-[#81909D]">{detail.ratingCount} ratings</p></div><button className={`flex items-center gap-2 border px-4 py-2 text-sm font-black ${detail.isFollowing ? "border-[#20D6AA] bg-[#20D6AA] text-black" : "border-[#42505D]"}`} onClick={() => void onFollow(venue._id)} type="button"><Heart className={`h-4 w-4 ${detail.isFollowing ? "fill-current" : ""}`} /> {detail.isFollowing ? "Following" : "Follow"}</button></div></div><p className="mt-2 text-xs text-[#81909D]">{detail.followerCount} followers</p><p className="mt-5 max-w-3xl text-sm leading-6 text-[#B8C2CC]">{venue.description}</p><div className="mt-5 flex gap-3">{venue.website && <a className="flex items-center gap-2 border border-[#42505D] px-4 py-3 text-sm" href={venue.website} rel="noreferrer" target="_blank">Website <ExternalLink className="h-4 w-4" /></a>}{venue.jambaseUrl && <a className="flex items-center gap-2 border border-[#42505D] px-4 py-3 text-sm" href={venue.jambaseUrl} rel="noreferrer" target="_blank">JamBase <ExternalLink className="h-4 w-4" /></a>}</div></section><ShowRail eyebrow={`${upcoming.length} on the calendar`} openShow={openShow} shows={upcoming} title="Upcoming shows" /><ShowRail eyebrow={`${past.length} in the archive`} openShow={openShow} shows={past} title="Past shows" /><section className="mt-9"><SectionTitle eyebrow="Verified attendees" title="Venue reviews" /><div className="mt-4 divide-y divide-white/10">{detail.reviews.length ? detail.reviews.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="No venue reviews yet." />}</div></section></div>;
 }
 
 function ShowRail({ title, eyebrow, shows, openShow }: { title: string; eyebrow: string; shows: Show[]; openShow: (id: string) => void }) {
-  return <section className="mt-10"><SectionTitle eyebrow={eyebrow} title={title} />{shows.length ? <div className="hide-scrollbar mt-4 flex gap-3 overflow-x-auto pb-2">{shows.map((show) => <ShowCard key={show.id} openShow={openShow} show={show} />)}</div> : <EmptyLine text="No shows in this shelf yet." />}</section>;
+  const visibleShows = shows.slice(0, 24);
+  return <section className="mt-10"><SectionTitle eyebrow={eyebrow} title={title} />{visibleShows.length ? <div className="hide-scrollbar mt-4 flex gap-3 overflow-x-auto pb-2">{visibleShows.map((show) => <ShowCard key={show.id} openShow={openShow} show={show} />)}</div> : <EmptyLine text="No shows in this shelf yet." />}</section>;
 }
 
 function ShowCard({ show, openShow }: { show: Show; openShow: (id: string) => void }) {

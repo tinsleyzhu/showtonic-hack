@@ -48,6 +48,8 @@ export function useShowtonic({
   const createLog = useMutation(api.logs.create);
   const generateUploadUrl = useMutation(api.media.generateUploadUrl);
   const attachMedia = useMutation(api.media.attach);
+  const toggleArtistFollowMutation = useMutation(api.follows.toggleArtist);
+  const toggleVenueFollowMutation = useMutation(api.follows.toggleVenue);
   const syncCatalogAction = useAction(api.jambase.syncCatalog);
   const today = localDate();
 
@@ -91,12 +93,26 @@ export function useShowtonic({
   const tasteMatches = useQuery(api.taste.similar, userId ? { userId } : "skip");
   const artistDetail = useQuery(
     api.artists.get,
-    selectedArtistId ? { artistId: selectedArtistId as Id<"artists"> } : "skip",
+    userId && selectedArtistId
+      ? { userId, artistId: selectedArtistId as Id<"artists"> }
+      : "skip",
   );
   const venueDetail = useQuery(
     api.venues.get,
-    selectedVenueId ? { venueId: selectedVenueId as Id<"venues"> } : "skip",
+    userId && selectedVenueId
+      ? { userId, venueId: selectedVenueId as Id<"venues"> }
+      : "skip",
   );
+
+  async function toggleArtistFollow(artistId: Id<"artists">) {
+    if (!userId) throw new Error("Local user is still loading");
+    return toggleArtistFollowMutation({ userId, artistId });
+  }
+
+  async function toggleVenueFollow(venueId: Id<"venues">) {
+    if (!userId) throw new Error("Local user is still loading");
+    return toggleVenueFollowMutation({ userId, venueId });
+  }
 
   async function setAttendance(showId: Id<"shows">, status: AttendanceStatus) {
     if (!userId) {
@@ -203,6 +219,8 @@ export function useShowtonic({
     showDetail,
     syncCatalog,
     tasteMatches: tasteMatches ?? [],
+    toggleArtistFollow,
+    toggleVenueFollow,
     user,
     venueDetail,
     saveLog,

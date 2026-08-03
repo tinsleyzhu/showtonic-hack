@@ -54,7 +54,7 @@ function toShow(summary) {
     day: summary.day ?? "Date TBA",
     time: summary.time ?? "Time TBA",
     stage: summary.stage ?? "Stage TBA",
-    venueId: String(summary.venueId ?? summary.venueName),
+    venueId: summary.venueId ? String(summary.venueId) : "",
     venueName: summary.venueName,
     city: summary.city,
     region: summary.region,

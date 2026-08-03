@@ -92,6 +92,24 @@ export default defineSchema({
     .index("by_show", ["showId"])
     .index("by_user_show", ["userId", "showId"]),
 
+  artistFollows: defineTable({
+    userId: v.id("users"),
+    artistId: v.id("artists"),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_artist", ["artistId"])
+    .index("by_user_artist", ["userId", "artistId"]),
+
+  venueFollows: defineTable({
+    userId: v.id("users"),
+    venueId: v.id("venues"),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_venue", ["venueId"])
+    .index("by_user_venue", ["userId", "venueId"]),
+
   media: defineTable({
     logId: v.id("logs"),
     userId: v.id("users"),

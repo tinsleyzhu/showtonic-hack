@@ -103,3 +103,21 @@ test("normalizeUpcomingEvents supports the JamBase v3 event schema", () => {
     jambaseUrl: "https://www.jambase.com/festival/outside-lands-2026",
   });
 });
+
+test("normalizeUpcomingEvents identifies a multi-artist festival as one event", () => {
+  const [event] = normalizeUpcomingEvents({
+    events: [{
+      identifier: "jambase:outside-lands-2026",
+      name: "Outside Lands",
+      startDate: "2026-08-07T12:00:00",
+      location: { name: "Golden Gate Park", city: "San Francisco" },
+      performer: [
+        { identifier: "jambase:artist-a", name: "Artist A" },
+        { identifier: "jambase:artist-b", name: "Artist B" },
+      ],
+    }],
+  });
+
+  assert.equal(event.festivalId, "outside-lands-2026");
+  assert.deepEqual(event.artistNames, ["Artist A", "Artist B"]);
+});

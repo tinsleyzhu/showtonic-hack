@@ -16,6 +16,9 @@ export async function upsertAttendance(
   if (!user || !show) {
     throw new Error("Missing user or show");
   }
+  if (status === "logged" && show.date >= new Date().toISOString().slice(0, 10)) {
+    throw new Error("Upcoming shows cannot be logged");
+  }
 
   const existing = await ctx.db
     .query("attendance")

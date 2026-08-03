@@ -55,6 +55,13 @@ function validateJamBaseSourceUrl(sourceUrl) {
   return url.toString();
 }
 
+function slug(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function normalizeUpcomingEvents(payload, festivalId) {
   const events = Array.isArray(payload?.events) ? payload.events : [];
 
@@ -72,17 +79,23 @@ function normalizeUpcomingEvents(payload, festivalId) {
     )
       ? performerIds
       : undefined;
+    const title = String(event.title ?? event.name ?? "");
+    const date = String(event.date ?? event.startDate ?? "").slice(0, 10);
+    const inferredFestivalId =
+      performers.length > 1 && /festival|fest|outside lands/i.test(title)
+        ? `${slug(title)}-${date.slice(0, 4)}`
+        : undefined;
 
     return {
       jambaseId: String(event.identifier ?? event.id ?? event.jambaseId ?? ""),
-      title: String(event.title ?? event.name ?? ""),
-      date: String(event.date ?? event.startDate ?? "").slice(0, 10),
+      title,
+      date,
       startTime: startTime(event.startDate),
       venueName: String(venue.name ?? event.venueName ?? ""),
       city: valueName(venue.city ?? address.addressLocality ?? event.city),
       region: valueName(venue.region ?? address.addressRegion ?? event.region) || undefined,
       image: firstImage(event),
-      festivalId,
+      festivalId: festivalId ?? inferredFestivalId,
       stage: event.stage ?? undefined,
       isHeadliner: Boolean(event.isHeadliner),
       artistNames: performers
