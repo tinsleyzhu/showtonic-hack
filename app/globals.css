@@ -49,3 +49,25 @@ button:disabled {
   background: #20d6aa;
   color: #0e151b;
 }
+
+@keyframes onboarding-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.onboarding-reveal {
+  animation: onboarding-reveal 420ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-reveal {
+    animation: none;
+  }
+}
