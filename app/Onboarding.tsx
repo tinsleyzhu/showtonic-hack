@@ -1,24 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { OnboardingIntent, OnboardingProfile } from "./onboarding.d";
+import type * as OnboardingApi from "./onboarding.d";
 
-type OnboardingProfile = {
-  completed: boolean;
-  handle: string;
-  favoriteArtists: string[];
-};
-
-type OnboardingIntent = "explore" | "log";
-
-type OnboardingRuntime = {
-  ONBOARDING_ARTISTS: readonly string[];
-  validateOnboardingHandle(value: string): { handle: string; error: string };
-};
+type OnboardingRuntime = Pick<
+  typeof OnboardingApi,
+  "ONBOARDING_ARTISTS" | "normalizeFavoriteArtists" | "validateOnboardingHandle"
+>;
 
 // Import through CommonJS to preserve the Task 1 runtime dependency without
 // TypeScript confusing this file with onboarding.js on case-insensitive disks.
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- See the filename-collision note above.
-const { ONBOARDING_ARTISTS, validateOnboardingHandle } = require("./onboarding.js") as OnboardingRuntime;
+const { ONBOARDING_ARTISTS, normalizeFavoriteArtists, validateOnboardingHandle } = require("./onboarding.js") as OnboardingRuntime;
 
 type OnboardingProps = {
   initialProfile: OnboardingProfile;
@@ -59,7 +53,9 @@ function stepNumber(step: OnboardingStep) {
 export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
   const [step, setStep] = useState<OnboardingStep>("welcome");
   const [handle, setHandle] = useState(initialProfile.handle);
-  const [favoriteArtists, setFavoriteArtists] = useState<string[]>(initialProfile.favoriteArtists);
+  const [favoriteArtists, setFavoriteArtists] = useState(() =>
+    normalizeFavoriteArtists(initialProfile.favoriteArtists),
+  );
   const [handleError, setHandleError] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
 
