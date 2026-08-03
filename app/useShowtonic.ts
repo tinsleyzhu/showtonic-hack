@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
-import { getStoredHandle, parseUploadResponse } from "./liveData.js";
+import { parseUploadResponse } from "./liveData.js";
 
 type LeaderboardScope = "city" | "artist" | "venue";
 type AttendanceStatus = "interested" | "going" | "logged";
 
 type HookArgs = {
+  handle?: string;
   selectedShowId?: string;
   selectedArtistId?: string;
   selectedVenueId?: string;
@@ -28,6 +29,7 @@ type SaveLogInput = {
 };
 
 export function useShowtonic({
+  handle,
   selectedShowId,
   selectedArtistId,
   selectedVenueId,
@@ -45,7 +47,16 @@ export function useShowtonic({
 
   useEffect(() => {
     let active = true;
-    const handle = getStoredHandle(window.localStorage);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the prior handle before resolving the next identity.
+    setUser(null);
+    setIdentityError("");
+
+    if (!handle) {
+      return () => {
+        active = false;
+      };
+    }
+
     getOrCreateUser({ handle })
       .then((nextUser) => {
         if (active && nextUser) {
@@ -60,7 +71,7 @@ export function useShowtonic({
     return () => {
       active = false;
     };
-  }, [getOrCreateUser]);
+  }, [getOrCreateUser, handle]);
 
   const userId = user?._id;
   const discovery = useQuery(api.discovery.home, userId ? { userId } : "skip");
@@ -174,7 +185,7 @@ export function useShowtonic({
     diary,
     discovery,
     identityError,
-    isIdentityLoading: !user && !identityError,
+    isIdentityLoading: Boolean(handle) && !user && !identityError,
     leaderboard,
     operation,
     profile,

@@ -54,8 +54,15 @@ Run the app:
 npm run dev
 ```
 
-The browser stores the local handle `tinsley` in `localStorage` and resolves the corresponding
-Convex user on every load. There is deliberately no authentication in the hackathon build.
+After onboarding, the browser stores the chosen local handle in `localStorage` and resolves the
+corresponding Convex user on every load. There is deliberately no authentication in the hackathon
+build.
+
+## Onboarding
+
+Showtonic records versioned local onboarding completion before it creates the local-handle Convex
+identity. Selected artists reorder the Taste-led picks shelf, and clearing site storage replays the
+onboarding flow.
 
 JamBase artist, venue, and event data is baked into the idempotent seed so the demo does not
 depend on an external API call. JamBase source links remain visible in the interface.

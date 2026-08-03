@@ -124,6 +124,26 @@ test("writes normalized profile fields before the completion marker", () => {
   ]);
 });
 
+test("keeps onboarding complete when storage writes fail", () => {
+  const failingStorage = {
+    setItem() {
+      throw new Error("Storage unavailable");
+    },
+  };
+
+  assert.deepEqual(
+    writeOnboardingProfile(failingStorage, {
+      handle: "@Maya",
+      favoriteArtists: ["Doechii", "Charli XCX"],
+    }),
+    {
+      completed: true,
+      handle: "maya",
+      favoriteArtists: ["Doechii", "Charli XCX"],
+    },
+  );
+});
+
 test("does not persist or complete onboarding for an invalid handle", () => {
   const storage = createStorage();
 

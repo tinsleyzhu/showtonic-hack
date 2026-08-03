@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import type { Id } from "../convex/_generated/dataModel";
+import { Onboarding } from "./Onboarding";
 import { vibes, type Show } from "./data";
 import {
   describeSaveResult,
@@ -31,6 +32,8 @@ import {
   toShow,
   type LiveMemory,
 } from "./liveData.js";
+import type { OnboardingIntent, OnboardingProfile } from "./onboarding.d";
+import type * as OnboardingApi from "./onboarding.d";
 import { useShowtonic } from "./useShowtonic";
 
 type View = "discover" | "show" | "diary" | "leaderboard" | "profile" | "artist" | "venue";
@@ -40,6 +43,14 @@ type LiveState = ReturnType<typeof useShowtonic>;
 type ShowDetailPayload = NonNullable<LiveState["showDetail"]>;
 type ArtistDetailPayload = NonNullable<LiveState["artistDetail"]>;
 type VenueDetailPayload = NonNullable<LiveState["venueDetail"]>;
+type OnboardingRuntime = Pick<
+  typeof OnboardingApi,
+  "findFirstPreferredShow" | "prioritizeShowsByArtists" | "readOnboardingProfile" | "writeOnboardingProfile"
+>;
+
+// Keep the Task 1 CommonJS runtime separate from its declarations on case-insensitive disks.
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- See the filename-collision note above.
+const { findFirstPreferredShow, prioritizeShowsByArtists, readOnboardingProfile, writeOnboardingProfile } = require("./onboarding.js") as OnboardingRuntime;
 
 const tracksByArtist: Record<string, string[]> = {
   "Charli XCX": ["360", "Apple", "Von dutch"],
@@ -66,6 +77,8 @@ function formatDate(date: string) {
 }
 
 export default function Home() {
+  const [onboardingProfile, setOnboardingProfile] = useState<OnboardingProfile | null>(null);
+  const [pendingOnboardingIntent, setPendingOnboardingIntent] = useState<OnboardingIntent | null>(null);
   const [view, setView] = useState<View>("discover");
   const [selectedShowId, setSelectedShowId] = useState("");
   const [selectedArtistId, setSelectedArtistId] = useState("");
@@ -92,6 +105,7 @@ export default function Home() {
   }>();
 
   const live = useShowtonic({
+    handle: onboardingProfile?.completed ? onboardingProfile.handle : undefined,
     selectedShowId,
     selectedArtistId,
     selectedVenueId,
@@ -113,14 +127,57 @@ export default function Home() {
   );
 
   useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- The client-only storage read is the onboarding gate's source of truth.
+      setOnboardingProfile(readOnboardingProfile(window.localStorage));
+    } catch {
+      setOnboardingProfile(readOnboardingProfile());
+    }
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (mediaPreview) URL.revokeObjectURL(mediaPreview);
     };
   }, [mediaPreview]);
 
+  useEffect(() => {
+    if (pendingOnboardingIntent === "explore") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Explore completes directly on the Discover view.
+      setView("discover");
+      setPendingOnboardingIntent(null);
+      return;
+    }
+    if (pendingOnboardingIntent !== "log" || !onboardingProfile?.completed || shows.length === 0) {
+      return;
+    }
+
+    const firstShow = findFirstPreferredShow(shows, onboardingProfile.favoriteArtists);
+    if (!firstShow) return;
+
+    setSelectedShowId(firstShow.id);
+    setSelectedSong(tracksFor(firstShow.artistNames?.[0])[0]);
+    setLogOpen(true);
+    setView("show");
+    setPendingOnboardingIntent(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [onboardingProfile, pendingOnboardingIntent, shows]);
+
   function navigate(next: View) {
     setView(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function completeOnboarding(profile: OnboardingProfile, intent: OnboardingIntent) {
+    let nextProfile: OnboardingProfile;
+    try {
+      nextProfile = writeOnboardingProfile(window.localStorage, profile);
+    } catch {
+      nextProfile = writeOnboardingProfile(undefined, profile);
+    }
+
+    setOnboardingProfile(nextProfile);
+    setPendingOnboardingIntent(nextProfile.completed ? intent : null);
   }
 
   function openShow(showId: string, openLogger = false) {
@@ -229,6 +286,12 @@ export default function Home() {
     }
   }
 
+  if (onboardingProfile === null) {
+    return <StatusPanel title="Preparing your first set" detail="Setting up your local music diary..." loading />;
+  }
+  if (!onboardingProfile.completed) {
+    return <Onboarding initialProfile={onboardingProfile} onComplete={completeOnboarding} />;
+  }
   if (live.identityError) {
     return <StatusPanel title="Could not create your local profile" detail={live.identityError} />;
   }
@@ -273,6 +336,7 @@ export default function Home() {
           query={query}
           searchResults={live.searchResults.map((show) => adaptShow(show))}
           setQuery={setQuery}
+          favoriteArtists={onboardingProfile.favoriteArtists}
         />
       )}
 
@@ -378,12 +442,14 @@ function Header({ view, navigate, handle }: { view: View; navigate: (view: View)
 
 function DiscoverView({
   discovery,
+  favoriteArtists,
   query,
   setQuery,
   searchResults,
   openShow,
 }: {
   discovery: NonNullable<LiveState["discovery"]>;
+  favoriteArtists: string[];
   query: string;
   setQuery: (value: string) => void;
   searchResults: Show[];
@@ -393,7 +459,11 @@ function DiscoverView({
   const shelves = [
     ["Popular this week", "Verified ratings and logs", discovery.shelves.popularThisWeek],
     ["Trending among showgoers", "Going and logged activity", discovery.shelves.trendingAmongFriends],
-    ["Taste-led picks", "Top-rated artists in the seeded lineup", discovery.shelves.followedArtists],
+    [
+      "Taste-led picks",
+      favoriteArtists.length ? "Based on your setup picks" : "Top-rated artists in the seeded lineup",
+      prioritizeShowsByArtists(discovery.shelves.followedArtists, favoriteArtists),
+    ],
     ["Nearby", "San Francisco venues", discovery.shelves.nearby],
     ["This weekend", "Outside Lands lineup", discovery.shelves.thisWeekend],
   ] as const;
