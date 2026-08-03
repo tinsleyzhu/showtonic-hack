@@ -47,12 +47,12 @@ type ArtistDetailPayload = NonNullable<LiveState["artistDetail"]>;
 type VenueDetailPayload = NonNullable<LiveState["venueDetail"]>;
 type OnboardingRuntime = Pick<
   typeof OnboardingApi,
-  "findFirstPreferredShow" | "prioritizeShowsByArtists" | "readOnboardingProfile" | "writeOnboardingProfile"
+  "findFirstHistoricalPreferredShow" | "prioritizeShowsByArtists" | "readOnboardingProfile" | "writeOnboardingProfile"
 >;
 
 // Keep the Task 1 CommonJS runtime separate from its declarations on case-insensitive disks.
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- See the filename-collision note above.
-const { findFirstPreferredShow, prioritizeShowsByArtists, readOnboardingProfile, writeOnboardingProfile } = require("./onboarding.js") as OnboardingRuntime;
+const { findFirstHistoricalPreferredShow, prioritizeShowsByArtists, readOnboardingProfile, writeOnboardingProfile } = require("./onboarding.js") as OnboardingRuntime;
 
 const tracksByArtist: Record<string, string[]> = {
   "Charli XCX": ["360", "Apple", "Von dutch"],
@@ -182,7 +182,9 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!onboardingProfile?.completed) return;
+    if (!onboardingProfile?.completed || shows.length === 0) return;
+
+    const available = [...new Set(shows.map((show) => show.city).filter(Boolean))] as string[];
 
     let saved: string | null = null;
     try {
@@ -190,7 +192,7 @@ export default function Home() {
     } catch {
       // Continue with the in-memory default when storage is unavailable.
     }
-    if (saved) {
+    if (saved && available.includes(saved)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Hydrate the client-only home base from browser storage.
       setHomeCity(saved);
       return;
@@ -202,7 +204,6 @@ export default function Home() {
     setLocationStatus("Finding your nearest show city...");
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        const available = [...new Set(shows.map((show) => show.city).filter(Boolean))] as string[];
         const city = nearestHomeCity(coords.latitude, coords.longitude, available);
         setHomeCity(city);
         try {
@@ -234,9 +235,17 @@ export default function Home() {
       return;
     }
 
-    const loggableShows = shows.filter((show) => show.date < todayIso());
-    const firstShow = findFirstPreferredShow(loggableShows, onboardingProfile.favoriteArtists);
-    if (!firstShow) return;
+    const firstShow = findFirstHistoricalPreferredShow(
+      shows,
+      onboardingProfile.favoriteArtists,
+      todayIso(),
+    );
+    if (!firstShow) {
+      setView("discover");
+      setNotice("No past shows are ready to log yet. Sync JamBase or browse the past catalog.");
+      setPendingOnboardingIntent(null);
+      return;
+    }
 
     setSelectedShowId(firstShow.id);
     setSelectedSong(tracksFor(firstShow.artistNames?.[0])[0]);
@@ -593,19 +602,21 @@ function DiscoverView({
   const venues = [...new Set(allShows.map((show) => show.venueName).filter(Boolean))].sort() as string[];
   const today = todayIso();
   const needle = query.trim().toLocaleLowerCase();
-  const filtered = allShows
-    .filter((show) => (mode === "upcoming" ? show.date >= today : show.date < today))
-    .filter((show) => !homeCity || show.city === homeCity)
-    .filter((show) => !artistFilter || show.artistNames?.some((artist) => artist.toLocaleLowerCase().includes(artistFilter.toLocaleLowerCase())))
-    .filter((show) => !venueFilter || show.venueName === venueFilter)
-    .filter((show) => !dateFrom || show.date >= dateFrom)
-    .filter((show) => !dateTo || show.date <= dateTo)
-    .filter((show) => {
-      if (!needle) return true;
-      return [show.title, show.venueName, show.city, ...(show.artistNames ?? [])]
+  function matchesActiveFilters(show: Show) {
+    if (mode === "upcoming" ? show.date < today : show.date >= today) return false;
+    if (homeCity && show.city !== homeCity) return false;
+    if (!artistFilter || show.artistNames?.some((artist) => artist.toLocaleLowerCase().includes(artistFilter.toLocaleLowerCase()))) {
+      if (venueFilter && show.venueName !== venueFilter) return false;
+      if (dateFrom && show.date < dateFrom) return false;
+      if (dateTo && show.date > dateTo) return false;
+      return !needle || [show.title, show.venueName, show.city, ...(show.artistNames ?? [])]
         .filter(Boolean)
         .some((value) => String(value).toLocaleLowerCase().includes(needle));
-    })
+    }
+    return false;
+  }
+  const filtered = allShows
+    .filter(matchesActiveFilters)
     .sort((left, right) =>
       mode === "upcoming" ? left.date.localeCompare(right.date) : right.date.localeCompare(left.date),
     );
@@ -623,6 +634,10 @@ function DiscoverView({
     ],
     ["This weekend", homeCity, discovery.shelves.thisWeekend],
   ] as const;
+  const filteredTasteLed = prioritizeShowsByArtists(
+    discovery.shelves.followedArtists.map((show) => adaptShow(show)).filter(matchesActiveFilters),
+    favoriteArtists,
+  );
 
   function filteredShelf(items: readonly object[]) {
     const visibleIds = new Set(filtered.map((show) => show.id));
@@ -681,8 +696,13 @@ function DiscoverView({
           <button className="font-black text-[#20D6AA]" onClick={() => void onSyncJamBase()} type="button">Sync JamBase</button>
         </div>
 
-        {mode === "past" || hasStructuredFilter ? (
+        {mode === "past" ? (
           <ShowRail eyebrow={`${filtered.length} matches in ${homeCity}`} openShow={openShow} shows={filtered} title={mode === "past" ? "Past shows" : "Search results"} />
+        ) : hasStructuredFilter ? (
+          <>
+            <ShowRail eyebrow={favoriteArtists.length ? "Filtered by your setup picks" : "Filtered artists you follow and rate"} openShow={openShow} shows={filteredTasteLed} title="Taste-led picks" />
+            <ShowRail eyebrow={`${filtered.length} matches in ${homeCity}`} openShow={openShow} shows={filtered} title="Search results" />
+          </>
         ) : <>
           {upcomingShelves.map(([title, eyebrow, items]) => <ShowRail eyebrow={eyebrow} key={title} openShow={openShow} shows={filteredShelf(items)} title={title} />)}
           <ShowRail eyebrow={`${filtered.length} upcoming events in ${homeCity}`} openShow={openShow} shows={filtered} title="All upcoming" />

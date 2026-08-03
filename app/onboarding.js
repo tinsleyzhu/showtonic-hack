@@ -129,8 +129,16 @@ function findFirstPreferredShow(shows, favoriteArtists) {
   return available[0];
 }
 
+function findFirstHistoricalPreferredShow(shows, favoriteArtists, today) {
+  const historicalShows = (Array.isArray(shows) ? shows : []).filter(
+    (show) => typeof show.date === "string" && show.date < today,
+  );
+  return findFirstPreferredShow(historicalShows, favoriteArtists);
+}
+
 module.exports = {
   ONBOARDING_ARTISTS,
+  findFirstHistoricalPreferredShow,
   findFirstPreferredShow,
   normalizeFavoriteArtists,
   normalizeOnboardingHandle,

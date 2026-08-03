@@ -13,6 +13,7 @@ export type OnboardingIntent = "explore" | "log";
 
 export type OnboardingShow = {
   artistNames?: readonly string[];
+  date?: string;
 };
 
 export const ONBOARDING_ARTISTS: readonly string[];
@@ -35,4 +36,9 @@ export function prioritizeShowsByArtists<T extends OnboardingShow>(
 export function findFirstPreferredShow<T extends OnboardingShow>(
   shows: readonly T[],
   favoriteArtists: readonly string[],
+): T | undefined;
+export function findFirstHistoricalPreferredShow<T extends OnboardingShow>(
+  shows: readonly T[],
+  favoriteArtists: readonly string[],
+  today: string,
 ): T | undefined;

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ONBOARDING_ARTISTS,
+  findFirstHistoricalPreferredShow,
   findFirstPreferredShow,
   normalizeFavoriteArtists,
   prioritizeShowsByArtists,
@@ -217,4 +218,21 @@ test("prioritizes matching shows stably without mutating the source", () => {
 test("finds the first show by favorite selection order and falls back to the first show", () => {
   assert.equal(findFirstPreferredShow(shows, ["Jamie xx", "Doechii"]).id, "jamie");
   assert.equal(findFirstPreferredShow(shows, ["Unknown"]).id, "charli");
+});
+
+test("selects a favorite historical show and never falls back to an upcoming show", () => {
+  const catalog = [
+    { id: "upcoming-favorite", date: "2026-08-03", artistNames: ["Doechii"] },
+    { id: "past-other", date: "2026-08-01", artistNames: ["MUNA"] },
+    { id: "past-favorite", date: "2026-07-31", artistNames: ["Doechii"] },
+  ];
+
+  assert.equal(
+    findFirstHistoricalPreferredShow(catalog, ["Doechii", "MUNA"], "2026-08-02").id,
+    "past-favorite",
+  );
+  assert.equal(
+    findFirstHistoricalPreferredShow([catalog[0]], ["Doechii"], "2026-08-02"),
+    undefined,
+  );
 });
