@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
+import { selectIdentityForHandle, type KeyedIdentity } from "./identity.js";
 import { parseUploadResponse } from "./liveData.js";
 
 type LeaderboardScope = "city" | "artist" | "venue";
@@ -36,8 +37,11 @@ export function useShowtonic({
   query,
   leaderboardScope,
 }: HookArgs) {
-  const [user, setUser] = useState<Doc<"users"> | null>(null);
-  const [identityError, setIdentityError] = useState("");
+  const [identity, setIdentity] = useState<KeyedIdentity<Doc<"users">>>({
+    handle: undefined,
+    user: null,
+    error: "",
+  });
   const [operation, setOperation] = useState<"idle" | "saving" | "uploading">("idle");
   const getOrCreateUser = useMutation(api.users.getOrCreate);
   const setAttendanceMutation = useMutation(api.attendance.set);
@@ -47,9 +51,6 @@ export function useShowtonic({
 
   useEffect(() => {
     let active = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Clear the prior handle before resolving the next identity.
-    setUser(null);
-    setIdentityError("");
 
     if (!handle) {
       return () => {
@@ -60,12 +61,16 @@ export function useShowtonic({
     getOrCreateUser({ handle })
       .then((nextUser) => {
         if (active && nextUser) {
-          setUser(nextUser);
+          setIdentity({ handle, user: nextUser, error: "" });
         }
       })
       .catch((error: unknown) => {
         if (active) {
-          setIdentityError(error instanceof Error ? error.message : "Could not create local user");
+          setIdentity({
+            handle,
+            user: null,
+            error: error instanceof Error ? error.message : "Could not create local user",
+          });
         }
       });
     return () => {
@@ -73,6 +78,7 @@ export function useShowtonic({
     };
   }, [getOrCreateUser, handle]);
 
+  const { user, error: identityError } = selectIdentityForHandle(handle, identity);
   const userId = user?._id;
   const discovery = useQuery(api.discovery.home, userId ? { userId } : "skip");
   const searchResults = useQuery(
@@ -94,11 +100,11 @@ export function useShowtonic({
   const tasteMatches = useQuery(api.taste.similar, userId ? { userId } : "skip");
   const artistDetail = useQuery(
     api.artists.get,
-    selectedArtistId ? { artistId: selectedArtistId as Id<"artists"> } : "skip",
+    userId && selectedArtistId ? { artistId: selectedArtistId as Id<"artists"> } : "skip",
   );
   const venueDetail = useQuery(
     api.venues.get,
-    selectedVenueId ? { venueId: selectedVenueId as Id<"venues"> } : "skip",
+    userId && selectedVenueId ? { venueId: selectedVenueId as Id<"venues"> } : "skip",
   );
 
   async function setAttendance(showId: Id<"shows">, status: AttendanceStatus) {

@@ -59,13 +59,15 @@ function readOnboardingProfile(storage) {
   };
   if (!storage) return profile;
 
+  let hasValidHandle = false;
+
   try {
     const validation = validateOnboardingHandle(storage.getItem(HANDLE_KEY));
-    if (validation.error) return profile;
-    profile.handle = validation.handle;
-  } catch {
-    return profile;
-  }
+    if (!validation.error) {
+      profile.handle = validation.handle;
+      hasValidHandle = true;
+    }
+  } catch {}
 
   try {
     const parsed = JSON.parse(storage.getItem(FAVORITES_KEY) ?? "null");
@@ -75,7 +77,10 @@ function readOnboardingProfile(storage) {
   }
 
   try {
-    profile.completed = storage.getItem(COMPLETION_KEY) === "complete";
+    profile.completed =
+      storage.getItem(COMPLETION_KEY) === "complete" &&
+      hasValidHandle &&
+      profile.favoriteArtists.length >= 2;
   } catch {
     profile.completed = false;
   }
@@ -86,7 +91,7 @@ function writeOnboardingProfile(storage, profile) {
   const validation = validateOnboardingHandle(profile?.handle);
   const handle = validation.handle;
   const favoriteArtists = normalizeFavoriteArtists(profile?.favoriteArtists);
-  if (validation.error) {
+  if (validation.error || favoriteArtists.length < 2) {
     return { completed: false, handle, favoriteArtists };
   }
   const result = { completed: true, handle, favoriteArtists };

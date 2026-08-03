@@ -105,11 +105,11 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
           </div>
           <div className="relative z-10 space-y-2">
             {STEPS.map((item) => (
-              <div className="flex items-baseline gap-4" key={item}>
-                <span className={`text-5xl font-black tracking-[-0.08em] ${item === step ? "text-[#F4F6F8]" : "text-white/20"}`}>
+              <div aria-current={item === step ? "step" : undefined} className="flex items-baseline gap-4" key={item}>
+                <span className={`text-5xl font-black tracking-[-0.08em] ${item === step ? "text-[#F4F6F8]" : "text-[#9AA8B4]"}`}>
                   {stepNumber(item)}
                 </span>
-                <span className={`text-[10px] font-black uppercase tracking-[0.22em] ${item === step ? "text-[#83C9FF]" : "text-[#6A7782]"}`}>
+                <span className={`text-[10px] font-black uppercase tracking-[0.22em] ${item === step ? "text-[#83C9FF]" : "text-[#9AA8B4]"}`}>
                   {stepContent[item].eyebrow}
                 </span>
               </div>
@@ -187,7 +187,7 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
                 <p aria-live="polite" className="mt-3 min-h-5 text-sm text-[#FFB4AB]" id="onboarding-handle-error">
                   {handleError}
                 </p>
-                <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-between">
                   <BackButton onClick={() => setStep("welcome")} />
                   <button
                     className="min-h-11 bg-[#F4F6F8] px-5 py-3 text-sm font-black text-[#14181C] transition-colors hover:bg-[#83C9FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#83C9FF]"
@@ -225,7 +225,7 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
                 <p className="mt-4 text-sm text-[#9AA8B4]" id="onboarding-artist-count">
                   {favoriteArtists.length} selected. Pick at least 2 to continue.
                 </p>
-                <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-between">
                   <BackButton onClick={() => setStep("handle")} />
                   <button
                     aria-describedby="onboarding-artist-count"
@@ -247,7 +247,7 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
                   <p className="mt-4 text-3xl font-black tracking-[-0.05em]">@{handle}</p>
                   <p className="mt-2 text-base text-[#BDF8E9]">{favoriteArtists.length} artists selected for your first recommendations.</p>
                 </div>
-                <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-between">
                   <BackButton onClick={() => setStep("taste")} />
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button
@@ -270,7 +270,7 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
             )}
 
             <div aria-hidden="true" className="mt-12 h-px bg-white/15">
-              <div className="h-px bg-[#20D6AA] transition-[width] duration-300" style={{ width: `${(currentStep / STEPS.length) * 100}%` }} />
+              <div className="onboarding-progress h-px bg-[#20D6AA] transition-[width] duration-300" style={{ width: `${(currentStep / STEPS.length) * 100}%` }} />
             </div>
           </div>
         </section>

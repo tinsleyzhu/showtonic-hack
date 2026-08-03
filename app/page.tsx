@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -160,12 +160,12 @@ export default function Home() {
     setLogOpen(true);
     setView("show");
     setPendingOnboardingIntent(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0 });
   }, [onboardingProfile, pendingOnboardingIntent, shows]);
 
   function navigate(next: View) {
     setView(next);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0 });
   }
 
   function completeOnboarding(profile: OnboardingProfile, intent: OnboardingIntent) {
@@ -618,43 +618,73 @@ function ShowView({
           )}
           <a className="flex items-center justify-between border border-[#42505D] p-4 text-sm" href={show.jambaseUrl} rel="noreferrer" target="_blank">JamBase event data <ExternalLink className="h-4 w-4" /></a>
           {show.ticketUrl && <a className="flex items-center justify-between bg-[#47B7EF] p-4 text-sm font-black text-black" href={show.ticketUrl} rel="noreferrer" target="_blank">Tickets <Ticket className="h-4 w-4" /></a>}
-          <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-black" onClick={() => setLogOpen(true)} type="button">Log this show</button>
+          <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-black" data-log-show-fallback onClick={() => setLogOpen(true)} type="button">Log this show</button>
         </aside>
       </div>
 
-      {logOpen && (
-        <LogSheet
-          caption={caption}
-          chooseFile={chooseFile}
-          error={error}
-          mediaPreview={mediaPreview}
-          onClose={() => setLogOpen(false)}
-          operation={operation}
-          rating={rating}
-          review={review}
-          selectedSong={selectedSong || tracks[0]}
-          selectedVibes={selectedVibes}
-          setCaption={setCaption}
-          setRating={setRating}
-          setReview={setReview}
-          setSelectedSong={setSelectedSong}
-          show={show}
-          submit={submitLog}
-          toggleVibe={toggleVibe}
-          tracks={tracks}
-        />
-      )}
+      <LogSheet
+        caption={caption}
+        chooseFile={chooseFile}
+        error={error}
+        mediaPreview={mediaPreview}
+        onClose={() => setLogOpen(false)}
+        open={logOpen}
+        operation={operation}
+        rating={rating}
+        review={review}
+        selectedSong={selectedSong || tracks[0]}
+        selectedVibes={selectedVibes}
+        setCaption={setCaption}
+        setRating={setRating}
+        setReview={setReview}
+        setSelectedSong={setSelectedSong}
+        show={show}
+        submit={submitLog}
+        toggleVibe={toggleVibe}
+        tracks={tracks}
+      />
     </div>
   );
 }
 
-function LogSheet({ show, rating, setRating, selectedVibes, toggleVibe, review, setReview, caption, setCaption, mediaPreview, chooseFile, tracks, selectedSong, setSelectedSong, submit, onClose, operation, error }: {
-  show: Show; rating: number; setRating: (value: number) => void; selectedVibes: string[]; toggleVibe: (vibe: string) => void; review: string; setReview: (value: string) => void; caption: string; setCaption: (value: string) => void; mediaPreview: string; chooseFile: (files: FileList | null) => void; tracks: string[]; selectedSong: string; setSelectedSong: (song: string) => void; submit: () => Promise<void>; onClose: () => void; operation: LiveState["operation"]; error: string;
+function LogSheet({ show, rating, setRating, selectedVibes, toggleVibe, review, setReview, caption, setCaption, mediaPreview, chooseFile, tracks, selectedSong, setSelectedSong, submit, onClose, open, operation, error }: {
+  show: Show; rating: number; setRating: (value: number) => void; selectedVibes: string[]; toggleVibe: (vibe: string) => void; review: string; setReview: (value: string) => void; caption: string; setCaption: (value: string) => void; mediaPreview: string; chooseFile: (files: FileList | null) => void; tracks: string[]; selectedSong: string; setSelectedSong: (song: string) => void; submit: () => Promise<void>; onClose: () => void; open: boolean; operation: LiveState["operation"]; error: string;
 }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog || !open) return;
+
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!dialog.open) dialog.showModal();
+    closeButtonRef.current?.focus();
+
+    return () => {
+      if (dialog.open) dialog.close();
+      const previousFocus = previousFocusRef.current;
+      const fallback = document.querySelector<HTMLElement>("[data-log-show-fallback]");
+      (previousFocus?.isConnected ? previousFocus : fallback)?.focus();
+    };
+  }, [open]);
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75 p-3 sm:p-8">
-      <section className="mx-auto max-w-2xl border border-[#42505D] bg-[#202830] shadow-2xl">
-        <header className="flex items-start justify-between border-b border-white/10 p-5"><div><p className="text-xs font-black uppercase text-[#20D6AA]">Verified show log</p><h2 className="mt-1 text-2xl font-black">{show.title}</h2></div><button aria-label="Close logger" onClick={onClose} type="button"><X /></button></header>
+    <dialog
+      aria-labelledby="show-log-dialog-title"
+      aria-modal="true"
+      className="log-dialog fixed inset-0 m-auto max-h-[calc(100vh-1.5rem)] w-[calc(100%-1.5rem)] max-w-2xl overflow-y-auto border border-[#42505D] bg-[#202830] p-0 text-[#F4F6F8] shadow-2xl sm:max-h-[calc(100vh-4rem)]"
+      onCancel={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+      onClose={onClose}
+      ref={dialogRef}
+    >
+      <section>
+        <header className="flex items-start justify-between border-b border-white/10 p-5"><div><p className="text-xs font-black uppercase text-[#20D6AA]">Verified show log</p><h2 className="mt-1 text-2xl font-black" id="show-log-dialog-title">Log {show.title}</h2></div><button aria-label="Close logger" onClick={onClose} ref={closeButtonRef} type="button"><X /></button></header>
         <div className="space-y-6 p-5">
           <div><p className="mb-2 text-xs font-black uppercase text-[#81909D]">Your rating</p><RatingStars interactive onChange={setRating} value={rating} /></div>
           <div><p className="mb-2 text-xs font-black uppercase text-[#81909D]">Show vibes</p><div className="flex flex-wrap gap-2">{vibes.map((vibe) => <button className={`border px-3 py-2 text-xs ${selectedVibes.includes(vibe) ? "border-[#20D6AA] bg-[#20D6AA] text-black" : "border-[#42505D] text-[#B8C2CC]"}`} key={vibe} onClick={() => toggleVibe(vibe)} type="button">{vibe}</button>)}</div></div>
@@ -667,7 +697,7 @@ function LogSheet({ show, rating, setRating, selectedVibes, toggleVibe, review, 
           <button className="w-full bg-[#20D6AA] px-5 py-4 text-sm font-black text-black disabled:opacity-50" disabled={operation !== "idle"} onClick={submit} type="button">{operation === "saving" ? "Saving log..." : operation === "uploading" ? "Uploading poster..." : "Save to diary"}</button>
         </div>
       </section>
-    </div>
+    </dialog>
   );
 }
 

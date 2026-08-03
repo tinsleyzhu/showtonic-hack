@@ -73,7 +73,30 @@ test("reads completion only from the versioned marker", () => {
   });
 });
 
-test("does not trust completion when the persisted handle is invalid", () => {
+test("requires two allowed deduplicated favorites before reading completion", () => {
+  const profileFor = (favoriteArtists) =>
+    readOnboardingProfile(
+      createStorage({
+        "showtonic.onboarding.v1": "complete",
+        "showtonic.handle": "maya_7",
+        ...(favoriteArtists === undefined
+          ? {}
+          : { "showtonic.favoriteArtists.v1": favoriteArtists }),
+      }),
+    );
+
+  assert.equal(profileFor(undefined).completed, false);
+  assert.equal(profileFor("not-json").completed, false);
+  assert.deepEqual(profileFor(JSON.stringify(["Doechii"])), {
+    completed: false,
+    handle: "maya_7",
+    favoriteArtists: ["Doechii"],
+  });
+  assert.equal(profileFor(JSON.stringify(["Doechii", "doechii"])).completed, false);
+  assert.equal(profileFor(JSON.stringify(["Doechii", "MUNA"])).completed, true);
+});
+
+test("does not trust completion when the persisted handle is invalid but preserves valid picks", () => {
   const storage = createStorage({
     "showtonic.onboarding.v1": "complete",
     "showtonic.handle": "bad handle",
@@ -83,7 +106,7 @@ test("does not trust completion when the persisted handle is invalid", () => {
   assert.deepEqual(readOnboardingProfile(storage), {
     completed: false,
     handle: "tinsley",
-    favoriteArtists: [],
+    favoriteArtists: ["Doechii"],
   });
 });
 
@@ -109,19 +132,35 @@ test("writes normalized profile fields before the completion marker", () => {
   assert.deepEqual(
     writeOnboardingProfile(storage, {
       handle: " @Maya_7 ",
-      favoriteArtists: ["Doechii", "Unknown", "Doechii"],
+      favoriteArtists: ["Doechii", "Unknown", "Doechii", "MUNA"],
     }),
     {
       completed: true,
       handle: "maya_7",
-      favoriteArtists: ["Doechii"],
+      favoriteArtists: ["Doechii", "MUNA"],
     },
   );
   assert.deepEqual(storage.writes, [
     ["showtonic.handle", "maya_7"],
-    ["showtonic.favoriteArtists.v1", JSON.stringify(["Doechii"])],
+    ["showtonic.favoriteArtists.v1", JSON.stringify(["Doechii", "MUNA"])],
     ["showtonic.onboarding.v1", "complete"],
   ]);
+});
+
+test("does not persist or complete onboarding with fewer than two valid favorites", () => {
+  for (const favoriteArtists of [undefined, "not-an-array", ["Doechii"], ["Doechii", "doechii"]]) {
+    const storage = createStorage();
+
+    assert.deepEqual(
+      writeOnboardingProfile(storage, { handle: "maya_7", favoriteArtists }),
+      {
+        completed: false,
+        handle: "maya_7",
+        favoriteArtists: Array.isArray(favoriteArtists) ? ["Doechii"] : [],
+      },
+    );
+    assert.deepEqual(storage.writes, []);
+  }
 });
 
 test("keeps onboarding complete when storage writes fail", () => {

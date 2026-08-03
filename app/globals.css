@@ -66,8 +66,16 @@ button:disabled {
   animation: onboarding-reveal 420ms ease-out both;
 }
 
+.log-dialog::backdrop {
+  background: rgb(0 0 0 / 75%);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .onboarding-reveal {
-    animation: none;
+  .onboarding-reveal,
+  .onboarding-reveal *,
+  .onboarding-progress {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
   }
 }
