@@ -5,10 +5,12 @@ import {
   ONBOARDING_ARTISTS,
   findFirstHistoricalPreferredShow,
   findFirstPreferredShow,
+  markOnboardingSignedOut,
   normalizeFavoriteArtists,
   prioritizeShowsByArtists,
   readOnboardingProfile,
   validateOnboardingHandle,
+  writeLoginProfile,
   writeOnboardingProfile,
 } from "../app/onboarding.js";
 
@@ -72,6 +74,35 @@ test("reads completion only from the versioned marker", () => {
     handle: "maya_7",
     favoriteArtists: ["Doechii", "MUNA"],
   });
+});
+
+test("reads a returning session without requiring taste onboarding again", () => {
+  const storage = createStorage({
+    "showtonic.session.v1": "authenticated",
+    "showtonic.handle": "tinsley",
+  });
+
+  assert.deepEqual(readOnboardingProfile(storage), {
+    completed: true,
+    handle: "tinsley",
+    favoriteArtists: [],
+  });
+});
+
+test("a signed-out marker overrides a previously completed onboarding", () => {
+  const storage = createStorage({
+    "showtonic.session.v1": "authenticated",
+    "showtonic.onboarding.v1": "complete",
+    "showtonic.handle": "tinsley",
+    "showtonic.favoriteArtists.v1": JSON.stringify(["Doechii", "MUNA"]),
+  });
+
+  assert.deepEqual(markOnboardingSignedOut(storage, readOnboardingProfile(storage)), {
+    completed: false,
+    handle: "tinsley",
+    favoriteArtists: ["Doechii", "MUNA"],
+  });
+  assert.equal(readOnboardingProfile(storage).completed, false);
 });
 
 test("requires two allowed deduplicated favorites before reading completion", () => {
@@ -145,7 +176,33 @@ test("writes normalized profile fields before the completion marker", () => {
     ["showtonic.handle", "maya_7"],
     ["showtonic.favoriteArtists.v1", JSON.stringify(["Doechii", "MUNA"])],
     ["showtonic.onboarding.v1", "complete"],
+    ["showtonic.session.v1", "authenticated"],
   ]);
+});
+
+test("writes a returning login session without rewriting onboarding choices", () => {
+  const storage = createStorage();
+
+  assert.deepEqual(writeLoginProfile(storage, " @Tinsley ", ["Doechii"]), {
+    completed: true,
+    handle: "tinsley",
+    favoriteArtists: ["Doechii"],
+  });
+  assert.deepEqual(storage.writes, [
+    ["showtonic.handle", "tinsley"],
+    ["showtonic.session.v1", "authenticated"],
+  ]);
+});
+
+test("does not persist a returning session for an invalid handle", () => {
+  const storage = createStorage();
+
+  assert.deepEqual(writeLoginProfile(storage, "bad handle"), {
+    completed: false,
+    handle: "bad handle",
+    favoriteArtists: [],
+  });
+  assert.deepEqual(storage.writes, []);
 });
 
 test("does not persist or complete onboarding with fewer than two valid favorites", () => {

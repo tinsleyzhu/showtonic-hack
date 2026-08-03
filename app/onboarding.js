@@ -1,6 +1,7 @@
 const HANDLE_KEY = "showtonic.handle";
 const FAVORITES_KEY = "showtonic.favoriteArtists.v1";
 const COMPLETION_KEY = "showtonic.onboarding.v1";
+const SESSION_KEY = "showtonic.session.v1";
 const DEFAULT_HANDLE = "tinsley";
 
 const ONBOARDING_ARTISTS = [
@@ -77,14 +78,32 @@ function readOnboardingProfile(storage) {
   }
 
   try {
+    const sessionState = storage.getItem(SESSION_KEY);
+    const hasReturningSession = sessionState === "authenticated";
+    const finishedOnboarding =
+      storage.getItem(COMPLETION_KEY) === "complete" && profile.favoriteArtists.length >= 2;
     profile.completed =
-      storage.getItem(COMPLETION_KEY) === "complete" &&
-      hasValidHandle &&
-      profile.favoriteArtists.length >= 2;
+      sessionState !== "signed-out" && hasValidHandle && (hasReturningSession || finishedOnboarding);
   } catch {
     profile.completed = false;
   }
   return profile;
+}
+
+function markOnboardingSignedOut(storage, profile) {
+  const result = {
+    completed: false,
+    handle: normalizeOnboardingHandle(profile?.handle),
+    favoriteArtists: normalizeFavoriteArtists(profile?.favoriteArtists),
+  };
+  if (!storage) return result;
+
+  try {
+    storage.setItem(SESSION_KEY, "signed-out");
+  } catch {
+    // The signed-out state can continue in memory when storage is unavailable.
+  }
+  return result;
 }
 
 function writeOnboardingProfile(storage, profile) {
@@ -101,8 +120,32 @@ function writeOnboardingProfile(storage, profile) {
     storage.setItem(HANDLE_KEY, handle);
     storage.setItem(FAVORITES_KEY, JSON.stringify(favoriteArtists));
     storage.setItem(COMPLETION_KEY, "complete");
+    storage.setItem(SESSION_KEY, "authenticated");
   } catch {
     // Storage is optional; the completed session can continue in memory.
+  }
+  return result;
+}
+
+function writeLoginProfile(storage, value, favoriteArtists = []) {
+  const validation = validateOnboardingHandle(value);
+  const normalizedFavorites = normalizeFavoriteArtists(favoriteArtists);
+  if (validation.error) {
+    return { completed: false, handle: validation.handle, favoriteArtists: normalizedFavorites };
+  }
+
+  const result = {
+    completed: true,
+    handle: validation.handle,
+    favoriteArtists: normalizedFavorites,
+  };
+  if (!storage) return result;
+
+  try {
+    storage.setItem(HANDLE_KEY, result.handle);
+    storage.setItem(SESSION_KEY, "authenticated");
+  } catch {
+    // Storage is optional; the authenticated session can continue in memory.
   }
   return result;
 }
@@ -140,10 +183,12 @@ export {
   ONBOARDING_ARTISTS,
   findFirstHistoricalPreferredShow,
   findFirstPreferredShow,
+  markOnboardingSignedOut,
   normalizeFavoriteArtists,
   normalizeOnboardingHandle,
   prioritizeShowsByArtists,
   readOnboardingProfile,
   validateOnboardingHandle,
+  writeLoginProfile,
   writeOnboardingProfile,
 };

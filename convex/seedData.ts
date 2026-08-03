@@ -122,7 +122,7 @@ export const seedVenues = [
   },
 ] as const;
 
-export const seedShows = [
+const seedUpcomingShows = [
   {
     jambaseId: "show-charli-xcx-2026-08-07",
     title: "Charli XCX",
@@ -258,6 +258,17 @@ export const seedShows = [
   },
 ] as const;
 
+export const seedShows = [
+  ...seedUpcomingShows,
+  ...seedUpcomingShows.map((show) => ({
+    ...show,
+    jambaseId: show.jambaseId.replace("2026", "2025"),
+    date: show.date.replace("2026", "2025"),
+    festivalId: "outside-lands-2025",
+    jambaseUrl: show.jambaseUrl.replace("2026", "2025"),
+  })),
+];
+
 export const seedUsers = [
   { handle: "tinsley", avatarColor: "#20d6aa", isFake: false },
   { handle: "maya", avatarColor: "#ff3b0e", isFake: true },
@@ -270,7 +281,7 @@ export const seedUsers = [
 export const seedLogs = [
   {
     userHandle: "tinsley",
-    showJambaseId: "show-charli-xcx-2026-08-07",
+    showJambaseId: "show-charli-xcx-2025-08-07",
     rating: 5,
     vibes: ["transcendent", "sweaty"],
     note: "The whole hill screamed every word. Instant favorite.",
@@ -278,7 +289,7 @@ export const seedLogs = [
   },
   {
     userHandle: "tinsley",
-    showJambaseId: "show-doechii-2026-08-08",
+    showJambaseId: "show-doechii-2025-08-08",
     rating: 4.5,
     vibes: ["sound was insane"],
     note: "Best crowd control of the weekend, and it was not close.",
@@ -286,7 +297,7 @@ export const seedLogs = [
   },
   {
     userHandle: "tinsley",
-    showJambaseId: "show-rufus-du-sol-2026-08-08",
+    showJambaseId: "show-rufus-du-sol-2025-08-08",
     rating: 4,
     vibes: ["sunset set"],
     note: "Fog arrived at exactly the right moment.",
@@ -294,7 +305,7 @@ export const seedLogs = [
   },
   {
     userHandle: "maya",
-    showJambaseId: "show-charli-xcx-2026-08-07",
+    showJambaseId: "show-charli-xcx-2025-08-07",
     rating: 5,
     vibes: ["transcendent", "sunset set"],
     note: "She had the whole field yelling every hook.",
@@ -302,7 +313,7 @@ export const seedLogs = [
   },
   {
     userHandle: "maya",
-    showJambaseId: "show-rufus-du-sol-2026-08-08",
+    showJambaseId: "show-rufus-du-sol-2025-08-08",
     rating: 4.5,
     vibes: ["sound was insane", "all-nighter"],
     note: "Huge ending, no notes.",
@@ -310,7 +321,7 @@ export const seedLogs = [
   },
   {
     userHandle: "maya",
-    showJambaseId: "show-the-strokes-2026-08-09",
+    showJambaseId: "show-the-strokes-2025-08-09",
     rating: 4,
     vibes: ["too packed"],
     note: "Crowd was intense but the set still hit.",
@@ -318,7 +329,7 @@ export const seedLogs = [
   },
   {
     userHandle: "leo",
-    showJambaseId: "show-rufus-du-sol-2026-08-08",
+    showJambaseId: "show-rufus-du-sol-2025-08-08",
     rating: 5,
     vibes: ["sound was insane", "sunset set"],
     note: "Exactly the kind of night set I wanted.",
@@ -326,7 +337,7 @@ export const seedLogs = [
   },
   {
     userHandle: "leo",
-    showJambaseId: "show-jamie-xx-2026-08-09",
+    showJambaseId: "show-jamie-xx-2025-08-09",
     rating: 4.5,
     vibes: ["all-nighter", "surprise guest"],
     note: "Kept getting better every minute.",
@@ -334,7 +345,7 @@ export const seedLogs = [
   },
   {
     userHandle: "sam",
-    showJambaseId: "show-the-strokes-2026-08-09",
+    showJambaseId: "show-the-strokes-2025-08-09",
     rating: 4.5,
     vibes: ["transcendent"],
     note: "Classic set, zero filler.",
@@ -342,7 +353,7 @@ export const seedLogs = [
   },
   {
     userHandle: "sam",
-    showJambaseId: "show-muna-faye-webster-2026-08-09",
+    showJambaseId: "show-muna-faye-webster-2025-08-09",
     rating: 4,
     vibes: ["sunset set"],
     note: "Two very different moods, both great.",
@@ -350,7 +361,7 @@ export const seedLogs = [
   },
   {
     userHandle: "ava",
-    showJambaseId: "show-charli-xcx-2026-08-07",
+    showJambaseId: "show-charli-xcx-2025-08-07",
     rating: 5,
     vibes: ["transcendent", "surprise guest"],
     note: "A festival highlight for sure.",
@@ -358,7 +369,7 @@ export const seedLogs = [
   },
   {
     userHandle: "ava",
-    showJambaseId: "show-doechii-2026-08-08",
+    showJambaseId: "show-doechii-2025-08-08",
     rating: 4.5,
     vibes: ["sound was insane"],
     note: "Big energy from start to finish.",
@@ -366,7 +377,7 @@ export const seedLogs = [
   },
   {
     userHandle: "jordan",
-    showJambaseId: "show-jamie-xx-2026-08-09",
+    showJambaseId: "show-jamie-xx-2025-08-09",
     rating: 5,
     vibes: ["all-nighter"],
     note: "The perfect way to close the festival.",

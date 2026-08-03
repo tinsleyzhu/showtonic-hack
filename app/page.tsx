@@ -20,6 +20,8 @@ import {
   X,
 } from "lucide-react";
 import type { Id } from "../convex/_generated/dataModel";
+import { useMutation } from "convex/react";
+import { api } from "../convex/_generated/api";
 import { Onboarding } from "./OnboardingFlow";
 import { vibes, type Show } from "./data";
 import {
@@ -33,8 +35,11 @@ import {
 import type { OnboardingIntent, OnboardingProfile } from "./onboarding.d";
 import {
   findFirstHistoricalPreferredShow,
+  markOnboardingSignedOut,
   prioritizeShowsByArtists,
   readOnboardingProfile,
+  validateOnboardingHandle,
+  writeLoginProfile,
   writeOnboardingProfile,
 } from "./onboarding.js";
 import { useShowtonic } from "./useShowtonic";
@@ -79,7 +84,9 @@ function todayIso() {
 function collapseFestivalShows(values: Show[]) {
   const parents = new Map<string, Show>();
   for (const show of values) {
-    if (!show.festivalId || (show.artistNames?.length ?? 0) < 2) continue;
+    const isFestivalRecord =
+      /festival|outside lands/i.test(show.title) || (show.artistNames?.length ?? 0) >= 5;
+    if (!show.festivalId || !isFestivalRecord || (show.artistNames?.length ?? 0) < 2) continue;
     const current = parents.get(show.festivalId);
     if (!current || (show.artistNames?.length ?? 0) > (current.artistNames?.length ?? 0)) {
       parents.set(show.festivalId, show);
@@ -142,6 +149,7 @@ export default function Home() {
     file: File;
     caption?: string;
   }>();
+  const loginUser = useMutation(api.users.login);
 
   const live = useShowtonic({
     handle: onboardingProfile?.completed ? onboardingProfile.handle : undefined,
@@ -258,6 +266,49 @@ export default function Home() {
 
     setOnboardingProfile(nextProfile);
     setPendingOnboardingIntent(nextProfile.completed ? intent : null);
+  }
+
+  async function loginReturningUser(value: string) {
+    const validation = validateOnboardingHandle(value);
+    if (validation.error) return validation.error;
+
+    try {
+      const user = await loginUser({ handle: validation.handle });
+      if (!user) return "We could not find that handle. Check the spelling or start a new diary.";
+
+      let nextProfile: OnboardingProfile;
+      try {
+        nextProfile = writeLoginProfile(
+          window.localStorage,
+          user.handle,
+          onboardingProfile?.favoriteArtists,
+        );
+      } catch {
+        nextProfile = writeLoginProfile(undefined, user.handle, onboardingProfile?.favoriteArtists);
+      }
+      setOnboardingProfile(nextProfile);
+      setPendingOnboardingIntent("explore");
+      return "";
+    } catch (error) {
+      return error instanceof Error ? error.message : "Could not log in right now.";
+    }
+  }
+
+  function signOut() {
+    const current = onboardingProfile ?? {
+      completed: false,
+      handle: live.user?.handle ?? "tinsley",
+      favoriteArtists: [],
+    };
+    let nextProfile: OnboardingProfile;
+    try {
+      nextProfile = markOnboardingSignedOut(window.localStorage, current);
+    } catch {
+      nextProfile = markOnboardingSignedOut(undefined, current);
+    }
+    setOnboardingProfile(nextProfile);
+    setPendingOnboardingIntent(null);
+    setView("discover");
   }
 
   function openShow(showId: string, openLogger = false) {
@@ -392,7 +443,7 @@ export default function Home() {
     return <StatusPanel title="Preparing your first set" detail="Setting up your local music diary..." loading />;
   }
   if (!onboardingProfile.completed) {
-    return <Onboarding initialProfile={onboardingProfile} onComplete={completeOnboarding} />;
+    return <Onboarding initialProfile={onboardingProfile} onComplete={completeOnboarding} onLogin={loginReturningUser} />;
   }
 
   if (live.identityError) {
@@ -463,6 +514,7 @@ export default function Home() {
           caption={caption}
           selectedSong={selectedSong}
           selectedVibes={selectedVibes}
+          currentUserId={live.user?._id}
           setAttendance={setAttendance}
           setCaption={setCaption}
           setLogOpen={setLogOpen}
@@ -500,6 +552,7 @@ export default function Home() {
           openArtist={openArtist}
           openShow={openShow}
           openVenue={openVenue}
+          onSignOut={signOut}
           profile={live.profile}
         />
       )}
@@ -732,6 +785,7 @@ function ShowView({
   selectedSong,
   setSelectedSong,
   submitLog,
+  currentUserId,
 }: {
   detail: LiveState["showDetail"];
   onBack: () => void;
@@ -756,6 +810,7 @@ function ShowView({
   selectedSong: string;
   setSelectedSong: (song: string) => void;
   submitLog: () => Promise<void>;
+  currentUserId?: Id<"users">;
 }) {
   if (detail === undefined) return <StatusPanel title="Loading show" detail="Pulling the live details from Convex..." loading />;
   if (!detail) return <StatusPanel title="Show not found" detail="Choose another show from Discover." />;
@@ -779,6 +834,8 @@ function ShowView({
   const planningAttendees = detail.attendees.filter(
     (attendee) => attendee.status === "interested" || attendee.status === "going",
   );
+  const yourReview = detail.logs.find((log) => log.userId === currentUserId);
+  const friendReviews = detail.logs.filter((log) => log.userId !== currentUserId);
 
   return (
     <div>
@@ -827,8 +884,14 @@ function ShowView({
 
           {isPast ? <>
             <section className="mt-9">
-              <SectionTitle eyebrow="Verified attendees only" title="Community notes" />
-              <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{detail.logs.length ? detail.logs.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="Be the first person to log this show." />}</div>
+              <SectionTitle eyebrow="What you wrote when you logged this show" title="Your review" />
+              <div className="mt-4 border-y border-white/10">
+                {yourReview ? <ReviewRow log={yourReview} /> : <button className="flex w-full items-center justify-between py-5 text-left text-sm text-[#B8C2CC]" onClick={() => setLogOpen(true)} type="button"><span>Log this show to add your rating and review.</span><span className="font-black text-[#20D6AA]">Add review</span></button>}
+              </div>
+            </section>
+            <section className="mt-9">
+              <SectionTitle eyebrow="Verified attendees you may know" title="Friends' reviews" />
+              <div className="mt-4 divide-y divide-white/10 border-y border-white/10">{friendReviews.length ? friendReviews.map((log) => <ReviewRow key={log._id} log={log} />) : <EmptyLine text="No friends have reviewed this show yet." />}</div>
             </section>
             <section className="mt-9">
               <SectionTitle eyebrow="Convex Storage" title="Poster moments" />
@@ -983,10 +1046,10 @@ function LeaderboardView({ leaderboard, matches, scope, onScope }: { leaderboard
   return <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6"><PageTitle eyebrow="Verified activity" title="Member leaderboard" /><div className="mt-6 grid grid-cols-3 border border-[#42505D] p-1">{(["city", "artist", "venue"] as const).map((item) => <button className={`px-3 py-2 text-xs font-bold capitalize ${scope === item ? "bg-[#47B7EF] text-black" : "text-[#9AA8B4]"}`} key={item} onClick={() => onScope(item)} type="button">{item}</button>)}</div><section className="mt-8"><SectionTitle eyebrow={leaderboard?.label ?? "Loading"} title="Most active" /><div className="mt-4 divide-y divide-white/10">{leaderboard?.rows.map((row, index) => <div className="grid grid-cols-[32px_44px_1fr_auto] items-center gap-3 py-4" key={row.userId}><strong className="text-xl text-[#748391]">{index + 1}</strong><Avatar color={row.avatarColor} name={row.handle} /><div><b>@{row.handle}</b><p className="text-xs text-[#81909D]">{row.note}</p></div><b className="text-sm text-[#20D6AA]">{row.value}</b></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Jaccard taste score" title="Most similar to you" />{matches.length ? <div className="mt-4 space-y-3">{matches.map((match) => <div className="flex items-center gap-3 border border-[#42505D] bg-[#202830] p-4" key={match.userId}><Avatar color={match.avatarColor} name={match.handle} /><div className="flex-1"><b>@{match.handle}</b><p className="mt-1 text-xs text-[#9AA8B4]">{match.sharedArtistNames.length ? `Both saw ${match.sharedArtistNames.join(", ")}` : `${match.sharedShowCount} shared shows`}</p></div><strong className="text-2xl text-[#20D6AA]">{Math.round(match.score * 100)}%</strong></div>)}</div> : <EmptyLine text="Log another show to unlock stronger taste matches." />}</section></div>;
 }
 
-function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue }: { profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void }) {
+function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue, onSignOut }: { profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void; onSignOut: () => void }) {
   if (profile === undefined) return <StatusPanel title="Loading profile" detail="Calculating your live music stats..." loading />;
   if (!profile) return <StatusPanel title="Profile unavailable" detail="Reload to retry your local identity." />;
-  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your show identity" /><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${profile.stats.shows} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#42505D] bg-[#263139] p-6"><p className="text-xs font-black uppercase text-[#47B7EF]">Your live music archive</p><h2 className="mt-2 text-3xl font-black">{profile.stats.shows} shows and counting</h2><div className="mt-7 grid grid-cols-3 text-center"><Stat label="shows" value={String(profile.stats.shows)} /><Stat label="artists" value={String(profile.stats.artists)} /><Stat label="venues" value={String(profile.stats.venues)} /></div></section>
+  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between gap-4"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your show identity" /><div className="flex items-center gap-4"><button className="text-xs font-black text-[#9AA8B4] hover:text-white" onClick={onSignOut} type="button">Switch account</button><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${profile.stats.shows} shows and counting.` })} type="button"><Share2 /></button></div></div><section className="mt-6 border border-[#42505D] bg-[#263139] p-6"><p className="text-xs font-black uppercase text-[#47B7EF]">Your live music archive</p><h2 className="mt-2 text-3xl font-black">{profile.stats.shows} shows and counting</h2><div className="mt-7 grid grid-cols-3 text-center"><Stat label="shows" value={String(profile.stats.shows)} /><Stat label="artists" value={String(profile.stats.artists)} /><Stat label="venues" value={String(profile.stats.venues)} /></div></section>
     <section className="mt-8"><SectionTitle eyebrow="Highest verified ratings" title="Favorite shows" />{profile.favoriteShows.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{profile.favoriteShows.map((log) => { const memory = toMemory(log as Record<string, unknown>); return <button className="aspect-[2/3] overflow-hidden border border-[#42505D]" key={log._id} onClick={() => openShow(log.showId)} type="button"><img alt={log.showTitle} className="h-full w-full object-cover" src={memory.photo} /></button>; })}</div> : <EmptyLine text="Your top shows will appear after you log them." />}</section>
     <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow="Based on verified logs" title="Top artists" /><div className="mt-4 divide-y divide-white/10">{profile.topArtists.length ? profile.topArtists.map((item, index) => item.artist ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openArtist(item.artist!._id)} type="button"><span className="w-6 text-lg font-black text-[#596875]">{index + 1}</span><img alt={item.name} className="h-10 w-10 object-cover" src={resolveShowImage(item.artist.image, [item.name])} /><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#81909D]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your artists." />}</div></div><div><SectionTitle eyebrow="Based on verified logs" title="Top venues" /><div className="mt-4 divide-y divide-white/10">{profile.topVenues.length ? profile.topVenues.map((item, index) => item.venue ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openVenue(item.venue!._id)} type="button"><span className="w-6 text-lg font-black text-[#596875]">{index + 1}</span><span className="flex h-10 w-10 items-center justify-center border border-[#42505D]"><MapPin className="h-4 w-4 text-[#47B7EF]" /></span><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#81909D]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your venues." />}</div></div></section>
     <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow={`${profile.followedArtists.length} saved`} title="Artists you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedArtists.length ? profile.followedArtists.map((artist) => artist ? <button className="flex items-center gap-2 border border-[#42505D] px-3 py-2 text-sm" key={artist._id} onClick={() => openArtist(artist._id)} type="button"><Heart className="h-3 w-3 fill-[#20D6AA] text-[#20D6AA]" /> {artist.name}</button> : null) : <EmptyLine text="Follow artists to keep them here." />}</div></div><div><SectionTitle eyebrow={`${profile.followedVenues.length} saved`} title="Venues you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedVenues.length ? profile.followedVenues.map((venue) => venue ? <button className="flex items-center gap-2 border border-[#42505D] px-3 py-2 text-sm" key={venue._id} onClick={() => openVenue(venue._id)} type="button"><MapPin className="h-3 w-3 text-[#47B7EF]" /> {venue.name}</button> : null) : <EmptyLine text="Follow venues to keep them here." />}</div></div></section>

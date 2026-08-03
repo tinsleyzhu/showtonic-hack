@@ -48,6 +48,18 @@ export const getByHandle = query({
   },
 });
 
+export const login = mutation({
+  args: {
+    handle: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("users")
+      .withIndex("by_handle", (q) => q.eq("handle", args.handle))
+      .unique();
+  },
+});
+
 export const listFake = query({
   args: {},
   handler: async (ctx) => {

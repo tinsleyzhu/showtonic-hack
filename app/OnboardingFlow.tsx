@@ -11,6 +11,7 @@ import {
 type OnboardingProps = {
   initialProfile: OnboardingProfile;
   onComplete: (profile: OnboardingProfile, intent: OnboardingIntent) => void;
+  onLogin: (handle: string) => Promise<string>;
 };
 
 type OnboardingStep = "welcome" | "handle" | "taste" | "handoff";
@@ -44,23 +45,31 @@ function stepNumber(step: OnboardingStep) {
   return String(STEPS.indexOf(step) + 1).padStart(2, "0");
 }
 
-export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
+export function Onboarding({ initialProfile, onComplete, onLogin }: OnboardingProps) {
   const [step, setStep] = useState<OnboardingStep>("welcome");
+  const [entryMode, setEntryMode] = useState<"signup" | "login">("signup");
   const [handle, setHandle] = useState(initialProfile.handle);
   const [favoriteArtists, setFavoriteArtists] = useState(() =>
     normalizeFavoriteArtists(initialProfile.favoriteArtists),
   );
   const [handleError, setHandleError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     headingRef.current?.focus();
   }, [step]);
 
-  const content = stepContent[step];
+  const content = step === "handle" && entryMode === "login"
+    ? {
+        eyebrow: "Welcome back",
+        title: "Pick up where you left off.",
+        detail: "Enter your existing Showtonic handle to open your diary.",
+      }
+    : stepContent[step];
   const currentStep = STEPS.indexOf(step) + 1;
 
-  function continueFromHandle() {
+  async function continueFromHandle() {
     const validation = validateOnboardingHandle(handle);
     if (validation.error) {
       setHandleError(validation.error);
@@ -69,6 +78,13 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
 
     setHandle(validation.handle);
     setHandleError("");
+    if (entryMode === "login") {
+      setIsLoggingIn(true);
+      const error = await onLogin(validation.handle);
+      setIsLoggingIn(false);
+      if (error) setHandleError(error);
+      return;
+    }
     setStep("taste");
   }
 
@@ -144,20 +160,29 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
                     </div>
                   ))}
                 </div>
-                <button
-                  className="mt-10 min-h-11 w-full bg-[#F4F6F8] px-5 py-3 text-sm font-black text-[#14181C] transition-colors hover:bg-[#83C9FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#83C9FF] sm:w-auto"
-                  onClick={() => setStep("handle")}
-                  type="button"
-                >
-                  Start your diary
-                </button>
+                <div className="mt-10 flex flex-col gap-3 sm:flex-row">
+                  <button
+                    className="min-h-11 w-full bg-[#F4F6F8] px-5 py-3 text-sm font-black text-[#14181C] transition-colors hover:bg-[#83C9FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#83C9FF] sm:w-auto"
+                    onClick={() => { setEntryMode("signup"); setStep("handle"); }}
+                    type="button"
+                  >
+                    Start your diary
+                  </button>
+                  <button
+                    className="min-h-11 w-full border border-white/35 px-5 py-3 text-sm font-black text-[#F4F6F8] transition-colors hover:border-[#20D6AA] hover:text-[#20D6AA] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#83C9FF] sm:w-auto"
+                    onClick={() => { setEntryMode("login"); setStep("handle"); }}
+                    type="button"
+                  >
+                    Log in
+                  </button>
+                </div>
               </div>
             )}
 
             {step === "handle" && (
               <div className="mt-10 max-w-xl">
                 <label className="block text-xs font-black uppercase tracking-[0.2em] text-[#D8E0E6]" htmlFor="onboarding-handle">
-                  Handle
+                  {entryMode === "login" ? "Your existing handle" : "Handle"}
                 </label>
                 <div className="mt-3 flex border border-white/25 bg-[#14181C] focus-within:border-[#83C9FF]">
                   <span className="flex min-h-12 items-center px-4 text-xl font-bold text-[#83C9FF]">@</span>
@@ -182,13 +207,14 @@ export function Onboarding({ initialProfile, onComplete }: OnboardingProps) {
                   {handleError}
                 </p>
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-between">
-                  <BackButton onClick={() => setStep("welcome")} />
+                  <BackButton onClick={() => { setHandleError(""); setStep("welcome"); }} />
                   <button
                     className="min-h-11 bg-[#F4F6F8] px-5 py-3 text-sm font-black text-[#14181C] transition-colors hover:bg-[#83C9FF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#83C9FF]"
-                    onClick={continueFromHandle}
+                    disabled={isLoggingIn}
+                    onClick={() => void continueFromHandle()}
                     type="button"
                   >
-                    Continue
+                    {isLoggingIn ? "Checking..." : entryMode === "login" ? "Log in" : "Continue"}
                   </button>
                 </div>
               </div>

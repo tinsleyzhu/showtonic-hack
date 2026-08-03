@@ -29,6 +29,15 @@ export function writeOnboardingProfile(
   storage: StorageLike | null | undefined,
   profile: Pick<OnboardingProfile, "handle" | "favoriteArtists">,
 ): OnboardingProfile;
+export function writeLoginProfile(
+  storage: StorageLike | null | undefined,
+  handle: string,
+  favoriteArtists?: readonly string[],
+): OnboardingProfile;
+export function markOnboardingSignedOut(
+  storage: StorageLike | null | undefined,
+  profile: Pick<OnboardingProfile, "handle" | "favoriteArtists">,
+): OnboardingProfile;
 export function prioritizeShowsByArtists<T extends OnboardingShow>(
   shows: readonly T[],
   favoriteArtists: readonly string[],
