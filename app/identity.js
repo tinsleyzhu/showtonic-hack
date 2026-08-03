@@ -8,4 +8,4 @@ function selectIdentityForHandle(handle, identity) {
   return { user: null, error: "" };
 }
 
-module.exports = { selectIdentityForHandle };
+export { selectIdentityForHandle };

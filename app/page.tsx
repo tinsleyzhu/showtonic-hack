@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { Id } from "../convex/_generated/dataModel";
-import { Onboarding } from "./Onboarding";
+import { Onboarding } from "./OnboardingFlow";
 import { vibes, type Show } from "./data";
 import {
   describeSaveResult,
@@ -31,7 +31,12 @@ import {
   type LiveMemory,
 } from "./liveData.js";
 import type { OnboardingIntent, OnboardingProfile } from "./onboarding.d";
-import type * as OnboardingApi from "./onboarding.d";
+import {
+  findFirstHistoricalPreferredShow,
+  prioritizeShowsByArtists,
+  readOnboardingProfile,
+  writeOnboardingProfile,
+} from "./onboarding.js";
 import { useShowtonic } from "./useShowtonic";
 
 type View = "discover" | "artists" | "venues" | "show" | "leaderboard" | "profile" | "artist" | "venue";
@@ -42,15 +47,6 @@ type LiveState = ReturnType<typeof useShowtonic>;
 type ShowDetailPayload = NonNullable<LiveState["showDetail"]>;
 type ArtistDetailPayload = NonNullable<LiveState["artistDetail"]>;
 type VenueDetailPayload = NonNullable<LiveState["venueDetail"]>;
-type OnboardingRuntime = Pick<
-  typeof OnboardingApi,
-  "findFirstHistoricalPreferredShow" | "prioritizeShowsByArtists" | "readOnboardingProfile" | "writeOnboardingProfile"
->;
-
-// Keep the Task 1 CommonJS runtime separate from its declarations on case-insensitive disks.
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- See the filename-collision note above.
-const { findFirstHistoricalPreferredShow, prioritizeShowsByArtists, readOnboardingProfile, writeOnboardingProfile } = require("./onboarding.js") as OnboardingRuntime;
-
 const tracksByArtist: Record<string, string[]> = {
   "Charli XCX": ["360", "Apple", "Von dutch"],
   "RÜFÜS DU SOL": ["Innerbloom", "Next to Me", "On My Knees"],

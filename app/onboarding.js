@@ -136,7 +136,7 @@ function findFirstHistoricalPreferredShow(shows, favoriteArtists, today) {
   return findFirstPreferredShow(historicalShows, favoriteArtists);
 }
 
-module.exports = {
+export {
   ONBOARDING_ARTISTS,
   findFirstHistoricalPreferredShow,
   findFirstPreferredShow,

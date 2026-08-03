@@ -2,17 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { OnboardingIntent, OnboardingProfile } from "./onboarding.d";
-import type * as OnboardingApi from "./onboarding.d";
-
-type OnboardingRuntime = Pick<
-  typeof OnboardingApi,
-  "ONBOARDING_ARTISTS" | "normalizeFavoriteArtists" | "validateOnboardingHandle"
->;
-
-// Import through CommonJS to preserve the Task 1 runtime dependency without
-// TypeScript confusing this file with onboarding.js on case-insensitive disks.
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- See the filename-collision note above.
-const { ONBOARDING_ARTISTS, normalizeFavoriteArtists, validateOnboardingHandle } = require("./onboarding.js") as OnboardingRuntime;
+import {
+  ONBOARDING_ARTISTS,
+  normalizeFavoriteArtists,
+  validateOnboardingHandle,
+} from "./onboarding.js";
 
 type OnboardingProps = {
   initialProfile: OnboardingProfile;
