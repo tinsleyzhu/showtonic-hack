@@ -22,8 +22,18 @@ async function fetchJamBase(path: string) {
     },
   });
   if (!response.ok) {
-    const detail = (await response.text()).slice(0, 500);
-    throw new Error(`JamBase fetch failed with status ${response.status}: ${detail}`);
+    const detail = await response.json().catch(() => null);
+    const messages = Array.isArray(detail?.errors)
+      ? detail.errors
+          .map((error: unknown) =>
+            typeof (error as { message?: unknown })?.message === "string"
+              ? (error as { message: string }).message
+              : "",
+          )
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    throw new Error(`JamBase fetch failed with status ${response.status}${messages ? `: ${messages}` : ""}`);
   }
 
   return response.json();
@@ -137,6 +147,28 @@ function combineSummaries(summaries: ImportSummary[]): ImportSummary {
   );
 }
 
+async function listVenueNames(cityId: string) {
+  const names = new Set<string>();
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const params = new URLSearchParams({
+      geoCityId: cityId,
+      perPage: "100",
+      page: String(page),
+    });
+    const payload = await fetchJamBase(`/venues?${params.toString()}`);
+    for (const venue of Array.isArray(payload?.venues) ? payload.venues : []) {
+      if (typeof venue?.name === "string" && venue.name.trim()) names.add(venue.name.trim());
+    }
+    totalPages = Number(payload?.pagination?.totalPages ?? 1);
+    page += 1;
+  } while (page <= totalPages);
+
+  return [...names];
+}
+
 export const syncCatalog = action({
   args: {
     cityId: v.string(),
@@ -149,7 +181,7 @@ export const syncCatalog = action({
     historicalArtistIds: v.optional(v.array(v.string())),
     reconcileHistorical: v.optional(v.boolean()),
   },
-  handler: async (ctx, args): Promise<{ historical: ImportSummary; upcoming: ImportSummary; historicalArtists: number; historicalRemoved: number }> => {
+  handler: async (ctx, args): Promise<{ historical: ImportSummary; upcoming: ImportSummary; historicalArtists: number; historicalMode: "city" | "artists"; historicalFallbackReason?: string; historicalRemoved: number }> => {
     const today = args.today ?? isoDate(new Date());
     const historyStart = isoDate(addDays(new Date(`${today}T12:00:00Z`), -(args.historyDays ?? 365) + 1));
     const historyEnd = isoDate(addDays(new Date(`${today}T12:00:00Z`), -1));
@@ -159,51 +191,84 @@ export const syncCatalog = action({
       perPage: "100",
     };
 
-    const festivalParams = new URLSearchParams({
-      name: "Outside Lands",
-      geoCityId: args.cityId,
-      eventDateFrom: today,
-      perPage: "10",
-    });
-    const festivalPayload = args.historicalArtistIds?.length
-      ? null
-      : await fetchJamBase(`/events?${festivalParams.toString()}`);
-    const festivalEvents = festivalPayload
-      ? normalizeUpcomingEvents(festivalPayload) as NormalizedEvent[]
-      : [];
-    const historicalArtistIds = [...new Set(
-      args.historicalArtistIds?.length
-        ? args.historicalArtistIds
-        : festivalEvents.flatMap((event) => event.artistJambaseIds ?? []),
-    )];
-    const festivalShows = historicalArtistIds.length || args.historicalArtistNames?.length
-      ? []
-      : await ctx.runQuery(api.shows.listByFestival, { festivalId: "outside-lands-2026" });
-    const historicalArtistNames = [...new Set(
-      args.historicalArtistNames?.length
-        ? args.historicalArtistNames
-        : festivalShows.flatMap((show) => show.artistNames),
-    )];
-    if (!historicalArtistIds.length && !historicalArtistNames.length) {
-      throw new Error("No historical artists are available to satisfy the JamBase trial filter");
-    }
-
     const historicalSummaries: ImportSummary[] = [];
     const historicalIds = new Set<string>();
-    const historicalScope = historicalArtistIds.length ? historicalArtistIds : historicalArtistNames;
-    for (let index = 0; index < historicalScope.length; index += 10) {
-      const artistBatch = historicalScope.slice(index, index + 10);
-      const historicalParams = new URLSearchParams({
-        ...common,
-        [historicalArtistIds.length ? "artistId" : "artistName"]: artistBatch.join("|"),
-        eventDateFrom: historyStart,
-        eventDateTo: historyEnd,
-        expandPastEvents: "true",
-        sort: "-eventDate",
+    let historicalArtists = 0;
+    let historicalFallbackReason: string | undefined;
+    let historicalMode: "city" | "artists" =
+      args.historicalArtistIds?.length || args.historicalArtistNames?.length ? "artists" : "city";
+
+    if (historicalMode === "city") {
+      try {
+        const venueNames = await listVenueNames(args.cityId);
+        if (!venueNames.length) throw new Error(`JamBase returned no venues for ${args.cityName}`);
+        for (let index = 0; index < venueNames.length; index += 10) {
+          const venueBatch = venueNames.slice(index, index + 10);
+          const historicalParams = new URLSearchParams({
+            ...common,
+            venueName: venueBatch.join("|"),
+            eventDateFrom: historyStart,
+            eventDateTo: historyEnd,
+            expandPastEvents: "true",
+            sort: "-eventDate",
+          });
+          historicalSummaries.push(
+            await importRange(ctx, historicalParams, maxPages, args.dryRun ?? false, historicalIds),
+          );
+        }
+      } catch (error) {
+        historicalFallbackReason = error instanceof Error ? error.message : "Citywide history request failed";
+        historicalMode = "artists";
+        historicalSummaries.length = 0;
+        historicalIds.clear();
+      }
+    }
+
+    if (historicalMode === "artists") {
+      const festivalParams = new URLSearchParams({
+        name: "Outside Lands",
+        geoCityId: args.cityId,
+        eventDateFrom: today,
+        perPage: "10",
       });
-      historicalSummaries.push(
-        await importRange(ctx, historicalParams, maxPages, args.dryRun ?? false, historicalIds),
-      );
+      const festivalPayload = args.historicalArtistIds?.length
+        ? null
+        : await fetchJamBase(`/events?${festivalParams.toString()}`);
+      const festivalEvents = festivalPayload
+        ? normalizeUpcomingEvents(festivalPayload) as NormalizedEvent[]
+        : [];
+      const historicalArtistIds = [...new Set(
+        args.historicalArtistIds?.length
+          ? args.historicalArtistIds
+          : festivalEvents.flatMap((event) => event.artistJambaseIds ?? []),
+      )];
+      const festivalShows = historicalArtistIds.length || args.historicalArtistNames?.length
+        ? []
+        : await ctx.runQuery(api.shows.listByFestival, { festivalId: "outside-lands-2026" });
+      const historicalArtistNames = [...new Set(
+        args.historicalArtistNames?.length
+          ? args.historicalArtistNames
+          : festivalShows.flatMap((show) => show.artistNames),
+      )];
+      const historicalScope = historicalArtistIds.length ? historicalArtistIds : historicalArtistNames;
+      if (!historicalScope.length) {
+        throw new Error("No historical artists are available for the fallback sync");
+      }
+      historicalArtists = historicalScope.length;
+      for (let index = 0; index < historicalScope.length; index += 10) {
+        const artistBatch = historicalScope.slice(index, index + 10);
+        const historicalParams = new URLSearchParams({
+          ...common,
+          [historicalArtistIds.length ? "artistId" : "artistName"]: artistBatch.join("|"),
+          eventDateFrom: historyStart,
+          eventDateTo: historyEnd,
+          expandPastEvents: "true",
+          sort: "-eventDate",
+        });
+        historicalSummaries.push(
+          await importRange(ctx, historicalParams, maxPages, args.dryRun ?? false, historicalIds),
+        );
+      }
     }
     const upcomingParams = new URLSearchParams({
       ...common,
@@ -223,7 +288,14 @@ export const syncCatalog = action({
       historicalRemoved = result.removed;
     }
     const upcoming = await importRange(ctx, upcomingParams, maxPages, args.dryRun ?? false, new Set());
-    return { historical, upcoming, historicalArtists: historicalScope.length, historicalRemoved };
+    return {
+      historical,
+      upcoming,
+      historicalArtists,
+      historicalMode,
+      historicalFallbackReason,
+      historicalRemoved,
+    };
   },
 });
 
