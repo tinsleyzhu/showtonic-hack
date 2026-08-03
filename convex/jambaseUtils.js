@@ -27,6 +27,12 @@ function valueName(value) {
   return typeof value?.name === "string" ? value.name : "";
 }
 
+function startTime(value) {
+  if (typeof value !== "string") return undefined;
+  const match = value.match(/T(\d{2}:\d{2})/);
+  return match?.[1];
+}
+
 function validateJamBaseSourceUrl(sourceUrl) {
   let url;
   try {
@@ -49,6 +55,13 @@ function validateJamBaseSourceUrl(sourceUrl) {
   return url.toString();
 }
 
+function slug(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 function normalizeUpcomingEvents(payload, festivalId) {
   const events = Array.isArray(payload?.events) ? payload.events : [];
 
@@ -60,21 +73,35 @@ function normalizeUpcomingEvents(payload, festivalId) {
       : Array.isArray(event.artists)
         ? event.artists
         : [];
+    const performerIds = performers.map((artist) => artist?.identifier);
+    const artistJambaseIds = performerIds.length > 0 && performerIds.every(
+      (identifier) => typeof identifier === "string" && identifier.length > 0,
+    )
+      ? performerIds
+      : undefined;
+    const title = String(event.title ?? event.name ?? "");
+    const date = String(event.date ?? event.startDate ?? "").slice(0, 10);
+    const inferredFestivalId =
+      performers.length > 1 && /festival|fest|outside lands/i.test(title)
+        ? `${slug(title)}-${date.slice(0, 4)}`
+        : undefined;
 
     return {
       jambaseId: String(event.identifier ?? event.id ?? event.jambaseId ?? ""),
-      title: String(event.title ?? event.name ?? ""),
-      date: String(event.date ?? event.startDate ?? "").slice(0, 10),
+      title,
+      date,
+      startTime: startTime(event.startDate),
       venueName: String(venue.name ?? event.venueName ?? ""),
       city: valueName(venue.city ?? address.addressLocality ?? event.city),
       region: valueName(venue.region ?? address.addressRegion ?? event.region) || undefined,
       image: firstImage(event),
-      festivalId,
+      festivalId: festivalId ?? inferredFestivalId,
       stage: event.stage ?? undefined,
       isHeadliner: Boolean(event.isHeadliner),
       artistNames: performers
         .map((artist) => artist?.name)
         .filter((name) => typeof name === "string" && name.length > 0),
+      artistJambaseIds,
       jambaseUrl: typeof event.url === "string" ? event.url : extractPrimaryUrl(event.ctas),
     };
   });

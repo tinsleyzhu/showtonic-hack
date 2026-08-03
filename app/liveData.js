@@ -54,15 +54,21 @@ function toShow(summary) {
     day: summary.day ?? "Date TBA",
     time: summary.time ?? "Time TBA",
     stage: summary.stage ?? "Stage TBA",
-    venueId: String(summary.venueId ?? summary.venueName),
+    venueId: summary.venueId ? String(summary.venueId) : "",
     venueName: summary.venueName,
     city: summary.city,
+    region: summary.region,
     artistIds: (summary.artistIds ?? []).map(String),
     artistNames: summary.artistNames ?? [],
     image: resolveShowImage(summary.image, summary.artistNames),
     jambaseUrl: summary.jambaseUrl ?? "",
     ticketUrl: summary.ticketUrl,
     memoryPrompt: summary.memoryPrompt ?? "What moment will you remember?",
+    festivalId: summary.festivalId,
+    isJamBase:
+      typeof summary.isJamBase === "boolean"
+        ? summary.isJamBase
+        : String(summary.jambaseId ?? "").startsWith("jambase:"),
     rating: summary.rating ?? 0,
     ratingCount: summary.ratingCount ?? 0,
     interestedCount: summary.interestedCount ?? 0,

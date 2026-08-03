@@ -29,12 +29,15 @@ export type Show = {
   venueId: string;
   venueName?: string;
   city?: string;
+  region?: string;
   artistIds: string[];
   artistNames?: string[];
   image: string;
   jambaseUrl: string;
   ticketUrl?: string;
   memoryPrompt: string;
+  festivalId?: string;
+  isJamBase?: boolean;
   rating?: number;
   ratingCount?: number;
   interestedCount?: number;

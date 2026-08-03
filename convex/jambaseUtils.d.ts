@@ -2,6 +2,7 @@ export type NormalizedUpcomingEvent = {
   jambaseId: string;
   title: string;
   date: string;
+  startTime?: string;
   venueName: string;
   city: string;
   region?: string;
@@ -10,6 +11,7 @@ export type NormalizedUpcomingEvent = {
   stage?: string;
   isHeadliner: boolean;
   artistNames: string[];
+  artistJambaseIds?: string[];
   jambaseUrl?: string;
 };
 

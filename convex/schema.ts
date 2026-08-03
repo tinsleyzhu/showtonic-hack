@@ -34,21 +34,25 @@ export default defineSchema({
     date: v.string(), // ISO date
     day: v.optional(v.string()),
     time: v.optional(v.string()),
+    startTime: v.optional(v.string()), // local HH:mm from JamBase
     memoryPrompt: v.optional(v.string()),
     ticketUrl: v.optional(v.string()),
     venueId: v.optional(v.id("venues")),
     venueName: v.string(),
     city: v.string(),
+    region: v.optional(v.string()),
     image: v.optional(v.string()),
     festivalId: v.optional(v.string()), // "outside-lands-2026" groups the lineup
     stage: v.optional(v.string()),
     isHeadliner: v.optional(v.boolean()),
     artistIds: v.array(v.id("artists")),
     artistNames: v.array(v.string()), // denormalized
+    artistJambaseIds: v.optional(v.array(v.string())),
     jambaseUrl: v.optional(v.string()),
   })
     .index("by_festival", ["festivalId"])
     .index("by_date", ["date"])
+    .index("by_city_date", ["city", "date"])
     .index("by_jambase", ["jambaseId"]),
 
   users: defineTable({
@@ -87,6 +91,24 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_show", ["showId"])
     .index("by_user_show", ["userId", "showId"]),
+
+  artistFollows: defineTable({
+    userId: v.id("users"),
+    artistId: v.id("artists"),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_artist", ["artistId"])
+    .index("by_user_artist", ["userId", "artistId"]),
+
+  venueFollows: defineTable({
+    userId: v.id("users"),
+    venueId: v.id("venues"),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_venue", ["venueId"])
+    .index("by_user_venue", ["userId", "venueId"]),
 
   media: defineTable({
     logId: v.id("logs"),

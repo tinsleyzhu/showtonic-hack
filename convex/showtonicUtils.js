@@ -56,23 +56,25 @@ function stableSort(shows, score) {
   });
 }
 
-function buildDiscoveryShelves(shows) {
+function buildDiscoveryShelves(shows, today = new Date().toISOString().slice(0, 10)) {
+  const upcoming = shows.filter((show) => String(show.date) >= today);
+  const source = upcoming.length ? upcoming : shows;
   const limit = (items) => items.slice(0, 6);
   return {
     popularThisWeek: limit(
       stableSort(
-        shows,
+        source,
         (show) => (show.ratingCount ?? 0) * 2 + (show.goingCount ?? 0) + (show.loggedCount ?? 0),
       ),
     ),
     trendingAmongFriends: limit(
-      stableSort(shows, (show) => (show.goingCount ?? 0) + (show.loggedCount ?? 0)),
+      stableSort(source, (show) => (show.goingCount ?? 0) + (show.loggedCount ?? 0)),
     ),
     followedArtists: limit(
-      stableSort(shows, (show) => (show.rating ?? 0) * 10 + (show.ratingCount ?? 0)),
+      stableSort(source, (show) => (show.rating ?? 0) * 10 + (show.ratingCount ?? 0)),
     ),
     nearby: limit(
-      [...shows].sort(
+        [...source].sort(
         (left, right) =>
           String(left.city).localeCompare(String(right.city)) ||
           String(left.date).localeCompare(String(right.date)) ||
@@ -80,12 +82,19 @@ function buildDiscoveryShelves(shows) {
       ),
     ),
     thisWeekend: limit(
-      [...shows].sort(
+        [...source].sort(
         (left, right) =>
           String(left.date).localeCompare(String(right.date)) ||
           stableId(left).localeCompare(stableId(right)),
       ),
     ),
+    pastYear: shows
+      .filter((show) => String(show.date) < today && show.isJamBase !== false)
+      .sort(
+        (left, right) =>
+          String(right.date).localeCompare(String(left.date)) ||
+          stableId(left).localeCompare(stableId(right)),
+      ),
   };
 }
 

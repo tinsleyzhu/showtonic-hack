@@ -8,6 +8,20 @@ import {
   summarizeRatings,
 } from "./showtonicUtils.js";
 
+function weekday(date: string) {
+  return new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" }).format(
+    new Date(`${date}T12:00:00Z`),
+  );
+}
+
+function displayTime(value?: string) {
+  if (!value) return undefined;
+  const [hour, minute] = value.split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return undefined;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
 export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
   const [shows, logs, attendance] = await Promise.all([
     ctx.db.query("shows").collect(),
@@ -44,12 +58,15 @@ export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
         artistNames: show.artistNames,
         image: show.image,
         date: show.date,
-        day: show.day ?? "Date TBA",
-        time: show.time ?? "Time TBA",
-        stage: show.stage,
+        day: show.day ?? weekday(show.date),
+        time: show.time ?? displayTime(show.startTime) ?? "Time TBA",
+        stage: show.stage ?? show.venueName,
         venueId: show.venueId,
         venueName: show.venueName,
         city: show.city,
+        region: show.region,
+        festivalId: show.festivalId,
+        isJamBase: show.jambaseId.startsWith("jambase:"),
         jambaseUrl: show.jambaseUrl,
         ticketUrl: show.ticketUrl,
         memoryPrompt: show.memoryPrompt ?? "What moment will you remember?",
@@ -64,12 +81,19 @@ export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
 }
 
 export const home = query({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), today: v.string() },
   handler: async (ctx, args) => {
     const shows = await listShowSummaries(ctx, args.userId);
+    const jamBaseShows = shows.filter((show) => show.isJamBase && show.city === "San Francisco");
     return {
       shows,
-      shelves: buildDiscoveryShelves(shows),
+      shelves: buildDiscoveryShelves(shows, args.today),
+      catalogStats: {
+        historical: jamBaseShows.filter((show) => show.date < args.today).length,
+        upcoming: jamBaseShows.filter((show) => show.date >= args.today).length,
+        total: jamBaseShows.length,
+        demo: shows.filter((show) => !show.isJamBase && show.city === "San Francisco").length,
+      },
     };
   },
 });

@@ -39,6 +39,9 @@ export const create = mutation({
     if (!user || !show) {
       throw new Error("Missing user or show");
     }
+    if (show.date >= new Date().toISOString().slice(0, 10)) {
+      throw new Error("Shows can only be logged after they happen");
+    }
 
     const existing = await getLogByUserAndShow(ctx, args.userId, args.showId);
     const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));

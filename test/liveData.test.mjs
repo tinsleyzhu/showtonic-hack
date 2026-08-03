@@ -7,6 +7,7 @@ import {
   getStoredHandle,
   parseUploadResponse,
   toMemory,
+  toShow,
 } from "../app/liveData.js";
 
 test("getStoredHandle defaults once and normalizes the at-sign", () => {
@@ -24,6 +25,17 @@ test("getStoredHandle defaults once and normalizes the at-sign", () => {
 test("parseUploadResponse requires a Convex storage id", () => {
   assert.equal(parseUploadResponse({ storageId: "kg2abc" }), "kg2abc");
   assert.throws(() => parseUploadResponse({}), /storageId/);
+});
+
+test("toShow never treats a venue name as a Convex document id", () => {
+  const show = toShow({
+    _id: "show1",
+    title: "Violent Femmes at Stern Grove",
+    venueName: "Stern Grove",
+    artistNames: ["Violent Femmes"],
+  });
+
+  assert.equal(show.venueId, "");
 });
 
 test("toMemory uses uploaded media before the show fallback", () => {

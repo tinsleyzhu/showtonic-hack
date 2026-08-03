@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { selectIdentityForHandle, type KeyedIdentity } from "./identity.js";
@@ -29,6 +29,12 @@ type SaveLogInput = {
   file?: File;
 };
 
+function localDate() {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  return date.toISOString().slice(0, 10);
+}
+
 export function useShowtonic({
   handle,
   selectedShowId,
@@ -48,6 +54,10 @@ export function useShowtonic({
   const createLog = useMutation(api.logs.create);
   const generateUploadUrl = useMutation(api.media.generateUploadUrl);
   const attachMedia = useMutation(api.media.attach);
+  const toggleArtistFollowMutation = useMutation(api.follows.toggleArtist);
+  const toggleVenueFollowMutation = useMutation(api.follows.toggleVenue);
+  const syncCatalogAction = useAction(api.jambase.syncCatalog);
+  const today = localDate();
 
   useEffect(() => {
     let active = true;
@@ -80,7 +90,7 @@ export function useShowtonic({
 
   const { user, error: identityError } = selectIdentityForHandle(handle, identity);
   const userId = user?._id;
-  const discovery = useQuery(api.discovery.home, userId ? { userId } : "skip");
+  const discovery = useQuery(api.discovery.home, userId ? { userId, today } : "skip");
   const searchResults = useQuery(
     api.discovery.search,
     userId && query.trim() ? { userId, query } : "skip",
@@ -100,12 +110,26 @@ export function useShowtonic({
   const tasteMatches = useQuery(api.taste.similar, userId ? { userId } : "skip");
   const artistDetail = useQuery(
     api.artists.get,
-    userId && selectedArtistId ? { artistId: selectedArtistId as Id<"artists"> } : "skip",
+    userId && selectedArtistId
+      ? { userId, artistId: selectedArtistId as Id<"artists"> }
+      : "skip",
   );
   const venueDetail = useQuery(
     api.venues.get,
-    userId && selectedVenueId ? { venueId: selectedVenueId as Id<"venues"> } : "skip",
+    userId && selectedVenueId
+      ? { userId, venueId: selectedVenueId as Id<"venues"> }
+      : "skip",
   );
+
+  async function toggleArtistFollow(artistId: Id<"artists">) {
+    if (!userId) throw new Error("Local user is still loading");
+    return toggleArtistFollowMutation({ userId, artistId });
+  }
+
+  async function toggleVenueFollow(venueId: Id<"venues">) {
+    if (!userId) throw new Error("Local user is still loading");
+    return toggleVenueFollowMutation({ userId, venueId });
+  }
 
   async function setAttendance(showId: Id<"shows">, status: AttendanceStatus) {
     if (!userId) {
@@ -186,6 +210,17 @@ export function useShowtonic({
     }
   }
 
+  async function syncCatalog() {
+    return syncCatalogAction({
+      cityId: "jambase:4226966",
+      cityName: "San Francisco",
+      today,
+      historyDays: 365,
+      maxPagesPerRange: 30,
+      reconcileHistorical: true,
+    });
+  }
+
   return {
     artistDetail,
     diary,
@@ -199,7 +234,10 @@ export function useShowtonic({
     searchResults: searchResults ?? [],
     setAttendance,
     showDetail,
+    syncCatalog,
     tasteMatches: tasteMatches ?? [],
+    toggleArtistFollow,
+    toggleVenueFollow,
     user,
     venueDetail,
     saveLog,

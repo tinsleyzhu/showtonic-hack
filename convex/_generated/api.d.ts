@@ -12,6 +12,7 @@ import type * as artists from "../artists.js";
 import type * as attendance from "../attendance.js";
 import type * as diary from "../diary.js";
 import type * as discovery from "../discovery.js";
+import type * as follows from "../follows.js";
 import type * as jambase from "../jambase.js";
 import type * as jambaseUtils from "../jambaseUtils.js";
 import type * as leaderboard from "../leaderboard.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
   diary: typeof diary;
   discovery: typeof discovery;
+  follows: typeof follows;
   jambase: typeof jambase;
   jambaseUtils: typeof jambaseUtils;
   leaderboard: typeof leaderboard;

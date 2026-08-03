@@ -3,7 +3,10 @@ import { v } from "convex/values";
 import { summarizeRatings } from "./showtonicUtils.js";
 
 export const get = query({
-  args: { artistId: v.id("artists") },
+  args: {
+    artistId: v.id("artists"),
+    userId: v.optional(v.id("users")),
+  },
   handler: async (ctx, args) => {
     const artist = await ctx.db.get(args.artistId);
     if (!artist) {
@@ -13,9 +16,21 @@ export const get = query({
     const allShows = await ctx.db.query("shows").collect();
     const shows = allShows.filter((show) => show.artistIds.includes(args.artistId));
     const showIds = new Set(shows.map((show) => show._id));
-    const [allLogs, allMedia] = await Promise.all([
+    const [allLogs, allMedia, followers, currentFollow] = await Promise.all([
       ctx.db.query("logs").collect(),
       ctx.db.query("media").collect(),
+      ctx.db
+        .query("artistFollows")
+        .withIndex("by_artist", (q) => q.eq("artistId", args.artistId))
+        .collect(),
+      args.userId
+        ? ctx.db
+            .query("artistFollows")
+            .withIndex("by_user_artist", (q) =>
+              q.eq("userId", args.userId!).eq("artistId", args.artistId),
+            )
+            .unique()
+        : null,
     ]);
     const logs = allLogs.filter((log) => showIds.has(log.showId));
     const media = allMedia.filter((item) => showIds.has(item.showId));
@@ -28,7 +43,9 @@ export const get = query({
 
     return {
       artist,
-      shows,
+      shows: shows.sort((left, right) => left.date.localeCompare(right.date)),
+      followerCount: followers.length,
+      isFollowing: Boolean(currentFollow),
       ...summarizeRatings(logs),
       reviews: logs
         .map((log, index) => ({ ...log, user: users[index] }))
