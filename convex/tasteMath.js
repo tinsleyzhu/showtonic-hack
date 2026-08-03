@@ -24,6 +24,6 @@ function tasteScore(artistsA, artistsB, sharedShows = 0) {
   return Number((jaccard + 0.15 * sharedShows).toFixed(12));
 }
 
-module.exports = {
+export {
   tasteScore,
 };

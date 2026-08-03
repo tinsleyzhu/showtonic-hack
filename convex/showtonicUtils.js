@@ -110,7 +110,7 @@ function matchesSearch(show, query) {
   ).includes(term);
 }
 
-module.exports = {
+export {
   VIBE_VOCABULARY,
   buildDiscoveryShelves,
   matchesSearch,

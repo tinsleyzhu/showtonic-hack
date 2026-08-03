@@ -184,7 +184,7 @@ function describeSaveResult(result) {
   };
 }
 
-module.exports = {
+export {
   describeSaveResult,
   filterMemories,
   groupMemories,

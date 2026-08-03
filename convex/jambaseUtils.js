@@ -107,7 +107,7 @@ function normalizeUpcomingEvents(payload, festivalId) {
   });
 }
 
-module.exports = {
+export {
   extractPrimaryUrl,
   normalizeUpcomingEvents,
   validateJamBaseSourceUrl,
