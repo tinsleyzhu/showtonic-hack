@@ -60,7 +60,9 @@ function readOnboardingProfile(storage) {
   if (!storage) return profile;
 
   try {
-    profile.handle = normalizeOnboardingHandle(storage.getItem(HANDLE_KEY));
+    const validation = validateOnboardingHandle(storage.getItem(HANDLE_KEY));
+    if (validation.error) return profile;
+    profile.handle = validation.handle;
   } catch {
     return profile;
   }
@@ -81,8 +83,12 @@ function readOnboardingProfile(storage) {
 }
 
 function writeOnboardingProfile(storage, profile) {
-  const handle = normalizeOnboardingHandle(profile?.handle);
+  const validation = validateOnboardingHandle(profile?.handle);
+  const handle = validation.handle;
   const favoriteArtists = normalizeFavoriteArtists(profile?.favoriteArtists);
+  if (validation.error) {
+    return { completed: false, handle, favoriteArtists };
+  }
   const result = { completed: true, handle, favoriteArtists };
   if (!storage) return result;
 

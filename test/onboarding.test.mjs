@@ -73,6 +73,20 @@ test("reads completion only from the versioned marker", () => {
   });
 });
 
+test("does not trust completion when the persisted handle is invalid", () => {
+  const storage = createStorage({
+    "showtonic.onboarding.v1": "complete",
+    "showtonic.handle": "bad handle",
+    "showtonic.favoriteArtists.v1": JSON.stringify(["Doechii"]),
+  });
+
+  assert.deepEqual(readOnboardingProfile(storage), {
+    completed: false,
+    handle: "tinsley",
+    favoriteArtists: [],
+  });
+});
+
 test("normalizes favorites against the allowed lineup in input order", () => {
   assert.deepEqual(
     normalizeFavoriteArtists(["Doechii", "Unknown", "Doechii", "MUNA", "Charli XCX"]),
@@ -108,6 +122,23 @@ test("writes normalized profile fields before the completion marker", () => {
     ["showtonic.favoriteArtists.v1", JSON.stringify(["Doechii"])],
     ["showtonic.onboarding.v1", "complete"],
   ]);
+});
+
+test("does not persist or complete onboarding for an invalid handle", () => {
+  const storage = createStorage();
+
+  assert.deepEqual(
+    writeOnboardingProfile(storage, {
+      handle: "bad handle",
+      favoriteArtists: ["Doechii"],
+    }),
+    {
+      completed: false,
+      handle: "bad handle",
+      favoriteArtists: ["Doechii"],
+    },
+  );
+  assert.deepEqual(storage.writes, []);
 });
 
 const shows = [
