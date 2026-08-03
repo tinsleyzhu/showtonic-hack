@@ -37,15 +37,22 @@ Then seed the database (JamBase lineup + demo users):
 npx convex run seed:run
 ```
 
-The demo reads JamBase data from the deterministic seed. To run an optional JamBase v3 refresh,
-configure the sponsor key in Convex and invoke the backend action explicitly:
+The deterministic seed keeps the demo usable offline. To enable the live JamBase catalog, set the
+sponsor key in Convex:
 
 ```bash
 npx convex env set JAMBASE_API_KEY your-key
 ```
 
+The `Sync JamBase` control imports the available past-year San Francisco shows for artists on the
+Outside Lands lineup and all future San Francisco shows. Historical requests use exact JamBase
+artist IDs because the trial API requires an artist or venue filter for past events. Results are
+paginated, deduplicated, and reconciled into Convex.
+
+You can run the same sync from the terminal:
+
 ```bash
-npx convex run jambase:syncUpcoming '{"sourceUrl":"https://api.data.jambase.com/v3/events?name=Outside%20Lands&eventDateFrom=2026-08-07&eventDateTo=2026-08-09&perPage=100","festivalId":"outside-lands-2026"}'
+npx convex run jambase:syncCatalog '{"cityId":"jambase:4226966","cityName":"San Francisco","historyDays":365,"maxPagesPerRange":30,"reconcileHistorical":true}'
 ```
 
 Run the app:
@@ -57,12 +64,12 @@ npm run dev
 The browser stores the local handle `tinsley` in `localStorage` and resolves the corresponding
 Convex user on every load. There is deliberately no authentication in the hackathon build.
 
-JamBase artist, venue, and event data is baked into the idempotent seed so the demo does not
-depend on an external API call. JamBase source links remain visible in the interface.
+Seeded JamBase artist, venue, and event data keeps the core demo deterministic. A live catalog
+sync expands Discover with the past year and upcoming city events while preserving source links.
 
 ## Live flows
 
-- Discover and search the seeded lineup.
+- Discover and search seeded plus live JamBase shows.
 - Set interested or going status.
 - Log and rate a show with vibes, review, song, caption, and one optional poster.
 - Retry an optional media upload without losing the saved show log.
@@ -70,8 +77,8 @@ depend on an external API call. JamBase source links remain visible in the inter
 
 ## Ground rules for this build
 
-1. **No live API calls on the demo path.** JamBase data is baked into `convex/seedData.ts`. The
-   only `fetch` lives in an optional Convex refresh action.
+1. **Keep the JamBase key server-side.** All JamBase requests run in a Convex action; the key is
+   never exposed to the browser.
 2. **Denormalize.** Convex has no joins. Artist names live on the log.
 3. **Demoable at 1:15.** Never break the demo to add a feature.
 4. **No auth.** Handle in `localStorage`.

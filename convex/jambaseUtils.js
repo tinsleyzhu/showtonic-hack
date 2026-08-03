@@ -27,6 +27,12 @@ function valueName(value) {
   return typeof value?.name === "string" ? value.name : "";
 }
 
+function startTime(value) {
+  if (typeof value !== "string") return undefined;
+  const match = value.match(/T(\d{2}:\d{2})/);
+  return match?.[1];
+}
+
 function validateJamBaseSourceUrl(sourceUrl) {
   let url;
   try {
@@ -60,11 +66,18 @@ function normalizeUpcomingEvents(payload, festivalId) {
       : Array.isArray(event.artists)
         ? event.artists
         : [];
+    const performerIds = performers.map((artist) => artist?.identifier);
+    const artistJambaseIds = performerIds.length > 0 && performerIds.every(
+      (identifier) => typeof identifier === "string" && identifier.length > 0,
+    )
+      ? performerIds
+      : undefined;
 
     return {
       jambaseId: String(event.identifier ?? event.id ?? event.jambaseId ?? ""),
       title: String(event.title ?? event.name ?? ""),
       date: String(event.date ?? event.startDate ?? "").slice(0, 10),
+      startTime: startTime(event.startDate),
       venueName: String(venue.name ?? event.venueName ?? ""),
       city: valueName(venue.city ?? address.addressLocality ?? event.city),
       region: valueName(venue.region ?? address.addressRegion ?? event.region) || undefined,
@@ -75,6 +88,7 @@ function normalizeUpcomingEvents(payload, festivalId) {
       artistNames: performers
         .map((artist) => artist?.name)
         .filter((name) => typeof name === "string" && name.length > 0),
+      artistJambaseIds,
       jambaseUrl: typeof event.url === "string" ? event.url : extractPrimaryUrl(event.ctas),
     };
   });

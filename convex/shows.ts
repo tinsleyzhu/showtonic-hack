@@ -8,6 +8,7 @@ const upcomingEvent = v.object({
   jambaseId: v.string(),
   title: v.string(),
   date: v.string(),
+  startTime: v.optional(v.string()),
   venueName: v.string(),
   city: v.string(),
   region: v.optional(v.string()),
@@ -16,6 +17,7 @@ const upcomingEvent = v.object({
   stage: v.optional(v.string()),
   isHeadliner: v.boolean(),
   artistNames: v.array(v.string()),
+  artistJambaseIds: v.optional(v.array(v.string())),
   jambaseUrl: v.optional(v.string()),
 });
 
@@ -26,6 +28,20 @@ function slug(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+function weekday(date: string) {
+  return new Intl.DateTimeFormat("en", { weekday: "long", timeZone: "UTC" }).format(
+    new Date(`${date}T12:00:00Z`),
+  );
+}
+
+function displayTime(value?: string) {
+  if (!value) return undefined;
+  const [hour, minute] = value.split(":").map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return undefined;
+  const suffix = hour >= 12 ? "PM" : "AM";
+  return `${hour % 12 || 12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 export const listByFestival = query({
@@ -65,6 +81,90 @@ export const get = query({
       ...show,
       artists: artists.filter(Boolean),
     };
+  },
+});
+
+export const listCatalog = query({
+  args: {
+    city: v.string(),
+    from: v.string(),
+    to: v.optional(v.string()),
+    direction: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 100, 1), 250);
+    return ctx.db
+      .query("shows")
+      .withIndex("by_city_date", (q) => {
+        const cityRange = q.eq("city", args.city).gte("date", args.from);
+        return args.to ? cityRange.lte("date", args.to) : cityRange;
+      })
+      .order(args.direction ?? "asc")
+      .take(limit);
+  },
+});
+
+export const catalogStats = query({
+  args: {
+    city: v.string(),
+    since: v.string(),
+    today: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const [historical, upcoming] = await Promise.all([
+      ctx.db
+        .query("shows")
+        .withIndex("by_city_date", (q) => q.eq("city", args.city).gte("date", args.since).lt("date", args.today))
+        .collect(),
+      ctx.db
+        .query("shows")
+        .withIndex("by_city_date", (q) => q.eq("city", args.city).gte("date", args.today))
+        .collect(),
+    ]);
+    const importedHistorical = historical.filter((show) => show.jambaseId.startsWith("jambase:"));
+    const importedUpcoming = upcoming.filter((show) => show.jambaseId.startsWith("jambase:"));
+
+    return {
+      historical: importedHistorical.length,
+      upcoming: importedUpcoming.length,
+      total: importedHistorical.length + importedUpcoming.length,
+      demo: historical.length + upcoming.length - importedHistorical.length - importedUpcoming.length,
+    };
+  },
+});
+
+export const reconcileImportedRange = mutation({
+  args: {
+    city: v.string(),
+    from: v.string(),
+    to: v.string(),
+    keepJambaseIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const keep = new Set(args.keepJambaseIds);
+    const shows = await ctx.db
+      .query("shows")
+      .withIndex("by_city_date", (q) => q.eq("city", args.city).gte("date", args.from).lte("date", args.to))
+      .collect();
+    let removed = 0;
+    let preservedWithLogs = 0;
+
+    for (const show of shows) {
+      if (!show.jambaseId.startsWith("jambase:") || keep.has(show.jambaseId)) continue;
+      const log = await ctx.db
+        .query("logs")
+        .withIndex("by_show", (q) => q.eq("showId", show._id))
+        .first();
+      if (log) {
+        preservedWithLogs += 1;
+        continue;
+      }
+      await ctx.db.delete(show._id);
+      removed += 1;
+    }
+
+    return { removed, preservedWithLogs };
   },
 });
 
@@ -110,8 +210,9 @@ export const detail = query({
     return {
       show: {
         ...show,
-        day: show.day ?? "Date TBA",
-        time: show.time ?? "Time TBA",
+        day: show.day ?? weekday(show.date),
+        time: show.time ?? displayTime(show.startTime) ?? "Time TBA",
+        stage: show.stage ?? show.venueName,
         memoryPrompt: show.memoryPrompt ?? "What moment will you remember?",
       },
       artists: artists.filter((artist) => artist !== null),
@@ -146,12 +247,20 @@ export const importUpcoming = mutation({
 
       const artistIds: Id<"artists">[] = [];
       const artistNames = event.artistNames.length ? event.artistNames : [event.title];
-      for (const artistName of artistNames) {
-        const jambaseId = `artist-${slug(artistName)}`;
-        const existingArtist = await ctx.db
+      for (const [index, artistName] of artistNames.entries()) {
+        const syntheticJambaseId = `artist-${slug(artistName)}`;
+        const jambaseId = event.artistJambaseIds?.[index] ?? syntheticJambaseId;
+        let existingArtist = await ctx.db
           .query("artists")
           .withIndex("by_jambase", (q) => q.eq("jambaseId", jambaseId))
           .unique();
+        if (!existingArtist && jambaseId !== syntheticJambaseId) {
+          existingArtist = await ctx.db
+            .query("artists")
+            .withIndex("by_jambase", (q) => q.eq("jambaseId", syntheticJambaseId))
+            .unique();
+          if (existingArtist) await ctx.db.patch(existingArtist._id, { jambaseId });
+        }
         const artistId =
           existingArtist?._id ??
           (await ctx.db.insert("artists", {
@@ -181,15 +290,20 @@ export const importUpcoming = mutation({
       const payload = {
         title: event.title,
         date: event.date,
+        day: weekday(event.date),
+        time: displayTime(event.startTime),
+        startTime: event.startTime,
         venueId,
         venueName: event.venueName,
         city: event.city,
+        region: event.region,
         image: event.image,
         festivalId: event.festivalId,
-        stage: event.stage,
+        stage: event.stage ?? event.venueName,
         isHeadliner: event.isHeadliner,
         artistIds,
         artistNames,
+        artistJambaseIds: event.artistJambaseIds,
         jambaseUrl: event.jambaseUrl,
       };
       const existingShow = await ctx.db

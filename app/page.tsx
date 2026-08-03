@@ -84,6 +84,7 @@ export default function Home() {
   const [mediaPreview, setMediaPreview] = useState("");
   const [formError, setFormError] = useState("");
   const [notice, setNotice] = useState("");
+  const [catalogStatus, setCatalogStatus] = useState("");
   const [pendingMedia, setPendingMedia] = useState<{
     logId: Id<"logs">;
     showId: Id<"shows">;
@@ -229,6 +230,18 @@ export default function Home() {
     }
   }
 
+  async function syncJamBase() {
+    setCatalogStatus("Syncing past year + upcoming...");
+    try {
+      const result = await live.syncCatalog();
+      setCatalogStatus(
+        `JamBase synced · ${result.historical.fetched} past / ${result.upcoming.fetched} upcoming`,
+      );
+    } catch (error) {
+      setCatalogStatus(error instanceof Error ? error.message : "JamBase sync failed");
+    }
+  }
+
   if (live.identityError) {
     return <StatusPanel title="Could not create your local profile" detail={live.identityError} />;
   }
@@ -268,7 +281,9 @@ export default function Home() {
 
       {view === "discover" && (
         <DiscoverView
+          dataStatus={catalogStatus || `JamBase catalog · ${live.discovery.catalogStats.historical} past / ${live.discovery.catalogStats.upcoming} upcoming`}
           discovery={live.discovery}
+          onSyncJamBase={syncJamBase}
           openShow={openShow}
           query={query}
           searchResults={live.searchResults.map((show) => adaptShow(show))}
@@ -377,13 +392,17 @@ function Header({ view, navigate, handle }: { view: View; navigate: (view: View)
 }
 
 function DiscoverView({
+  dataStatus,
   discovery,
+  onSyncJamBase,
   query,
   setQuery,
   searchResults,
   openShow,
 }: {
+  dataStatus: string;
   discovery: NonNullable<LiveState["discovery"]>;
+  onSyncJamBase: () => Promise<void>;
   query: string;
   setQuery: (value: string) => void;
   searchResults: Show[];
@@ -396,6 +415,7 @@ function DiscoverView({
     ["Taste-led picks", "Top-rated artists in the seeded lineup", discovery.shelves.followedArtists],
     ["Nearby", "San Francisco venues", discovery.shelves.nearby],
     ["This weekend", "Outside Lands lineup", discovery.shelves.thisWeekend],
+    ["From the last year", `${discovery.shelves.pastYear.length} shows · Past year via JamBase`, discovery.shelves.pastYear],
   ] as const;
 
   return (
@@ -417,6 +437,11 @@ function DiscoverView({
           <input className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-[#748391]" onChange={(event) => setQuery(event.target.value)} placeholder="Search artists, shows, venues, or city" value={query} />
           {query && <button aria-label="Clear search" onClick={() => setQuery("")} type="button"><X className="h-4 w-4" /></button>}
         </label>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-y border-white/10 py-3 text-xs">
+          <span className="text-[#9AA8B4]">{dataStatus}</span>
+          <button className="font-black text-[#20D6AA]" onClick={() => void onSyncJamBase()} type="button">Sync JamBase</button>
+        </div>
 
         {query.trim() ? (
           <ShowRail eyebrow={`${searchResults.length} live matches`} openShow={openShow} shows={searchResults} title="Search results" />
@@ -640,7 +665,8 @@ function ShowRail({ title, eyebrow, shows, openShow }: { title: string; eyebrow:
 }
 
 function ShowCard({ show, openShow }: { show: Show; openShow: (id: string) => void }) {
-  return <button className="w-44 shrink-0 overflow-hidden border border-[#34414D] bg-[#202830] text-left sm:w-52" onClick={() => openShow(show.id)} type="button"><div className="relative aspect-[2/3]"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /><span className="absolute right-2 top-2 bg-[#14181C]/90 px-2 py-1 text-xs font-black text-[#20D6AA]">{show.ratingCount ? `${show.rating?.toFixed(1)} ★` : "NEW"}</span></div><div className="p-3"><b className="block truncate">{show.artistNames?.join(" + ") || show.title}</b><p className="mt-1 truncate text-xs text-[#9AA8B4]">{formatDate(show.date)} · {show.venueName}</p><p className="mt-2 text-[10px] font-black uppercase text-[#47B7EF]">{show.loggedCount ?? 0} logged · {show.goingCount ?? 0} going</p></div></button>;
+  const badge = show.ratingCount ? `${show.rating?.toFixed(1)} ★` : show.isJamBase ? "JAMBASE" : "NEW";
+  return <button className="w-44 shrink-0 overflow-hidden border border-[#34414D] bg-[#202830] text-left sm:w-52" onClick={() => openShow(show.id)} type="button"><div className="relative aspect-[2/3]"><img alt={show.title} className="h-full w-full object-cover" src={show.image} /><span className="absolute right-2 top-2 bg-[#14181C]/90 px-2 py-1 text-xs font-black text-[#20D6AA]">{badge}</span></div><div className="p-3"><b className="block truncate">{show.artistNames?.join(" + ") || show.title}</b><p className="mt-1 truncate text-xs text-[#9AA8B4]">{formatDate(show.date)} · {show.venueName}</p><p className="mt-2 text-[10px] font-black uppercase text-[#47B7EF]">{show.loggedCount ?? 0} logged · {show.goingCount ?? 0} going</p></div></button>;
 }
 
 function ReviewRow({ log }: { log: ShowDetailPayload["logs"][number] | ArtistDetailPayload["reviews"][number] | VenueDetailPayload["reviews"][number] }) {

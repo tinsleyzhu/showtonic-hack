@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { getStoredHandle, parseUploadResponse } from "./liveData.js";
@@ -27,6 +27,12 @@ type SaveLogInput = {
   file?: File;
 };
 
+function localDate() {
+  const date = new Date();
+  date.setHours(12, 0, 0, 0);
+  return date.toISOString().slice(0, 10);
+}
+
 export function useShowtonic({
   selectedShowId,
   selectedArtistId,
@@ -42,6 +48,8 @@ export function useShowtonic({
   const createLog = useMutation(api.logs.create);
   const generateUploadUrl = useMutation(api.media.generateUploadUrl);
   const attachMedia = useMutation(api.media.attach);
+  const syncCatalogAction = useAction(api.jambase.syncCatalog);
+  const today = localDate();
 
   useEffect(() => {
     let active = true;
@@ -63,7 +71,7 @@ export function useShowtonic({
   }, [getOrCreateUser]);
 
   const userId = user?._id;
-  const discovery = useQuery(api.discovery.home, userId ? { userId } : "skip");
+  const discovery = useQuery(api.discovery.home, userId ? { userId, today } : "skip");
   const searchResults = useQuery(
     api.discovery.search,
     userId && query.trim() ? { userId, query } : "skip",
@@ -169,6 +177,17 @@ export function useShowtonic({
     }
   }
 
+  async function syncCatalog() {
+    return syncCatalogAction({
+      cityId: "jambase:4226966",
+      cityName: "San Francisco",
+      today,
+      historyDays: 365,
+      maxPagesPerRange: 30,
+      reconcileHistorical: true,
+    });
+  }
+
   return {
     artistDetail,
     diary,
@@ -182,6 +201,7 @@ export function useShowtonic({
     searchResults: searchResults ?? [],
     setAttendance,
     showDetail,
+    syncCatalog,
     tasteMatches: tasteMatches ?? [],
     user,
     venueDetail,
