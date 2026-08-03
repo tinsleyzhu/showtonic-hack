@@ -131,6 +131,44 @@ function filterMemories(memories, filter) {
   );
 }
 
+function groupMemories(memories, filter) {
+  const keysFor = {
+    Artist: (memory) => memory.artistNames ?? [],
+    City: (memory) => [memory.city ?? "Unknown city"],
+    Genre: (memory) => memory.artistGenres?.length ? memory.artistGenres : ["Other"],
+    Rating: (memory) => [`${memory.rating} stars`],
+    Venue: (memory) => [memory.venueName ?? "Unknown venue"],
+  }[filter];
+  if (!keysFor) return [];
+
+  const grouped = new Map();
+  for (const memory of memories.filter((item) => item?.id)) {
+    for (const label of new Set(keysFor(memory).filter(Boolean))) {
+      const bucket = grouped.get(label) ?? [];
+      bucket.push(memory);
+      grouped.set(label, bucket);
+    }
+  }
+
+  return [...grouped.entries()]
+    .map(([label, items]) => {
+      const sorted = [...items].sort(
+        (left, right) => right.date.localeCompare(left.date) || right.rating - left.rating,
+      );
+      return {
+        key: String(label).toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        label,
+        count: sorted.length,
+        latestDate: sorted[0]?.date ?? "",
+        memories: sorted,
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.latestDate.localeCompare(left.latestDate) || left.label.localeCompare(right.label),
+    );
+}
+
 function describeSaveResult(result) {
   if (result.mediaError) {
     return {
@@ -149,6 +187,7 @@ function describeSaveResult(result) {
 module.exports = {
   describeSaveResult,
   filterMemories,
+  groupMemories,
   getStoredHandle,
   normalizeHandle,
   parseUploadResponse,

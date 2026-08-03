@@ -27,6 +27,13 @@ export function describeSaveResult(result: { logId: string; mediaError?: string 
   message: string;
 };
 export function filterMemories(memories: LiveMemory[], filter: string): LiveMemory[];
+export function groupMemories(memories: LiveMemory[], filter: string): Array<{
+  key: string;
+  label: string;
+  count: number;
+  latestDate: string;
+  memories: LiveMemory[];
+}>;
 export function getStoredHandle(storage: StorageLike): string;
 export function normalizeHandle(value: unknown): string;
 export function parseUploadResponse(value: unknown): string;

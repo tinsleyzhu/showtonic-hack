@@ -9,9 +9,7 @@ import {
   CircleUserRound,
   Compass,
   ExternalLink,
-  Grid3X3,
   Heart,
-  Library,
   ListFilter,
   MapPin,
   Music2,
@@ -19,7 +17,6 @@ import {
   Share2,
   Star,
   Ticket,
-  Trophy,
   X,
 } from "lucide-react";
 import type { Id } from "../convex/_generated/dataModel";
@@ -27,7 +24,7 @@ import { Onboarding } from "./Onboarding";
 import { vibes, type Show } from "./data";
 import {
   describeSaveResult,
-  filterMemories,
+  groupMemories,
   resolveShowImage,
   toMemory,
   toShow,
@@ -37,7 +34,7 @@ import type { OnboardingIntent, OnboardingProfile } from "./onboarding.d";
 import type * as OnboardingApi from "./onboarding.d";
 import { useShowtonic } from "./useShowtonic";
 
-type View = "discover" | "show" | "diary" | "leaderboard" | "profile" | "artist" | "venue";
+type View = "discover" | "artists" | "venues" | "show" | "leaderboard" | "profile" | "artist" | "venue";
 type Attendance = "interested" | "going" | "logged";
 type CatalogMode = "upcoming" | "past";
 type DiaryFilter = "Artist" | "City" | "Genre" | "Calendar" | "Rating" | "Venue" | "Photo";
@@ -128,7 +125,7 @@ export default function Home() {
   const [selectedVenueId, setSelectedVenueId] = useState("");
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
-  const [diaryFilter, setDiaryFilter] = useState<DiaryFilter>("Photo");
+  const [diaryFilter, setDiaryFilter] = useState<DiaryFilter>("Artist");
   const [leaderScope, setLeaderScope] = useState<"city" | "artist" | "venue">("city");
   const [logOpen, setLogOpen] = useState(false);
   const [rating, setRating] = useState(5);
@@ -167,11 +164,6 @@ export default function Home() {
     () => (live.diary?.logs ?? []).map((log) => toMemory(log as Record<string, unknown>)),
     [live.diary],
   );
-  const filteredMemories = useMemo(
-    () => filterMemories(memories, diaryFilter),
-    [diaryFilter, memories],
-  );
-
   useEffect(() => {
     try {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- The client-only storage read is the onboarding gate's source of truth.
@@ -360,7 +352,7 @@ export default function Home() {
         setMediaPreview("");
         setNotice(saveResult.message);
       }
-      navigate("diary");
+      navigate("profile");
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not save this show");
     }
@@ -393,7 +385,7 @@ export default function Home() {
     try {
       const result = await live.syncCatalog();
       setCatalogStatus(
-        `JamBase synced · ${result.historical.fetched} past / ${result.upcoming.fetched} upcoming`,
+        `JamBase synced · ${result.historical.fetched} ${result.historicalMode === "city" ? "citywide" : "lineup-scoped"} past / ${result.upcoming.fetched} upcoming${result.historicalFallbackReason ? ` · ${result.historicalFallbackReason}` : ""}`,
       );
     } catch (error) {
       setCatalogStatus(error instanceof Error ? error.message : "JamBase sync failed");
@@ -468,6 +460,7 @@ export default function Home() {
           openArtist={openArtist}
           openShow={openShow}
           openVenue={openVenue}
+          onBack={() => navigate("discover")}
           operation={live.operation}
           rating={rating}
           review={review}
@@ -486,14 +479,12 @@ export default function Home() {
         />
       )}
 
-      {view === "diary" && (
-        <DiaryView
-          filter={diaryFilter}
-          memories={filteredMemories}
-          onFilter={setDiaryFilter}
-          openShow={openShow}
-          stats={live.diary?.stats}
-        />
+      {view === "artists" && (
+        <ArtistsDirectoryView openArtist={openArtist} shows={shows} />
+      )}
+
+      {view === "venues" && (
+        <VenuesDirectoryView openVenue={openVenue} shows={shows} />
       )}
 
       {view === "leaderboard" && (
@@ -506,7 +497,15 @@ export default function Home() {
       )}
 
       {view === "profile" && (
-        <ProfileView memories={memories} openShow={openShow} profile={live.profile} />
+        <ProfileView
+          filter={diaryFilter}
+          memories={memories}
+          onFilter={setDiaryFilter}
+          openArtist={openArtist}
+          openShow={openShow}
+          openVenue={openVenue}
+          profile={live.profile}
+        />
       )}
 
       {view === "artist" && (
@@ -543,7 +542,8 @@ function Header({ view, navigate, handle }: { view: View; navigate: (view: View)
         <div className="hidden items-center gap-1 sm:flex">
           {[
             ["discover", "Discover"],
-            ["diary", "Diary"],
+            ["artists", "Artists"],
+            ["venues", "Venues"],
             ["leaderboard", "Leaderboard"],
           ].map(([target, label]) => (
             <button
@@ -714,6 +714,7 @@ function DiscoverView({
 
 function ShowView({
   detail,
+  onBack,
   error,
   logOpen,
   setLogOpen,
@@ -737,6 +738,7 @@ function ShowView({
   submitLog,
 }: {
   detail: LiveState["showDetail"];
+  onBack: () => void;
   error: string;
   logOpen: boolean;
   setLogOpen: (open: boolean) => void;
@@ -787,6 +789,7 @@ function ShowView({
       <section className="relative min-h-[54vh] overflow-hidden">
         <img alt={show.title} className="absolute inset-0 h-full w-full object-cover" src={show.image} />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-[#14181C]/65 to-[#14181C]" />
+        <button className="absolute left-4 top-4 z-10 flex items-center gap-2 border border-white/30 bg-[#14181C]/85 px-4 py-3 text-sm font-black sm:left-6" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Back to Discover</button>
         <div className="relative mx-auto flex min-h-[54vh] max-w-6xl flex-col justify-end px-4 pb-8 sm:px-6">
           <p className="text-xs font-black uppercase tracking-[0.2em] text-[#47B7EF]">{isFestival ? "Festival" : isPast ? "Past show" : "Upcoming show"} · {show.day} · {show.time}</p>
           <h1 className="mt-3 max-w-4xl text-5xl font-black leading-none sm:text-7xl">{show.title}</h1>
@@ -929,9 +932,50 @@ function LogSheet({ show, rating, setRating, selectedVibes, toggleVibe, review, 
   );
 }
 
-function DiaryView({ memories, filter, onFilter, openShow, stats }: { memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; stats?: { shows: number; artists: number; venues: number; cities: number; averageRating: number } }) {
+function ArtistsDirectoryView({ shows, openArtist }: { shows: Show[]; openArtist: (id: string) => void }) {
+  const [search, setSearch] = useState("");
+  const artists = useMemo(() => {
+    const entries = new Map<string, { id: string; name: string; image: string; upcoming: Set<string>; past: Set<string>; latestDate: string }>();
+    for (const show of collapseFestivalShows(shows)) {
+      show.artistNames?.forEach((name, index) => {
+        const id = show.artistIds[index];
+        if (!id) return;
+        const entry = entries.get(id) ?? { id, name, image: show.image, upcoming: new Set(), past: new Set(), latestDate: "" };
+        (show.date >= todayIso() ? entry.upcoming : entry.past).add(show.id);
+        if (show.date > entry.latestDate) entry.latestDate = show.date;
+        entries.set(id, entry);
+      });
+    }
+    return [...entries.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [shows]);
+  const visible = artists.filter((artist) => artist.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6"><PageTitle eyebrow={`${artists.length} artists in your catalog`} title="Artists" /><label className="mt-6 flex items-center gap-3 border border-[#42505D] bg-[#202830] px-4 py-3"><Search className="h-5 w-5 text-[#47B7EF]" /><input className="min-w-0 flex-1 bg-transparent text-sm outline-none" onChange={(event) => setSearch(event.target.value)} placeholder="Search artists" value={search} /></label><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">{visible.slice(0, 100).map((artist) => <button className="overflow-hidden border border-[#34414D] bg-[#202830] text-left" key={artist.id} onClick={() => openArtist(artist.id)} type="button"><img alt={artist.name} className="aspect-square w-full object-cover" src={artist.image} /><span className="block p-3"><b className="block truncate">{artist.name}</b><small className="mt-1 block text-[#81909D]">{artist.upcoming.size} upcoming · {artist.past.size} past</small></span></button>)}</div></div>;
+}
+
+function VenuesDirectoryView({ shows, openVenue }: { shows: Show[]; openVenue: (id: string) => void }) {
+  const [search, setSearch] = useState("");
+  const venues = useMemo(() => {
+    const entries = new Map<string, { id: string; name: string; city: string; image: string; upcoming: Set<string>; past: Set<string> }>();
+    for (const show of collapseFestivalShows(shows)) {
+      if (!show.venueId) continue;
+      const entry = entries.get(show.venueId) ?? { id: show.venueId, name: show.venueName ?? "Venue", city: show.city ?? "", image: show.image, upcoming: new Set(), past: new Set() };
+      (show.date >= todayIso() ? entry.upcoming : entry.past).add(show.id);
+      entries.set(show.venueId, entry);
+    }
+    return [...entries.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [shows]);
+  const visible = venues.filter((venue) => `${venue.name} ${venue.city}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
+  return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6"><PageTitle eyebrow={`${venues.length} venues in your catalog`} title="Venues" /><label className="mt-6 flex items-center gap-3 border border-[#42505D] bg-[#202830] px-4 py-3"><Search className="h-5 w-5 text-[#47B7EF]" /><input className="min-w-0 flex-1 bg-transparent text-sm outline-none" onChange={(event) => setSearch(event.target.value)} placeholder="Search venues or cities" value={search} /></label><div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">{visible.slice(0, 100).map((venue) => <button className="grid grid-cols-[112px_1fr] overflow-hidden border border-[#34414D] bg-[#202830] text-left" key={venue.id} onClick={() => openVenue(venue.id)} type="button"><img alt={venue.name} className="h-28 w-28 object-cover" src={venue.image} /><span className="min-w-0 p-4"><b className="block truncate">{venue.name}</b><small className="mt-1 block text-[#81909D]">{venue.city}</small><small className="mt-3 block text-[#47B7EF]">{venue.upcoming.size} upcoming · {venue.past.size} past</small></span></button>)}</div></div>;
+}
+
+function DiaryArchive({ memories, filter, onFilter, openShow }: { memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void }) {
   const filters: DiaryFilter[] = ["Artist", "City", "Genre", "Calendar", "Rating", "Venue", "Photo"];
-  return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6"><PageTitle eyebrow="Your live music life" title="Diary" /><section className="mt-6 grid grid-cols-3 border border-[#42505D] bg-[#202830] p-5 text-center"><Stat label="shows" value={String(stats?.shows ?? 0)} /><Stat label="artists" value={String(stats?.artists ?? 0)} /><Stat label="average" value={(stats?.averageRating ?? 0).toFixed(1)} /></section><section className="mt-8 border-t border-white/10 pt-6"><div className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-[#47B7EF]" /><h2 className="text-xl font-black">See diary by</h2></div><div className="hide-scrollbar mt-4 flex gap-2 overflow-x-auto">{filters.map((item) => <button className={`shrink-0 border px-4 py-2 text-xs font-bold ${filter === item ? "border-[#47B7EF] bg-[#47B7EF] text-black" : "border-[#42505D] text-[#B8C2CC]"}`} key={item} onClick={() => onFilter(item)} type="button">{item}</button>)}</div></section>{filter === "Calendar" ? <DiaryCalendar memories={memories} /> : memories.length ? <section className="mt-6"><div className="flex items-center justify-between"><div><p className="text-xs uppercase text-[#81909D]">Persisted by {filter.toLowerCase()}</p><h2 className="mt-1 text-2xl font-black">Your moments</h2></div><Grid3X3 className="text-[#748391]" /></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">{memories.map((memory) => <button className="group relative aspect-square overflow-hidden bg-[#202830]" key={memory.id} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover transition group-hover:scale-105" src={memory.photo} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-3 text-left"><b className="block truncate text-sm">{memory.artistNames.join(" + ")}</b><small className="text-[#20D6AA]">{memory.rating} · {formatDate(memory.date)}</small></span></button>)}</div></section> : <EmptyLine text="Log your first show and it will appear here." />}</div>;
+  const groups = groupMemories(memories, filter);
+  return <section className="mt-10 border-t border-white/10 pt-8"><div className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-[#47B7EF]" /><SectionTitle eyebrow={`${memories.length} logged shows`} title="Your diary" /></div><div className="hide-scrollbar mt-4 flex gap-2 overflow-x-auto">{filters.map((item) => <button className={`shrink-0 border px-4 py-2 text-xs font-bold ${filter === item ? "border-[#47B7EF] bg-[#47B7EF] text-black" : "border-[#42505D] text-[#B8C2CC]"}`} key={item} onClick={() => onFilter(item)} type="button">{item}</button>)}</div>{filter === "Calendar" ? <DiaryCalendar memories={memories} /> : filter === "Photo" ? memories.length ? <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3">{[...memories].sort((a, b) => b.date.localeCompare(a.date)).map((memory) => <MemoryTile key={memory.id} memory={memory} openShow={openShow} />)}</div> : <EmptyLine text="Log your first show and it will appear here." /> : groups.length ? <div className="mt-7 divide-y divide-white/10 border-y border-white/10">{groups.map((group) => <section className="py-6" key={group.key}><div className="flex items-end justify-between gap-3"><div><h3 className="text-xl font-black">{group.label}</h3><p className="mt-1 text-xs text-[#81909D]">{group.count} {group.count === 1 ? "show" : "shows"}</p></div><span className="text-xs text-[#47B7EF]">Latest {formatDate(group.latestDate)}</span></div><div className="hide-scrollbar mt-4 flex gap-3 overflow-x-auto">{group.memories.map((memory) => <button className="grid w-64 shrink-0 grid-cols-[72px_1fr] overflow-hidden border border-[#34414D] bg-[#202830] text-left" key={`${group.key}-${memory.id}`} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-24 w-[72px] object-cover" src={memory.photo} /><span className="min-w-0 p-3"><b className="block truncate text-sm">{memory.artistNames.join(" + ")}</b><small className="mt-1 block truncate text-[#81909D]">{formatDate(memory.date)} · {memory.venueName}</small><small className="mt-2 block text-[#20D6AA]">{memory.rating} stars</small></span></button>)}</div></section>)}</div> : <EmptyLine text="No diary groups yet." />}</section>;
+}
+
+function MemoryTile({ memory, openShow }: { memory: LiveMemory; openShow: (id: string) => void }) {
+  return <button className="group relative aspect-square overflow-hidden bg-[#202830]" onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover transition group-hover:scale-105" src={memory.photo} /><span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-3 text-left"><b className="block truncate text-sm">{memory.artistNames.join(" + ")}</b><small className="text-[#20D6AA]">{memory.rating} · {formatDate(memory.date)}</small></span></button>;
 }
 
 function DiaryCalendar({ memories }: { memories: LiveMemory[] }) {
@@ -943,10 +987,15 @@ function LeaderboardView({ leaderboard, matches, scope, onScope }: { leaderboard
   return <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6"><PageTitle eyebrow="Verified activity" title="Member leaderboard" /><div className="mt-6 grid grid-cols-3 border border-[#42505D] p-1">{(["city", "artist", "venue"] as const).map((item) => <button className={`px-3 py-2 text-xs font-bold capitalize ${scope === item ? "bg-[#47B7EF] text-black" : "text-[#9AA8B4]"}`} key={item} onClick={() => onScope(item)} type="button">{item}</button>)}</div><section className="mt-8"><SectionTitle eyebrow={leaderboard?.label ?? "Loading"} title="Most active" /><div className="mt-4 divide-y divide-white/10">{leaderboard?.rows.map((row, index) => <div className="grid grid-cols-[32px_44px_1fr_auto] items-center gap-3 py-4" key={row.userId}><strong className="text-xl text-[#748391]">{index + 1}</strong><Avatar color={row.avatarColor} name={row.handle} /><div><b>@{row.handle}</b><p className="text-xs text-[#81909D]">{row.note}</p></div><b className="text-sm text-[#20D6AA]">{row.value}</b></div>)}</div></section><section className="mt-9 border-t border-white/10 pt-6"><SectionTitle eyebrow="Jaccard taste score" title="Most similar to you" />{matches.length ? <div className="mt-4 space-y-3">{matches.map((match) => <div className="flex items-center gap-3 border border-[#42505D] bg-[#202830] p-4" key={match.userId}><Avatar color={match.avatarColor} name={match.handle} /><div className="flex-1"><b>@{match.handle}</b><p className="mt-1 text-xs text-[#9AA8B4]">{match.sharedArtistNames.length ? `Both saw ${match.sharedArtistNames.join(", ")}` : `${match.sharedShowCount} shared shows`}</p></div><strong className="text-2xl text-[#20D6AA]">{Math.round(match.score * 100)}%</strong></div>)}</div> : <EmptyLine text="Log another show to unlock stronger taste matches." />}</section></div>;
 }
 
-function ProfileView({ profile, memories, openShow }: { profile: LiveState["profile"]; memories: LiveMemory[]; openShow: (id: string) => void }) {
+function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue }: { profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void }) {
   if (profile === undefined) return <StatusPanel title="Loading profile" detail="Calculating your live music stats..." loading />;
   if (!profile) return <StatusPanel title="Profile unavailable" detail="Reload to retry your local identity." />;
-  return <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your show identity" /><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${profile.stats.shows} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#42505D] bg-[#263139] p-6"><p className="text-xs font-black uppercase text-[#47B7EF]">All seeded activity</p><h2 className="mt-2 text-3xl font-black">Your live music archive</h2><div className="mt-7 grid grid-cols-3 text-center"><Stat label="shows" value={String(profile.stats.shows)} /><Stat label="artists" value={String(profile.stats.artists)} /><Stat label="venues" value={String(profile.stats.venues)} /></div></section><section className="mt-8"><SectionTitle eyebrow="Highest verified ratings" title="Favorite shows" />{profile.favoriteShows.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{profile.favoriteShows.map((log) => { const memory = toMemory(log as Record<string, unknown>); return <button className="aspect-[2/3] overflow-hidden border border-[#42505D]" key={log._id} onClick={() => openShow(log.showId)} type="button"><img alt={log.showTitle} className="h-full w-full object-cover" src={memory.photo} /></button>; })}</div> : <EmptyLine text="Your top shows will appear after you log them." />}</section><section className="mt-8 border-t border-white/10 pt-6"><SectionTitle eyebrow="One poster per persisted show" title="Live grid" />{memories.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">{memories.map((memory) => <button className="aspect-square overflow-hidden" key={memory.id} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-full w-full object-cover" src={memory.photo} /></button>)}</div> : <EmptyLine text="No poster moments yet." />}</section></div>;
+  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your show identity" /><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${profile.stats.shows} shows and counting.` })} type="button"><Share2 /></button></div><section className="mt-6 border border-[#42505D] bg-[#263139] p-6"><p className="text-xs font-black uppercase text-[#47B7EF]">Your live music archive</p><h2 className="mt-2 text-3xl font-black">{profile.stats.shows} shows and counting</h2><div className="mt-7 grid grid-cols-3 text-center"><Stat label="shows" value={String(profile.stats.shows)} /><Stat label="artists" value={String(profile.stats.artists)} /><Stat label="venues" value={String(profile.stats.venues)} /></div></section>
+    <section className="mt-8"><SectionTitle eyebrow="Highest verified ratings" title="Favorite shows" />{profile.favoriteShows.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{profile.favoriteShows.map((log) => { const memory = toMemory(log as Record<string, unknown>); return <button className="aspect-[2/3] overflow-hidden border border-[#42505D]" key={log._id} onClick={() => openShow(log.showId)} type="button"><img alt={log.showTitle} className="h-full w-full object-cover" src={memory.photo} /></button>; })}</div> : <EmptyLine text="Your top shows will appear after you log them." />}</section>
+    <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow="Based on verified logs" title="Top artists" /><div className="mt-4 divide-y divide-white/10">{profile.topArtists.length ? profile.topArtists.map((item, index) => item.artist ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openArtist(item.artist!._id)} type="button"><span className="w-6 text-lg font-black text-[#596875]">{index + 1}</span><img alt={item.name} className="h-10 w-10 object-cover" src={resolveShowImage(item.artist.image, [item.name])} /><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#81909D]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your artists." />}</div></div><div><SectionTitle eyebrow="Based on verified logs" title="Top venues" /><div className="mt-4 divide-y divide-white/10">{profile.topVenues.length ? profile.topVenues.map((item, index) => item.venue ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openVenue(item.venue!._id)} type="button"><span className="w-6 text-lg font-black text-[#596875]">{index + 1}</span><span className="flex h-10 w-10 items-center justify-center border border-[#42505D]"><MapPin className="h-4 w-4 text-[#47B7EF]" /></span><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#81909D]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your venues." />}</div></div></section>
+    <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow={`${profile.followedArtists.length} saved`} title="Artists you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedArtists.length ? profile.followedArtists.map((artist) => artist ? <button className="flex items-center gap-2 border border-[#42505D] px-3 py-2 text-sm" key={artist._id} onClick={() => openArtist(artist._id)} type="button"><Heart className="h-3 w-3 fill-[#20D6AA] text-[#20D6AA]" /> {artist.name}</button> : null) : <EmptyLine text="Follow artists to keep them here." />}</div></div><div><SectionTitle eyebrow={`${profile.followedVenues.length} saved`} title="Venues you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedVenues.length ? profile.followedVenues.map((venue) => venue ? <button className="flex items-center gap-2 border border-[#42505D] px-3 py-2 text-sm" key={venue._id} onClick={() => openVenue(venue._id)} type="button"><MapPin className="h-3 w-3 text-[#47B7EF]" /> {venue.name}</button> : null) : <EmptyLine text="Follow venues to keep them here." />}</div></div></section>
+    <DiaryArchive filter={filter} memories={memories} onFilter={onFilter} openShow={openShow} />
+  </div>;
 }
 
 function ArtistView({ detail, onBack, openShow, onFollow }: { detail: LiveState["artistDetail"]; onBack: () => void; openShow: (id: string) => void; onFollow: (id: string) => Promise<unknown> }) {
@@ -994,7 +1043,7 @@ function RatingStars({ value, interactive = false, onChange }: { value: number; 
 }
 
 function BottomNav({ view, navigate }: { view: View; navigate: (view: View) => void }) {
-  const items: [View, string, ReactNode][] = [["discover", "Discover", <Compass key="discover" />], ["diary", "Diary", <Library key="diary" />], ["leaderboard", "Leaders", <Trophy key="leaderboard" />], ["profile", "Profile", <CircleUserRound key="profile" />]];
+  const items: [View, string, ReactNode][] = [["discover", "Discover", <Compass key="discover" />], ["artists", "Artists", <Music2 key="artists" />], ["venues", "Venues", <MapPin key="venues" />], ["profile", "Profile", <CircleUserRound key="profile" />]];
   return <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-white/10 bg-[#14181C]/95 p-2 backdrop-blur sm:hidden">{items.map(([target, label, icon]) => <button className={`flex flex-col items-center gap-1 py-1 text-[10px] ${view === target ? "text-[#20D6AA]" : "text-[#81909D]"}`} key={target} onClick={() => navigate(target)} type="button"><span className="[&>svg]:h-5 [&>svg]:w-5">{icon}</span>{label}</button>)}</nav>;
 }
 
