@@ -6,15 +6,29 @@ function unique(values: string[]) {
   return [...new Set(values)];
 }
 
-function buildProfile(logs: Array<{ showId: string; showTitle: string; artistNames: string[] }>) {
+function buildProfile(
+  logs: Array<{
+    showId: string;
+    showTitle: string;
+    artistNames: string[];
+    artistGenres?: string[];
+    venueName?: string;
+  }>,
+) {
   const artistNames = unique(logs.flatMap((log) => log.artistNames));
   const showIds = unique(logs.map((log) => log.showId));
   const showTitles = unique(logs.map((log) => log.showTitle));
+  // Taste v2 signals: sparse until L1 enrichment lands, so tasteScore only
+  // leans on these when both sides in a comparison actually have them.
+  const genres = unique(logs.flatMap((log) => log.artistGenres ?? []));
+  const venueNames = unique(logs.map((log) => log.venueName ?? "").filter(Boolean));
 
   return {
     artistNames,
     showIds,
     showTitles,
+    genres,
+    venueNames,
   };
 }
 
@@ -97,7 +111,12 @@ export const matchDetail = query({
       // over 99 reads as broken, so clamp for display.
       matchPercent: Math.min(
         Math.round(
-          tasteScore(myProfile.artistNames, otherProfile.artistNames, bothThere.length) * 100,
+          tasteScore(myProfile.artistNames, otherProfile.artistNames, bothThere.length, {
+            genresA: myProfile.genres,
+            genresB: otherProfile.genres,
+            venuesA: myProfile.venueNames,
+            venuesB: otherProfile.venueNames,
+          }) * 100,
         ),
         99,
       ),
@@ -151,7 +170,12 @@ export const similar = query({
           userId: user._id,
           handle: user.handle,
           avatarColor: user.avatarColor,
-          score: tasteScore(targetProfile.artistNames, profile.artistNames, sharedShows.length),
+          score: tasteScore(targetProfile.artistNames, profile.artistNames, sharedShows.length, {
+            genresA: targetProfile.genres,
+            genresB: profile.genres,
+            venuesA: targetProfile.venueNames,
+            venuesB: profile.venueNames,
+          }),
           sharedArtistNames: sharedArtists,
           sharedShowCount: sharedShows.length,
           sharedShowTitles: targetProfile.showTitles.filter((title) =>
