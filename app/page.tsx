@@ -386,8 +386,9 @@ export default function Home() {
     setCatalogStatus("Syncing past year + upcoming...");
     try {
       const result = await live.syncCatalog();
+      const label = result.source === "free" ? "Free sources synced" : "JamBase synced";
       setCatalogStatus(
-        `JamBase synced · ${result.historical.fetched} ${result.historicalMode === "city" ? "citywide" : "lineup-scoped"} past / ${result.upcoming.fetched} upcoming${result.historicalFallbackReason ? ` · ${result.historicalFallbackReason}` : ""}`,
+        `${label} · ${result.historical.fetched} ${result.historicalMode === "city" ? "citywide" : "lineup-scoped"} past / ${result.upcoming.fetched} upcoming${result.historicalFallbackReason ? ` · ${result.historicalFallbackReason}` : ""}`,
       );
     } catch (error) {
       setCatalogStatus(error instanceof Error ? error.message : "JamBase sync failed");

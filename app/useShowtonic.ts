@@ -68,6 +68,8 @@ export function useShowtonic({
   const setFavoritesMutation = useMutation(api.favorites.set);
   const toggleReviewLikeMutation = useMutation(api.activity.toggleLike);
   const syncCatalogAction = useAction(api.jambase.syncCatalog);
+  const syncFreeCatalogAction = useAction(api.freeEvents.syncFreeCatalog);
+  const enrichArtistsAction = useAction(api.freeEvents.enrichArtists);
   const today = localDate();
 
   useEffect(() => {
@@ -246,15 +248,65 @@ export function useShowtonic({
     }
   }
 
-  async function syncCatalog() {
-    return syncCatalogAction({
-      cityId: "jambase:4226966",
-      cityName: "San Francisco",
+  // Unified sync result so the UI renders the same status for either source.
+  type CatalogSyncResult = {
+    source: "jambase" | "free";
+    historical: { fetched: number };
+    upcoming: { fetched: number };
+    historicalMode: "city" | "artists";
+    historicalFallbackReason?: string;
+  };
+
+  // JamBase while the trial is live; when it fails (expired key / 401 / 403 /
+  // network), fall back to the free stack (Ticketmaster + Setlist.fm) so the
+  // Sync control keeps working. See docs/FREE_DATA.md.
+  async function syncCatalog(): Promise<CatalogSyncResult> {
+    try {
+      const result = await syncCatalogAction({
+        cityId: "jambase:4226966",
+        cityName: "San Francisco",
+        today,
+        historyDays: 365,
+        maxPagesPerRange: 30,
+        reconcileHistorical: true,
+      });
+      return { source: "jambase", ...result };
+    } catch (jambaseError) {
+      const free = await syncFreeCatalogAction({
+        city: "San Francisco",
+        today,
+        historyDays: 365,
+        maxPagesPerRange: 10,
+      });
+      // Free upcoming creates stub artists — enrich art/genres best-effort.
+      void enrichArtistsAction({ limit: 50 }).catch(() => undefined);
+      return {
+        source: "free",
+        historical: { fetched: free.historical.fetched },
+        upcoming: { fetched: free.upcoming.fetched },
+        historicalMode: "artists",
+        historicalFallbackReason: `JamBase unavailable (${
+          jambaseError instanceof Error ? jambaseError.message : "error"
+        }) — used free sources: Ticketmaster + Setlist.fm`,
+      };
+    }
+  }
+
+  // Force the free path regardless of JamBase (post-trial default).
+  async function syncFreeCatalog(): Promise<CatalogSyncResult> {
+    const free = await syncFreeCatalogAction({
+      city: "San Francisco",
       today,
       historyDays: 365,
-      maxPagesPerRange: 30,
-      reconcileHistorical: true,
+      maxPagesPerRange: 10,
     });
+    void enrichArtistsAction({ limit: 50 }).catch(() => undefined);
+    return {
+      source: "free",
+      historical: { fetched: free.historical.fetched },
+      upcoming: { fetched: free.upcoming.fetched },
+      historicalMode: "artists",
+    };
   }
 
   return {
@@ -272,6 +324,7 @@ export function useShowtonic({
     setAttendance,
     showDetail,
     syncCatalog,
+    syncFreeCatalog,
     tasteMatches: tasteMatches ?? [],
     tasteMatchDetail,
     toggleReviewLike,

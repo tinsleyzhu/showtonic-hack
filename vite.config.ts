@@ -14,6 +14,9 @@ const localBindingConfig = {
     ? [{ binding: d1, database_name: "showtonic-d1", database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID }]
     : [],
   r2_buckets: r2 ? [{ binding: r2, bucket_name: "showtonic-r2" }] : [],
+  // Serve on <name>.<subdomain>.workers.dev. Without this the deploy succeeds
+  // but the route is never enabled and every request returns Cloudflare 1042.
+  workers_dev: true,
   // Public deployment URL, not a secret — the browser already ships it.
   vars: { CONVEX_URL: process.env.NEXT_PUBLIC_CONVEX_URL ?? "https://curious-corgi-815.convex.cloud" },
 };

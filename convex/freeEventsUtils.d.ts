@@ -1,0 +1,59 @@
+export type NormalizedFreeEvent = {
+  jambaseId: string;
+  title: string;
+  date: string;
+  startTime?: string;
+  venueName: string;
+  city: string;
+  region?: string;
+  latitude?: number;
+  longitude?: number;
+  image?: string;
+  festivalId?: string;
+  stage?: string;
+  isHeadliner: boolean;
+  artistNames: string[];
+  artistJambaseIds?: string[];
+  jambaseUrl?: string;
+  /** Non-schema hints, stripped by toImportEvents before insertion. */
+  _genres?: string[];
+  _songs?: string[];
+};
+
+export type ImportEvent = Omit<NormalizedFreeEvent, "_genres" | "_songs">;
+
+export type SpotifyArtistFields = {
+  spotifyId?: string;
+  image?: string;
+  genres?: string[];
+  spotifyUrl?: string;
+};
+
+export type MusicbrainzArtistFields = {
+  mbid?: string;
+  hometown?: string;
+  genres?: string[];
+};
+
+export function slug(value: unknown): string;
+export function inferFestivalId(
+  title: unknown,
+  date: unknown,
+  artistCount: number,
+): string | undefined;
+export function bestTicketmasterImage(images: unknown): string | undefined;
+export function ticketmasterGenres(event: unknown): string[];
+export function normalizeTicketmasterEvents(
+  payload: unknown,
+  festivalId?: string,
+): NormalizedFreeEvent[];
+export function setlistDateToIso(value: unknown): string;
+export function setlistSongs(setlist: unknown): string[];
+export function normalizeSetlistFmSetlists(payload: unknown): NormalizedFreeEvent[];
+export function normalizeBandsintownEvents(
+  payload: unknown,
+  fallbackArtist?: string,
+): NormalizedFreeEvent[];
+export function spotifyArtistFields(searchPayload: unknown): SpotifyArtistFields;
+export function musicbrainzArtistFields(searchPayload: unknown): MusicbrainzArtistFields;
+export function toImportEvents(events: NormalizedFreeEvent[]): ImportEvent[];

@@ -117,11 +117,45 @@ export const cityStats = query({
   },
 });
 
+// Discover is scoped to the member's home base. Two cities of catalog with a
+// year of history is ~9k shows, which blows Convex's 8,192-element return cap —
+// and shipping the whole planet to a phone was never right anyway. Scope to the
+// city, keep a generous window around today, and cap what crosses the wire.
+const HOME_WINDOW_DAYS_BACK = 400;
+const HOME_WINDOW_DAYS_FORWARD = 210;
+const HOME_MAX_SHOWS = 4000;
+
+function shiftDate(iso: string, days: number) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 export const home = query({
   args: { userId: v.id("users"), today: v.string() },
   handler: async (ctx, args) => {
-    const shows = await listShowSummaries(ctx, args.userId);
-    const jamBaseShows = shows.filter((show) => show.isJamBase && show.city === "San Francisco");
+    const all = await listShowSummaries(ctx, args.userId);
+    const user = await ctx.db.get(args.userId);
+    const homeCity = user?.homeCity;
+
+    const earliest = shiftDate(args.today, -HOME_WINDOW_DAYS_BACK);
+    const latest = shiftDate(args.today, HOME_WINDOW_DAYS_FORWARD);
+    const inScope = all.filter(
+      (show) =>
+        (!homeCity || show.city === homeCity) && show.date >= earliest && show.date <= latest,
+    );
+
+    // If the cap still bites, keep what is most useful: everything upcoming
+    // first, then the most recent past, because a diary reclaims backwards.
+    const upcoming = inScope.filter((show) => show.date >= args.today);
+    const past = inScope
+      .filter((show) => show.date < args.today)
+      .sort((left, right) => right.date.localeCompare(left.date));
+    const shows = [...upcoming, ...past]
+      .slice(0, HOME_MAX_SHOWS)
+      .sort((left, right) => left.date.localeCompare(right.date) || left.title.localeCompare(right.title));
+
+    const cityShows = shows.filter((show) => show.isJamBase);
     const watchlist = await ctx.db
       .query("watchlist")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
@@ -138,10 +172,12 @@ export const home = query({
           .slice(0, 6),
       },
       catalogStats: {
-        historical: jamBaseShows.filter((show) => show.date < args.today).length,
-        upcoming: jamBaseShows.filter((show) => show.date >= args.today).length,
-        total: jamBaseShows.length,
-        demo: shows.filter((show) => !show.isJamBase && show.city === "San Francisco").length,
+        historical: cityShows.filter((show) => show.date < args.today).length,
+        upcoming: cityShows.filter((show) => show.date >= args.today).length,
+        total: cityShows.length,
+        demo: shows.filter((show) => !show.isJamBase).length,
+        city: homeCity ?? null,
+        truncated: inScope.length > HOME_MAX_SHOWS,
       },
     };
   },
@@ -154,6 +190,7 @@ export const search = query({
   },
   handler: async (ctx, args) => {
     const shows = await listShowSummaries(ctx, args.userId);
-    return shows.filter((show) => matchesSearch(show, args.query));
+    // Capped for the same reason as home: a two-letter query matches thousands.
+    return shows.filter((show) => matchesSearch(show, args.query)).slice(0, 500);
   },
 });

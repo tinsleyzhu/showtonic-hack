@@ -1,7 +1,47 @@
-import { query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { summarizeRatings } from "./showtonicUtils.js";
+
+// Artists that importUpcoming created as stubs (no image or no genres) and that
+// the free-source enricher (convex/freeEvents.ts) should fill from Spotify /
+// MusicBrainz. Cheap scan — the hackathon catalog is small.
+export const listNeedingEnrichment = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+    const artists = await ctx.db.query("artists").collect();
+    return artists
+      .filter((artist) => !artist.image || artist.genres.length === 0)
+      .slice(0, limit)
+      .map((artist) => ({ _id: artist._id, name: artist.name }));
+  },
+});
+
+// Patch enrichment fields without clobbering anything already present.
+export const enrich = mutation({
+  args: {
+    artistId: v.id("artists"),
+    image: v.optional(v.string()),
+    genres: v.optional(v.array(v.string())),
+    hometown: v.optional(v.string()),
+    bio: v.optional(v.string()),
+    topTrack: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const artist = await ctx.db.get(args.artistId);
+    if (!artist) return { patched: false };
+    const patch: Record<string, unknown> = {};
+    if (args.image && !artist.image) patch.image = args.image;
+    if (args.genres && args.genres.length && artist.genres.length === 0) patch.genres = args.genres;
+    if (args.hometown && !artist.hometown) patch.hometown = args.hometown;
+    if (args.bio && !artist.bio) patch.bio = args.bio;
+    if (args.topTrack && !artist.topTrack) patch.topTrack = args.topTrack;
+    if (Object.keys(patch).length === 0) return { patched: false };
+    await ctx.db.patch(args.artistId, patch);
+    return { patched: true };
+  },
+});
 
 // Public taste-seed grid for onboarding step 2 (design 04): the catalog's most
 // booked artists, no identity required.

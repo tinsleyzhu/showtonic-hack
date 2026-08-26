@@ -175,6 +175,12 @@ export const syncCatalog = action({
     cityName: v.string(),
     today: v.optional(v.string()),
     historyDays: v.optional(v.number()),
+    // Explicit window overrides. Citywide history iterates every venue in the
+    // city in batches of ten, so a full year in one call exceeds the action's
+    // time budget for a city the size of New York. These let a caller walk the
+    // year in slices instead.
+    historyFrom: v.optional(v.string()),
+    historyTo: v.optional(v.string()),
     maxPagesPerRange: v.optional(v.number()),
     dryRun: v.optional(v.boolean()),
     historicalArtistNames: v.optional(v.array(v.string())),
@@ -183,8 +189,10 @@ export const syncCatalog = action({
   },
   handler: async (ctx, args): Promise<{ historical: ImportSummary; upcoming: ImportSummary; historicalArtists: number; historicalMode: "city" | "artists"; historicalFallbackReason?: string; historicalRemoved: number }> => {
     const today = args.today ?? isoDate(new Date());
-    const historyStart = isoDate(addDays(new Date(`${today}T12:00:00Z`), -(args.historyDays ?? 365) + 1));
-    const historyEnd = isoDate(addDays(new Date(`${today}T12:00:00Z`), -1));
+    const historyStart =
+      args.historyFrom ?? isoDate(addDays(new Date(`${today}T12:00:00Z`), -(args.historyDays ?? 365) + 1));
+    const historyEnd =
+      args.historyTo ?? isoDate(addDays(new Date(`${today}T12:00:00Z`), -1));
     const maxPages = Math.min(Math.max(args.maxPagesPerRange ?? 30, 1), 50);
     const common = {
       geoCityId: args.cityId,
