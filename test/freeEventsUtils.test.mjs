@@ -9,6 +9,7 @@ import {
   setlistSongs,
   spotifyArtistFields,
   musicbrainzArtistFields,
+  inferGenresFromContext,
   toImportEvents,
 } from "../convex/freeEventsUtils.js";
 
@@ -179,6 +180,38 @@ test("spotifyArtistFields picks the first image, genres, and url", () => {
   assert.equal(fields.image, "https://i.scdn.co/big.jpg");
   assert.equal(fields.genres.length, 5); // capped
   assert.equal(fields.spotifyUrl, "https://open.spotify.com/artist/6sHCvZfBBt7f5xkG2Uo2Sc");
+});
+
+test("inferGenresFromContext reads the room, not just the title (Public Works vs Davies)", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Public Works"], titles: ["Late Night w/ Support"] }),
+    ["electronic", "dance"],
+  );
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Davies Symphony Hall"], titles: ["An Evening With"] }),
+    ["classical"],
+  );
+});
+
+test("inferGenresFromContext falls back to title keywords when the venue is unrecognized", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Some Unknown Room"], titles: ["DJ Set: Warehouse Techno Night"] }),
+    ["electronic"],
+  );
+});
+
+test("inferGenresFromContext returns nothing when neither venue nor title carries a signal", () => {
+  assert.deepEqual(inferGenresFromContext({ venueNames: ["The Room"], titles: ["A Show"] }), []);
+  assert.deepEqual(inferGenresFromContext(), []);
+});
+
+test("inferGenresFromContext dedupes and caps at 5 across venue + title hints", () => {
+  const genres = inferGenresFromContext({
+    venueNames: ["Public Works", "The Fillmore"],
+    titles: ["DJ Set", "Metal Night", "Hip Hop Showcase"],
+  });
+  assert.ok(genres.length <= 5);
+  assert.equal(new Set(genres).size, genres.length);
 });
 
 test("musicbrainzArtistFields returns mbid, hometown, and top tags", () => {
