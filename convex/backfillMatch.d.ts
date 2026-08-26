@@ -59,8 +59,11 @@ export type MatchOptions = {
   visitedVenueIds?: readonly string[];
   today?: string;
   venueRadiusMeters?: number;
+  // 0 reproduces v1, which had no ambiguity guard. Only the eval sets this.
+  ambiguityMargin?: number;
 };
 
+export const AMBIGUITY_MARGIN: number;
 export const MIN_CLUSTER_PHOTOS: number;
 export const MIN_CONFIDENCE: number;
 export const VENUE_NEAR_METERS: number;
