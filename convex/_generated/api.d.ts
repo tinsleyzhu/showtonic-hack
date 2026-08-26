@@ -30,6 +30,7 @@ import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
 import type * as shows from "../shows.js";
 import type * as showtonicUtils from "../showtonicUtils.js";
+import type * as squad from "../squad.js";
 import type * as taste from "../taste.js";
 import type * as tasteMath from "../tasteMath.js";
 import type * as users from "../users.js";
@@ -65,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   seedData: typeof seedData;
   shows: typeof shows;
   showtonicUtils: typeof showtonicUtils;
+  squad: typeof squad;
   taste: typeof taste;
   tasteMath: typeof tasteMath;
   users: typeof users;

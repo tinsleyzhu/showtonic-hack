@@ -196,6 +196,33 @@ export default defineSchema({
     .index("by_hash", ["tokenHash"])
     .index("by_user", ["userId"]),
 
+  // A night three agents agreed on. The transcript is denormalized onto the row
+  // because it IS the artefact: a human with no agent of their own needs to be
+  // able to read how the decision got made.
+  squadPlans: defineTable({
+    userIds: v.array(v.id("users")),
+    showId: v.id("shows"),
+    showTitle: v.string(),
+    showDate: v.string(),
+    venueName: v.optional(v.string()),
+    status: v.union(v.literal("proposed"), v.literal("confirmed"), v.literal("paid")),
+    // What actually settled. "simulated" is a first-class value, not a failure:
+    // no ticketing API here sells to agents, and saying so beats implying it.
+    settlement: v.optional(v.union(v.literal("aisa"), v.literal("simulated"))),
+    paymentRef: v.optional(v.string()),
+    amountCents: v.optional(v.number()),
+    payerUserId: v.optional(v.id("users")),
+    transcript: v.array(
+      v.object({
+        agent: v.string(), // the token's label — the agent's identity, not the human's
+        handle: v.string(),
+        message: v.string(),
+        at: v.number(),
+      }),
+    ),
+    createdAt: v.number(),
+  }).index("by_show", ["showId"]),
+
   // v1.5 — likes on show logs/reviews in the activity feed (design 21).
   reviewLikes: defineTable({
     userId: v.id("users"),

@@ -11,6 +11,8 @@ const TOOL_SUMMARY = [
   ["resolve_candidate", "write:candidates", "Accept or reject one night. Accepting writes a diary entry."],
   ["set_attendance", "write:attendance", "Mark the owner interested in or going to a show."],
   ["log_show", "write:logs", "Write a rated diary entry for a show the owner attended."],
+  ["record_squad_plan", "write:attendance", "Record a night a group of agents agreed on, with the transcript of how."],
+  ["checkout_tickets", "pay", "Settle an agreed squad plan. Never granted by default."],
 ];
 
 export function mcpManifest(origin: string) {

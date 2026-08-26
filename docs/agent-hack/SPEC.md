@@ -11,8 +11,8 @@
 > | Catalog-gap agent (Tavily) | ⏳ key set and verified; agent not yet wired |
 > | Vision agent | ❌ cut for now — privacy cost vs accuracy gain unresolved |
 > | Draft-writer agent | ❌ not started |
-> | Squad negotiation (phase 4) | ❌ not started — the last 20 rubric points |
-> | Agent payments (AIsa) | ⏳ key verified (104 models); `checkout_tickets` not built |
+> | Squad negotiation (phase 4) | ✅ shipped — `agents/squad.mjs`, 3 agents / 3 tokens / uneven scopes, verified against production |
+> | Agent payments (AIsa) | ⚠️ `checkout_tickets` built and scope-gated; AIsa declines `recharge_required` (account has no balance — credits are collected by an organiser, not self-serve), so settlement records `simulated` **and names the declining rail** |
 >
 > Beyond the original plan: **New York catalog** (1,567 upcoming + a year of
 > history), **venue geocoding** (235/255 located), and a **free-data plane**

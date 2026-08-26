@@ -52,3 +52,4 @@ AGENTS.md
 CLAUDE.md
 skills-lock.json
 convex/_generated/ai/
+agents/squad.tokens.json

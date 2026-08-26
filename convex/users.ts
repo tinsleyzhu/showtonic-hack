@@ -107,3 +107,16 @@ export const listFake = query({
       .collect();
   },
 });
+
+// Resolve handles to ids so an agent can name its squad in human terms rather
+// than juggling opaque document ids across three separate token holders.
+export const idsByHandles = query({
+  args: { handles: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    const wanted = args.handles.map((handle) => handle.trim().replace(/^@+/, "").toLowerCase());
+    const users = await ctx.db.query("users").collect();
+    return users
+      .filter((user) => wanted.includes(user.handle.toLowerCase()))
+      .map((user) => user._id);
+  },
+});

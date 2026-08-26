@@ -168,6 +168,68 @@ export const TOOLS: ToolDef[] = [
         source: "live",
       }),
   },
+  {
+    name: "checkout_tickets",
+    scope: "pay",
+    description:
+      "Settle a squad plan the group has agreed on. Requires the `pay` scope, which is never granted by default — an agent that can plan a night is not thereby one that can spend money on it. Returns the settlement rail actually used and its transaction reference; a simulated settlement says so rather than implying a ticket was bought.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: str("From the squad plan the group agreed on."),
+        amountCents: { type: "number", description: "Total for the group, in cents." },
+      },
+      required: ["planId", "amountCents"],
+    },
+    run: (client, me, args) =>
+      client.action("squad:settle" as any, {
+        planId: args.planId,
+        payerUserId: me.userId,
+        amountCents: Math.max(0, Math.round(Number(args.amountCents) || 0)),
+      }),
+  },
+  {
+    name: "record_squad_plan",
+    scope: "write:attendance",
+    description:
+      "Record the night a group of agents converged on, with the transcript of how they got there. The transcript is the artefact: a human with no agent of their own reads it to see how the decision was made.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        showId: str("The agreed show."),
+        userHandles: { type: "array", items: { type: "string" }, description: "Everyone on the plan." },
+        transcript: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              agent: str("The speaking agent's label."),
+              handle: str("Whose agent it is."),
+              message: str("What it said."),
+            },
+            required: ["agent", "handle", "message"],
+          },
+        },
+      },
+      required: ["showId", "userHandles", "transcript"],
+    },
+    run: async (client, me, args) => {
+      const userIds: string[] = await client.query("users:idsByHandles" as any, {
+        handles: args.userHandles ?? [],
+      });
+      const now = Date.now();
+      return client.mutation("squad:record" as any, {
+        userIds,
+        showId: args.showId,
+        transcript: (args.transcript ?? []).map((row: any, index: number) => ({
+          agent: String(row.agent ?? "agent"),
+          handle: String(row.handle ?? ""),
+          message: String(row.message ?? ""),
+          at: now + index,
+        })),
+      });
+    },
+  },
 ];
 
 export const TOOLS_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));

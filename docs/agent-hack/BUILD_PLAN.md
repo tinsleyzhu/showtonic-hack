@@ -116,7 +116,25 @@ consumers.
 - ✅ Exit: a night that's NOT in the catalog gets found on the web, proposed, accepted,
   logged — and the catalog is one show bigger.
 
-## Phase 4 — ❌ NOT STARTED · Squad negotiation + payment (Act 3)
+## Phase 4 — ✅ DONE · Squad negotiation + payment (Act 3)
+
+`agents/squad.mjs` runs three agents against the PUBLIC endpoint with three
+separate tokens and deliberately uneven scopes — only the payer holds `pay`.
+Verified live against production:
+
+- each agent reads only its own human (`get_taste_profile`)
+- the convener searches the SQUAD'S taste, not the city; searching generically
+  returned twelve shows nobody wanted and the run correctly refused to invent
+  consensus, which is how the flaw was found
+- consensus reached with stated reasons, all three RSVP for themselves
+- **maya and leo attempt `checkout_tickets` and are refused `missing_scope`,
+  live, before the payer succeeds** — the scope model doing visible work
+- plan + 15-message transcript recorded for a human to read
+
+Settlement: AIsa declines with `recharge_required` (no balance — the $100 is
+collected by an organiser, not self-serve), so the receipt records `simulated`
+and names the declining rail. A demo that says "simulated" without saying why
+is how a demo quietly becomes a lie.
 
 **The last 20 rubric points and the largest open number.** AIsa authenticates
 (104 models reachable), so the payer agent can make a real machine payment
