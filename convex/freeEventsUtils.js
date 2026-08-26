@@ -255,6 +255,99 @@ function musicbrainzArtistFields(searchPayload) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Genre inference from venue/title context — last-resort fallback for artists
+// no API knows anything about. A Public Works listing is not a Davies Symphony
+// Hall listing: the room and the show title carry a genre signal even when
+// Spotify and MusicBrainz have never heard of the act (local support acts,
+// DJs, community-hall bookings). Pure + keyword-based, so it is honest about
+// being a heuristic, not a confirmed tag.
+//
+// PRECISION OVER COVERAGE. Only rooms whose programming is near-monogenre are
+// listed: a symphony hall only books classical, a dance club only books DJs.
+// Broad rooms (the Fillmore, the Warfield, arenas, most indie clubs) are
+// deliberately absent — they book everything, so "played the Fillmore" carries
+// no genre information and tagging it rock/pop is padding, not data. When an
+// artist's rooms disagree with each other, that is itself evidence the venue
+// signal is meaningless for them, and nothing is inferred.
+// ---------------------------------------------------------------------------
+
+// `family` groups genres that describe the same kind of night, so conflicting
+// evidence can be detected. Two families firing = the context is uninformative.
+// Generic patterns first — the catalog is Ticketmaster-driven and not
+// SF-only, so a room type ("… Symphony Hall", "… Jazz Club") generalizes to
+// every city, while named rooms only cover the Bay Area.
+const VENUE_GENRE_HINTS = [
+  {
+    family: "classical",
+    pattern:
+      /symphony|opera house|philharmonic|conservatory|orchestra hall|concert hall|recital hall|\bdavies\b/i,
+    genres: ["classical"],
+  },
+  {
+    family: "jazz",
+    pattern:
+      /\bjazz\b|sfjazz|jazz club|jazz center|keystone korner|mr\.? tipple|yoshi'?s|blue note|village vanguard|birdland/i,
+    genres: ["jazz"],
+  },
+  {
+    family: "electronic",
+    pattern:
+      /public works|1015 folsom|halcyon|monarch|f8\b|great northern|the endup|temple nightclub|audio sf|nightclub/i,
+    genres: ["electronic", "dance"],
+  },
+  {
+    family: "comedy",
+    pattern: /punch line|cobb'?s comedy|comedy club|comedy cellar|laugh factory|improv\b/i,
+    genres: ["comedy"],
+  },
+  {
+    family: "folk",
+    pattern: /freight (&|and) salvage|folk (music )?(center|hall|club)/i,
+    genres: ["folk"],
+  },
+];
+
+const TITLE_GENRE_HINTS = [
+  {
+    family: "electronic",
+    pattern: /\bdj\b|\brave\b|house music|\btechno\b|\bedm\b|drum\s*(and|&)\s*bass|dubstep/i,
+    genres: ["electronic"],
+  },
+  {
+    family: "classical",
+    pattern: /orchestra|symphony|philharmonic|classical|string quartet/i,
+    genres: ["classical"],
+  },
+  { family: "jazz", pattern: /\bjazz\b/i, genres: ["jazz"] },
+  { family: "loud", pattern: /\bmetal\b|hardcore|\bpunk\b/i, genres: ["metal"] },
+  { family: "hiphop", pattern: /hip.?hop|\brap\b/i, genres: ["hip hop"] },
+  { family: "country", pattern: /\bcountry\b/i, genres: ["country"] },
+  { family: "comedy", pattern: /comedy/i, genres: ["comedy"] },
+  { family: "blues", pattern: /\bblues\b/i, genres: ["blues"] },
+];
+
+// Returns the matching hints, or [] when they span more than one family —
+// conflicting evidence means the signal is not trustworthy for this artist.
+function agreeingGenreHints(hints, texts) {
+  const text = texts.filter(Boolean).join(" \n ");
+  if (!text) return [];
+  const matched = hints.filter((hint) => hint.pattern.test(text));
+  const families = new Set(matched.map((hint) => hint.family));
+  if (families.size !== 1) return [];
+  return matched.flatMap((hint) => hint.genres);
+}
+
+// venueNames / titles are the raw strings pulled off the artist's shows. The
+// room is the stronger signal (a monogenre room's identity is sticky), so a
+// confident venue read wins outright and titles are only consulted when the
+// rooms say nothing.
+function inferGenresFromContext({ venueNames = [], titles = [] } = {}) {
+  const fromVenues = agreeingGenreHints(VENUE_GENRE_HINTS, venueNames);
+  if (fromVenues.length) return [...new Set(fromVenues)].slice(0, 5);
+  return [...new Set(agreeingGenreHints(TITLE_GENRE_HINTS, titles))].slice(0, 5);
+}
+
 // Strip the non-schema `_genres` / `_songs` hints before handing events to the
 // `importUpcoming` mutation (its validator rejects unknown keys).
 function toImportEvents(events) {
@@ -274,5 +367,6 @@ export {
   normalizeBandsintownEvents,
   spotifyArtistFields,
   musicbrainzArtistFields,
+  inferGenresFromContext,
   toImportEvents,
 };

@@ -117,21 +117,28 @@ function clusterOn(date, photoCount = 5) {
 }
 
 test("matches clusters to same-date past shows with a base confidence", () => {
-  const candidates = matchClustersToShows([clusterOn("2025-11-15")], catalog, { today: "2026-08-15" });
+  // One show on the night — nothing to be ambiguous about.
+  const soleShow = catalog.filter((show) => show.id === "fred");
+  const candidates = matchClustersToShows([clusterOn("2025-11-15")], soleShow, { today: "2026-08-15" });
   assert.equal(candidates.length, 1);
   assert.equal(candidates[0].confidence, 0.5);
-  assert.equal(["fred", "other"].includes(candidates[0].showId), true);
+  assert.equal(candidates[0].showId, "fred");
 });
 
-test("taste-seed artists and visited venues boost confidence and break ties", () => {
-  const candidates = matchClustersToShows([clusterOn("2025-11-15")], catalog, {
+test("taste and venue history raise confidence but never break a tie", () => {
+  // Two shows on this night and no photo GPS to separate them. Taste used to
+  // decide it, which meant the matcher told people they saw the acts they
+  // already liked. It now declines instead.
+  const tied = matchClustersToShows([clusterOn("2025-11-15")], catalog, {
     today: "2026-08-15",
     tasteArtists: ["fred AGAIN.."],
   });
-  assert.equal(candidates[0].showId, "fred");
-  assert.equal(candidates[0].confidence, 0.7);
+  assert.deepEqual(tied, []);
 
-  const withVenue = matchClustersToShows([clusterOn("2025-11-15", 9)], catalog, {
+  // With one show on the night, the same signals still add their confidence —
+  // they were never wrong, only never decisive.
+  const soleShow = catalog.filter((show) => show.id === "fred");
+  const withVenue = matchClustersToShows([clusterOn("2025-11-15", 9)], soleShow, {
     today: "2026-08-15",
     tasteArtists: ["Fred again.."],
     visitedVenueIds: ["v-knockdown"],

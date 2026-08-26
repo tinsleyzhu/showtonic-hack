@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 import { v } from "convex/values";
 
 // Agent identity for Showtonic's MCP surface.
@@ -185,7 +186,12 @@ export const tasteProfile = query({
 // This runs the same scorer as the browser scan (convex/backfillMatch.js), so a
 // night matched by an agent and a night matched in the UI get identical
 // evidence and identical confidence.
-import { clusterPhotosIntoNights, matchClustersToShows, unmatchedClusters } from "./backfillMatch.js";
+import {
+  clusterPhotosIntoNights,
+  hasTimezoneDesignator,
+  matchClustersToShows,
+  unmatchedClusters,
+} from "./backfillMatch.js";
 import { insertVerifiedLog } from "./logs";
 
 export const reclaimCameraRoll = mutation({
@@ -203,6 +209,20 @@ export const reclaimCameraRoll = mutation({
   },
   handler: async (ctx, args) => {
     if (!args.photos.length) throw new Error("No photo metadata supplied");
+
+    // A caller that sends correct UTC gets its nights shifted into the wrong
+    // day — often out of the evening window entirely, so the night vanishes
+    // with no error and no candidate. Refusing loudly beats returning a
+    // confidently empty result to an agent that did nothing obviously wrong.
+    const zoned = args.photos.filter((photo) => hasTimezoneDesignator(photo.takenAt)).length;
+    if (zoned) {
+      throw new Error(
+        `${zoned} of ${args.photos.length} timestamps carry a timezone offset. ` +
+          "takenAt must be local wall-clock time with no suffix (2026-06-27T22:30:00) — " +
+          "a night is defined by the clock on the wall where the photo was taken, " +
+          "and converting to UTC moves it into the wrong night.",
+      );
+    }
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("Unknown user");
 
@@ -272,11 +292,36 @@ export const reclaimCameraRoll = mutation({
 
     // Nights we could not place are not a failure — they are the catalog-gap
     // agent's queue, and we say so rather than silently dropping them.
-    const gaps = unmatchedClusters(clusters, candidates).map((cluster: { clusterDate: string; photoCount: number; gps: unknown }) => ({
+    type UnplacedCluster = {
+      clusterDate: string;
+      photoCount: number;
+      gps: { latitude: number; longitude: number } | null;
+    };
+    const unplaced: UnplacedCluster[] = unmatchedClusters(clusters, candidates);
+    const gaps = unplaced.map((cluster) => ({
       clusterDate: cluster.clusterDate,
       photoCount: cluster.photoCount,
       hasLocation: Boolean(cluster.gps),
     }));
+
+    // Hand the queue to the gap agent. Scheduled rather than awaited because
+    // this is a mutation and the search is network I/O: the human gets their
+    // candidates back immediately, and proposals arrive when they arrive.
+    //
+    // The cluster's median position goes to the action so it can name the room
+    // the photos were near. It is not stored and it does not leave Convex — the
+    // outbound search carries a venue NAME and a date, never a coordinate.
+    if (unplaced.length) {
+      await ctx.scheduler.runAfter(0, api.catalogGap.search, {
+        nights: unplaced.map((cluster) => ({
+          clusterDate: cluster.clusterDate,
+          latitude: cluster.gps?.latitude,
+          longitude: cluster.gps?.longitude,
+          city: user.homeCity ?? undefined,
+        })),
+        requestedByUserId: args.userId,
+      });
+    }
 
     return {
       photosRead: args.photos.length,

@@ -146,6 +146,8 @@ it is the same public URL the browser already ships, not a secret.
 | `agentTokens` | ✅ built — `userId`, `tokenHash` (SHA-256 hex), `label`, `scopes[]`, `revoked`, `createdAt`, `lastUsedAt?`; indexes `by_hash`, `by_user` |
 | `backfillCandidates` | ✅ extended with `evidence[]` (`kind`/`detail`/`delta`) and `draft{caption,vibes[]}` |
 | `venues` | ✅ `latitude`/`longitude` now populated — JamBase schema.org geo, plus Nominatim for the rest |
+| `catalogProposals` | ✅ built — `clusterDate`, `venueName?`, `city?`, `artistNames[]`, `sourceUrl`, `sourceTitle?`, `corroboratingUrls[]?`, `confidence`, `evidence[]?`, `proposedBy`, `requestedByUserId?`, `status`, `showId?`, `createdAt`; indexes `by_status`, `by_date`, `by_date_status` |
+| `squadPlans` | ❌ not built — phase 4 |
 | `catalogProposals` | ❌ not built — catalog-gap agent still to come |
 | `squadPlans` | ✅ built — `userIds[]`, `showId`, denormalized show fields, `status`, `settlement`/`paymentRef`/`amountCents`/`payerUserId`, `transcript[]`; index `by_show`. Rendered on Profile by `app/views/SquadPlan.tsx` |
 
@@ -162,6 +164,9 @@ Convex mutation: mutations are deterministic and Web Crypto belongs outside them
 - `convex/backfillMatch.js` — the pure scorer, shared by the browser scan and
   `reclaim_camera_roll` so both produce identical evidence and confidence.
 - `convex/venues.ts` — `missingCoordinates`, `coordinateCoverage`, `setCoordinates`.
+- `convex/catalogGap.ts` — `search` (Tavily), `approve`, `reject`, `record`,
+  `pending`, `get`, `locatedVenues`, `markApproved`. Judgement lives in the
+  pure `convex/catalogGapUtils.js` so the eval can score it without a key.
 
 ### Free-data plane (from the concurrent session)
 
@@ -175,6 +180,44 @@ Design and coverage honesty: `docs/FREE_DATA.md`. Keys: `docs/KEYS.md`.
 `artists.listNeedingEnrichment` ranks by catalog appearances (upcoming counted
 double) rather than taking an arbitrary slice, because MusicBrainz allows ~1
 request a second and the ordering matters more than the batch size.
+
+### The catalog-gap agent, as actually built
+
+`reclaim_camera_roll` has returned `unmatchedNights` since phase 1 with nothing
+on the other end. It now schedules `catalogGap.search` (scheduled, not awaited —
+reclaim is a mutation and the search is network I/O, so candidates come back at
+the old speed).
+
+Split in two on purpose:
+
+```
+convex/catalogGapUtils.js   pure — anchoring, date forms, title parsing, scoring
+convex/catalogGap.ts        I/O  — Tavily fetch, the table, approval
+```
+
+The pure half is why `npm run eval` can score the agent with no API key and no
+network, the same trick that makes the matcher measurable.
+
+**A proposal is not a show.** It lives in its own table, carries the URL it came
+from, and stays `pending` until a human approves it — at which point it goes
+through `shows.importUpcoming`, the same sink JamBase and the free-data plane
+use, id-namespaced `gap:` alongside `tm:` and `slfm:` so a reconcile pass never
+mistakes it for a JamBase row it should delete.
+
+Four refusals are built in, because a wrong row in the CATALOG is wrong for
+every user who matches against it afterwards, not just the one who took the
+photos: wrong year at the right venue, a page that never names the anchor room,
+a title with no lineup in it, and two sources naming different headliners. On
+ten labeled nights that is 0 false proposals against a naive top-result agent's
+6 (`npm run eval`).
+
+Budget is bounded — 2 searches per night, 8 nights per run — and a missing
+`TAVILY_API_KEY` makes the whole thing a no-op rather than an error, so the
+flagship tool cannot be taken down by a credential.
+
+Privacy: the cluster's median coordinates reach the action to pick a venue
+*name* and are never stored. The outbound search carries a venue name and a
+date; no coordinate leaves Convex.
 
 ### A limit the catalog growth exposed
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  hasTimezoneDesignator,
   DELTA_DATE,
   DELTA_GPS_FAR,
   DELTA_GPS_NEAR,
@@ -135,7 +136,8 @@ test("photos across town sink the only same-date show below the threshold", () =
 });
 
 test("missing coordinates degrade to date-only rather than failing", () => {
-  const [candidate] = matchClustersToShows([clusterAt(null)], crowdedNight, {
+  // One show that night: no GPS is a weaker answer, not a missing one.
+  const [candidate] = matchClustersToShows([clusterAt(null)], [crowdedNight[0]], {
     today: "2026-08-26",
   });
   assert.equal(candidate.confidence, DELTA_DATE);
@@ -151,6 +153,59 @@ test("missing coordinates degrade to date-only rather than failing", () => {
     { today: "2026-08-26" },
   );
   assert.equal(noVenueGps.confidence, DELTA_DATE);
+});
+
+test("a crowded night with no location is declined, not guessed", () => {
+  // Five shows, nothing to tell them apart but the date. Every one of them
+  // scores exactly the same, so naming one would be a coin flip presented as a
+  // 50% confident answer. The night goes to the catalog-gap agent instead.
+  const candidates = matchClustersToShows([clusterAt(null)], crowdedNight, {
+    today: "2026-08-26",
+  });
+  assert.deepEqual(candidates, []);
+});
+
+test("taste cannot be the reason one show beat another", () => {
+  // The dangerous version of the case above: the same unlocatable night, but
+  // now one of the five is by an artist the person already likes and at a room
+  // they have been to. Those add up to 0.90 — a confident, systematically
+  // biased wrong answer that tells people they saw the acts they already like.
+  const candidates = matchClustersToShows([clusterAt(null)], crowdedNight, {
+    today: "2026-08-26",
+    tasteArtists: ["peggy gou"],
+    visitedVenueIds: ["v-midway"],
+  });
+  assert.deepEqual(candidates, []);
+});
+
+test("the nearer of two venues on one block wins, whatever the catalog order", () => {
+  // 1015 Folsom and its neighbours are ~60 m apart. A flat "within a block"
+  // bonus scored them identically and left the winner to database iteration
+  // order; proximity is evidence, so it has to move the number.
+  const here = { latitude: MIDWAY.latitude, longitude: MIDWAY.longitude };
+  const neighbour = { latitude: MIDWAY.latitude + 0.00054, longitude: MIDWAY.longitude };
+  const shows = [
+    { id: "neighbour", date: "2025-11-15", artistNames: ["Wrong"], venueName: "Next door", venueLatitude: neighbour.latitude, venueLongitude: neighbour.longitude },
+    { id: "truth", date: "2025-11-15", artistNames: ["Right"], venueName: "This room", venueLatitude: here.latitude, venueLongitude: here.longitude },
+  ];
+  for (const order of [shows, [...shows].reverse()]) {
+    const [candidate] = matchClustersToShows([clusterAt(here)], order, { today: "2026-08-26" });
+    assert.equal(candidate.showId, "truth");
+  }
+});
+
+test("two shows in the same room on one night are declined", () => {
+  // Identical coordinates: an early set and a late set, or two rooms in one
+  // building. Location cannot separate them, so nothing should.
+  const shows = ["early", "late"].map((id) => ({
+    id,
+    date: "2025-11-15",
+    artistNames: [id],
+    venueName: "The Midway",
+    venueLatitude: MIDWAY.latitude,
+    venueLongitude: MIDWAY.longitude,
+  }));
+  assert.deepEqual(matchClustersToShows([clusterAt(MIDWAY)], shows, { today: "2026-08-26" }), []);
 });
 
 // --- Evidence --------------------------------------------------------------
@@ -200,4 +255,40 @@ test("future shows are never matched", () => {
     { today: "2026-08-26" },
   );
   assert.deepEqual(candidates, []);
+});
+
+// --- Adversarial: cases found by attacking the matcher ----------------------
+
+test("a UTC timestamp is detectable, because silently losing a night is worse", () => {
+  // A night is defined by the clock on the wall where the photo was taken.
+  // Converting to UTC moves a 10:30 PM show to the next morning, which falls
+  // outside the evening window entirely — the night vanishes with no error.
+  // reclaim_camera_roll refuses these loudly rather than returning nothing.
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00Z"), true);
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00+02:00"), true);
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00-0700"), true);
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00"), false);
+
+  // The bug it guards, stated without depending on the runner's timezone: the
+  // same wall-clock string and its UTC-labelled twin are not interchangeable.
+  const wall = clusterPhotosIntoNights(
+    Array.from({ length: 5 }, () => ({ takenAt: "2026-06-27T22:30:00" })),
+  );
+  assert.equal(wall[0].clusterDate, "2026-06-27");
+});
+
+test("a festival day is declined, because GPS cannot say which set you saw", () => {
+  // Every set shares one coordinate, so nothing distinguishes them. Naming one
+  // would be a coin flip; the honest answer is that we know the night and not
+  // the set. Flagged to the coordinator as a product decision, not a silent one.
+  const park = { latitude: 37.7694, longitude: -122.4862 };
+  const lineup = ["Headliner", "Second", "Third"].map((name, index) => ({
+    id: `ol-${index}`,
+    date: "2025-11-15",
+    artistNames: [name],
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  }));
+  assert.deepEqual(matchClustersToShows([clusterAt(park)], lineup, { today: "2026-08-26" }), []);
 });

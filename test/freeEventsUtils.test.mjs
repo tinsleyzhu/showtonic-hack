@@ -9,6 +9,7 @@ import {
   setlistSongs,
   spotifyArtistFields,
   musicbrainzArtistFields,
+  inferGenresFromContext,
   toImportEvents,
 } from "../convex/freeEventsUtils.js";
 
@@ -179,6 +180,78 @@ test("spotifyArtistFields picks the first image, genres, and url", () => {
   assert.equal(fields.image, "https://i.scdn.co/big.jpg");
   assert.equal(fields.genres.length, 5); // capped
   assert.equal(fields.spotifyUrl, "https://open.spotify.com/artist/6sHCvZfBBt7f5xkG2Uo2Sc");
+});
+
+test("inferGenresFromContext reads the room, not just the title (Public Works vs Davies)", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Public Works"], titles: ["Late Night w/ Support"] }),
+    ["electronic", "dance"],
+  );
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Davies Symphony Hall"], titles: ["An Evening With"] }),
+    ["classical"],
+  );
+});
+
+test("inferGenresFromContext falls back to title keywords when the venue is unrecognized", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Some Unknown Room"], titles: ["DJ Set: Warehouse Techno Night"] }),
+    ["electronic"],
+  );
+});
+
+test("inferGenresFromContext returns nothing when neither venue nor title carries a signal", () => {
+  assert.deepEqual(inferGenresFromContext({ venueNames: ["The Room"], titles: ["A Show"] }), []);
+  assert.deepEqual(inferGenresFromContext(), []);
+});
+
+// Precision guards — the coverage number is worthless if the tags are noise.
+test("inferGenresFromContext does not tag broad rooms that book every genre", () => {
+  for (const room of ["The Fillmore", "The Warfield", "Chase Center", "The Independent"]) {
+    assert.deepEqual(inferGenresFromContext({ venueNames: [room] }), [], `${room} should stay untagged`);
+  }
+});
+
+test("inferGenresFromContext declines to guess when an artist's rooms disagree", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Davies Symphony Hall", "Public Works"] }),
+    [],
+  );
+});
+
+test("inferGenresFromContext declines to guess when show titles disagree", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Unknown Room"], titles: ["DJ Set", "Metal Night"] }),
+    [],
+  );
+});
+
+test("inferGenresFromContext lets a confident room outrank a conflicting title", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["SFJAZZ Center"], titles: ["DJ Set"] }),
+    ["jazz"],
+  );
+});
+
+// The catalog is Ticketmaster-driven and not SF-only, so room-type patterns
+// have to carry to cities whose venue names we have never seen.
+test("inferGenresFromContext generalizes to venues outside San Francisco", () => {
+  const cases = [
+    ["Boston Symphony Hall", ["classical"]],
+    ["Blue Note Jazz Club", ["jazz"]],
+    ["Laugh Factory", ["comedy"]],
+    ["Freight & Salvage", ["folk"]],
+  ];
+  for (const [venue, expected] of cases) {
+    assert.deepEqual(inferGenresFromContext({ venueNames: [venue] }), expected, venue);
+  }
+});
+
+test("inferGenresFromContext agrees across several rooms of the same family", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Public Works", "1015 Folsom", "Monarch"] }),
+    ["electronic", "dance"],
+  );
 });
 
 test("musicbrainzArtistFields returns mbid, hometown, and top tags", () => {

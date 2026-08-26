@@ -47,11 +47,24 @@ test("nights with no catalog entry are declined by both strategies", () => {
   }
 });
 
-test("GPS-stripped photos still scan without crashing", () => {
+test("a crowded night stripped of GPS is declined rather than guessed", () => {
   const stripped = gps.byScenario["gps-stripped"];
   assert.equal(stripped.nights, 1);
-  // Honest result: with no location, the matcher is no better than v1 here.
-  assert.equal(stripped.returned, 1);
+  // Five same-date shows and no location to separate them. v1 guessed and got
+  // it wrong; the honest answer is to return nothing and let the catalog-gap
+  // agent look at the night.
+  assert.equal(stripped.returned, 0);
+  assert.equal(stripped.wrong, 0);
+  assert.equal(stripped.missed, 1);
+  assert.equal(baseline.byScenario["gps-stripped"].wrong, 1);
+});
+
+test("everything the matcher surfaces is right", () => {
+  // Precision, not accuracy, is the promise this feature makes: it may not
+  // explain every night, but it does not put wrong shows in diaries.
+  assert.equal(gps.overall.precision, 1);
+  assert.equal(gps.overall.wrong, 0);
+  assert.equal(gps.overall.falseMatches, 0);
 });
 
 test("quiet nights are matched by both strategies", () => {

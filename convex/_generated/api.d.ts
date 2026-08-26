@@ -14,6 +14,8 @@ import type * as artists from "../artists.js";
 import type * as attendance from "../attendance.js";
 import type * as backfill from "../backfill.js";
 import type * as backfillMatch from "../backfillMatch.js";
+import type * as catalogGap from "../catalogGap.js";
+import type * as catalogGapUtils from "../catalogGapUtils.js";
 import type * as diary from "../diary.js";
 import type * as discovery from "../discovery.js";
 import type * as favorites from "../favorites.js";
@@ -50,6 +52,8 @@ declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
   backfill: typeof backfill;
   backfillMatch: typeof backfillMatch;
+  catalogGap: typeof catalogGap;
+  catalogGapUtils: typeof catalogGapUtils;
   diary: typeof diary;
   discovery: typeof discovery;
   favorites: typeof favorites;
