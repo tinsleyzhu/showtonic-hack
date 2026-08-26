@@ -15,7 +15,7 @@ npx convex env list          # names only; values are not printed by our tooling
 |---|---|---|
 | `JAMBASE_API_KEY` | Catalog sync (`convex/jambase.ts`) | ✅ set — trial tier, **rate-limits at 429** and the previous key expired outright |
 | `TAVILY_API_KEY` | Catalog-gap agent: web search for nights the catalog cannot explain | ✅ set — event code `26HACK`, **valid 26–27 Aug only** |
-| `AISA_API_KEY` | Agent payments (`checkout_tickets`) | ✅ set — verified, 104 models reachable |
+| `AISA_API_KEY` | Agent payments (`checkout_tickets`) | ✅ set and **funded** — settles real metered transactions. The first key issued had no balance and returned `recharge_required`; if settlement starts reporting that again, the balance is out. |
 | `TENKI_API_KEY` | Sandboxes; not yet wired to anything | ✅ set |
 
 ## Worth setting, in value order
@@ -42,6 +42,15 @@ redistribution. Read them before enabling `includeBandsintown: true`.
   descriptive `User-Agent`, both of which `convex/freeEvents.ts` already respects.
 - **OpenStreetMap Nominatim** — no key. Used by `npm run geocode:venues` to fill
   venue coordinates JamBase did not supply. Same 1 req/s courtesy limit.
+
+### A note on AIsa
+
+AIsa is a metered machine-transaction network with one key across many models —
+it is **not** a ticketing rail, and nothing here sells concert tickets to an
+agent. So `squad.settle` puts the coordination fee through AIsa as a genuine
+billable transaction and keeps its id, while recording the ticket purchase as
+simulated. `AISA_SETTLEMENT_MODEL` overrides which model carries the
+transaction (default `claude-haiku-4-5-20251001`, the cheapest that works).
 
 ## What is *not* an API key
 
