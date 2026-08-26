@@ -179,6 +179,33 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"]),
 
+  // Nights the catalog could not explain, as answered by the catalog-gap agent
+  // (`convex/catalogGap.ts`). A row here is a CLAIM, not a fact: it carries the
+  // URL it came from and stays `pending` until a human approves it, at which
+  // point it becomes a real show. Nothing in the app treats a proposal as
+  // catalog data — that separation is the whole reason it is its own table.
+  catalogProposals: defineTable({
+    clusterDate: v.string(), // ISO date of the night that had no match
+    venueName: v.optional(v.string()), // absent when the night carried no GPS
+    city: v.optional(v.string()),
+    artistNames: v.array(v.string()),
+    sourceUrl: v.string(), // the receipt — always shown next to the claim
+    sourceTitle: v.optional(v.string()),
+    corroboratingUrls: v.optional(v.array(v.string())),
+    confidence: v.number(), // 0–1, from catalogGapUtils.proposeFromResults
+    evidence: v.optional(
+      v.array(v.object({ kind: v.string(), detail: v.string(), delta: v.number() })),
+    ),
+    proposedBy: v.string(), // "catalog-gap-agent"
+    requestedByUserId: v.optional(v.id("users")), // whose night raised the gap
+    status: v.union(v.literal("pending"), v.literal("approved"), v.literal("rejected")),
+    showId: v.optional(v.id("shows")), // set when approved
+    createdAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_date", ["clusterDate"])
+    .index("by_date_status", ["clusterDate", "status"]),
+
   // Per-user agent tokens — the machine-auth story. Humans still sign in with
   // nothing but a localStorage handle; agents get a scoped, revocable
   // credential. Only the SHA-256 is stored: the plaintext is shown to the human
