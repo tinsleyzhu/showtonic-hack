@@ -1,19 +1,20 @@
+import { TOOLS } from "./tools";
+
 // Discovery surfaces. An agent that has only a domain name has to be able to
 // find its way in without a human pasting a URL — so the manifest, the agent
 // card and llms.txt all describe the same server and all say plainly that
 // writes exist and what credential reaches them.
 
-const TOOL_SUMMARY = [
-  ["search_shows", "read:shows", "Search the live catalog of San Francisco shows."],
-  ["get_taste_profile", "read:taste", "The owner's taste, derived from shows they actually logged."],
-  ["reclaim_camera_roll", "write:candidates", "Hand over camera-roll METADATA; get back reconstructed nights to approve."],
-  ["get_pending_candidates", "write:candidates", "Reconstructed nights awaiting the human's yes or no."],
-  ["resolve_candidate", "write:candidates", "Accept or reject one night. Accepting writes a diary entry."],
-  ["set_attendance", "write:attendance", "Mark the owner interested in or going to a show."],
-  ["log_show", "write:logs", "Write a rated diary entry for a show the owner attended."],
-  ["record_squad_plan", "write:attendance", "Record a night a group of agents agreed on, with the transcript of how."],
-  ["checkout_tickets", "pay", "Settle an agreed squad plan. Never granted by default."],
-];
+// Derived from the tool registry itself, never hand-maintained. A parallel list
+// drifts the moment a lane adds a tool — and it drifts SILENTLY, because
+// tools/list keeps working while the manifest quietly under-reports. The
+// manifest is what an agent reads before it has a credential, so a tool missing
+// here is a tool that effectively does not exist to a stranger.
+const TOOL_SUMMARY: [string, string, string][] = TOOLS.map((tool) => [
+  tool.name,
+  tool.scope,
+  tool.description.split(". ")[0].replace(/\.$/, "") + ".",
+]);
 
 export function mcpManifest(origin: string) {
   return {
