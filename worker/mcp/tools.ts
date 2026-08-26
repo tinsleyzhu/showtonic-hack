@@ -2,7 +2,7 @@
 // the dispatcher refuses before doing any work if the caller lacks it.
 //
 // The External track's failure mode is "an MCP server that only reads, because
-// reading is not using". Five of these seven write.
+// reading is not using". Six of these ten write.
 
 import { ConvexHttpClient } from "convex/browser";
 import type { AgentIdentity } from "./auth";
@@ -60,6 +60,23 @@ export const TOOLS: ToolDef[] = [
       "The token owner's taste, derived from the shows they actually logged and rated — not a self-declared preference list. Use it before arguing for a show on their behalf.",
     inputSchema: { type: "object", properties: {} },
     run: (client, me) => client.query("agents:tasteProfile" as any, { userId: me.userId }),
+  },
+  {
+    name: "find_compatible_humans",
+    scope: "read:taste",
+    description:
+      "Find humans whose logged history actually overlaps the token owner's, so an agent can assemble a squad without either human being online. Returns match strength and the artists they have in common — never the other person's diary. If the owner has logged fewer than five shows, this returns no matches and says `lowSignal: true` rather than ranking strangers off three data points.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Max people to return, default 5, max 10." },
+      },
+    },
+    run: (client, me, args) =>
+      client.query("taste:compatiblePeers" as any, {
+        userId: me.userId,
+        ...(args.limit !== undefined ? { limit: Number(args.limit) } : {}),
+      }),
   },
   {
     name: "reclaim_camera_roll",

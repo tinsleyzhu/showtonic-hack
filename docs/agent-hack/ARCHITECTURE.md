@@ -128,7 +128,7 @@ arriving with only the domain name is answered before any page render:
 
 ```
 worker/mcp/handler.ts    JSON-RPC over streamable HTTP + the discovery routes
-worker/mcp/tools.ts      7 tool definitions, each declaring its required scope
+worker/mcp/tools.ts      10 tool definitions, each declaring its required scope
 worker/mcp/auth.ts       bearer extraction, SHA-256 at the edge, scope checks
 worker/mcp/discovery.ts  mcp.json / ai-agent.json / llms.txt, all credential-free
 ```
