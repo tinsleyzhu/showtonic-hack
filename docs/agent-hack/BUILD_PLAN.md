@@ -69,6 +69,21 @@ instead of logged. 100 unit tests pass; `npm run eval` prints the comparison.
 - ✅ Exit: your real photos → clusters → matched candidates with GPS evidence, in the
   existing app UI. **This alone is already a better feature than v1.**
 
+## Phase 2 — ✅ DONE (2026-08-26, deployed) · MCP front door
+
+Live at `https://showtonic-hack.showtonic.workers.dev`. Seven tools, five of
+them writes. Discovery serves with no credential. Scoped tokens minted by the
+human in-app; `pay` off by default. Verified adversarially: no token and a
+forged token get the identical refusal; a valid token missing `write:logs` is
+refused by name with its granted scopes listed.
+
+Two traps worth remembering: `exifr` at module scope pulls `fs`/`zlib` into the
+Workers SSR bundle and 500s every route (lazy-import it), and a workers.dev
+route can take minutes to serve after first deploy — a 1042 is not always a
+config error.
+
+<details><summary>original plan</summary>
+
 ## Phase 2 — 11:30–13:30 · MCP front door
 
 - `agentTokens` table + `agents.mint/revoke` mutations + minimal "Connect your agent"
@@ -83,7 +98,16 @@ instead of logged. 100 unit tests pass; `npm run eval` prints the comparison.
 - ✅ Exit: an outside agent (Claude Code on your laptop) discovers Showtonic, reclaims a
   camera roll, and reads a taste profile — Act 1 + 2 demoable end-to-end.
 
-## Phase 3 — 13:30–15:30 · Catalog-gap agent + draft-writer
+</details>
+
+## Phase 3 — ⏳ PARTIAL · Catalog-gap agent + draft-writer
+
+Tavily key set and verified against a real gap query. The agent itself and the
+`catalogProposals` table are not built. Unmatched nights already come back
+*named as gaps* from `reclaim_camera_roll`, so the queue exists and is empty of
+consumers.
+
+## Phase 3 (original) — 13:30–15:30 · Catalog-gap agent + draft-writer
 
 - `catalogGap.search` Convex action (Tavily) + `catalogProposals` table + approve-on-accept
   wiring into `backfill.resolve`.
@@ -92,7 +116,16 @@ instead of logged. 100 unit tests pass; `npm run eval` prints the comparison.
 - ✅ Exit: a night that's NOT in the catalog gets found on the web, proposed, accepted,
   logged — and the catalog is one show bigger.
 
-## Phase 4 — 15:30–17:00 · Squad negotiation + payment (Act 3)
+## Phase 4 — ❌ NOT STARTED · Squad negotiation + payment (Act 3)
+
+**The last 20 rubric points and the largest open number.** AIsa authenticates
+(104 models reachable), so the payer agent can make a real machine payment
+rather than a stub. Plan: three tokens with deliberately *different* scopes —
+two agents holding `read:taste` + `write:attendance`, only the designated payer
+holding `pay` — so the scope model does visible work in the demo instead of
+merely existing in the manifest.
+
+## Phase 4 (original) — 15:30–17:00 · Squad negotiation + payment (Act 3)
 
 - `payments.checkout` action — AIsa if their key works in 30 min, else mock receipt.
 - Orchestrator script: 3 agents (3 tokens — 2 seeded users + you), score → propose →

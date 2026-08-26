@@ -7,16 +7,36 @@ import { summarizeRatings } from "./showtonicUtils.js";
 // the free-source enricher (convex/freeEvents.ts) should fill from Spotify /
 // MusicBrainz. Cheap scan — the hackathon catalog is small.
 export const listNeedingEnrichment = query({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), upcomingOnly: v.optional(v.boolean()), today: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
-    const artists = await ctx.db.query("artists").collect();
+    const [artists, shows] = await Promise.all([
+      ctx.db.query("artists").collect(),
+      ctx.db.query("shows").collect(),
+    ]);
+
+    // Enrichment is rate-limited upstream (MusicBrainz allows one request a
+    // second), so the order matters more than the batch size: spend it on the
+    // artists a member will actually be shown. Rank by how many catalog shows
+    // an artist appears on, counting upcoming ones double.
+    const today = args.today ?? new Date(Date.now()).toISOString().slice(0, 10);
+    const weight = new Map<string, number>();
+    for (const show of shows) {
+      const bump = show.date >= today ? 2 : 1;
+      for (const artistId of show.artistIds) {
+        weight.set(artistId, (weight.get(artistId) ?? 0) + bump);
+      }
+    }
+
     return artists
       .filter((artist) => !artist.image || artist.genres.length === 0)
+      .filter((artist) => (args.upcomingOnly ? (weight.get(artist._id) ?? 0) > 0 : true))
+      .sort((left, right) => (weight.get(right._id) ?? 0) - (weight.get(left._id) ?? 0))
       .slice(0, limit)
       .map((artist) => ({ _id: artist._id, name: artist.name }));
   },
 });
+
 
 // Patch enrichment fields without clobbering anything already present.
 export const enrich = mutation({
@@ -153,6 +173,32 @@ export const get = query({
         .map((log, index) => ({ ...log, user: users[index] }))
         .sort((left, right) => right.createdAt - left.createdAt),
       media: mediaWithUrls,
+    };
+  },
+});
+
+// Enrichment coverage. Genre-first onboarding needs genres, and the JamBase
+// event sync inserts artists with an empty genres array — it only ever learns
+// names and images from the events endpoint. This reports the gap so the
+// enrichment pass has a target and a finish line.
+export const enrichmentCoverage = query({
+  args: {},
+  handler: async (ctx) => {
+    const artists = await ctx.db.query("artists").collect();
+    const withGenres = artists.filter((artist) => (artist.genres ?? []).length > 0);
+    const genreTally = new Map<string, number>();
+    for (const artist of withGenres) {
+      for (const genre of artist.genres) genreTally.set(genre, (genreTally.get(genre) ?? 0) + 1);
+    }
+    return {
+      total: artists.length,
+      withGenres: withGenres.length,
+      missing: artists.length - withGenres.length,
+      distinctGenres: genreTally.size,
+      topGenres: [...genreTally.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 15)
+        .map(([name, count]) => ({ name, count })),
     };
   },
 });

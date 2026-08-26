@@ -14,7 +14,16 @@ Plan of record for the Immersive Commons agentic hackathon build. Reading order:
    connect-your-agent, squad plan card).
 5. [`SPONSOR_SETUP.md`](SPONSOR_SETUP.md) — which sponsor MCPs to install, exact
    commands, and the three signups only a human can do.
-6. [`DEMO.md`](DEMO.md) — the 4-minute script, failure drill, Q&A ammo.
+7. [`DEMO.md`](DEMO.md) — the 4-minute script, failure drill, Q&A ammo.
+
+## Keeping these current
+
+These docs are updated **as work lands**, not written once and left. When a
+change ships, the same commit updates whichever of these it invalidates:
+`SPEC.md` for what a feature is, `ARCHITECTURE.md` for how it is wired,
+`BUILD_PLAN.md` for phase status, `../KEYS.md` for a new credential,
+`../FREE_DATA.md` for a new data source. A doc that describes a plan the code
+has outgrown is worse than no doc, because someone will trust it.
 
 Base app docs: [`../SPEC.md`](../SPEC.md), [`../BUILD_PLAN.md`](../BUILD_PLAN.md),
 [`../FEATURES.md`](../FEATURES.md). Nothing in this folder changes the base app's scope;

@@ -1,5 +1,24 @@
 # Showtonic Agent-Ready — Technical Spec
 
+> **AS BUILT, updated 2026-08-26 14:45 PDT.** This doc is kept current as work
+> lands, not written once. Status per feature:
+>
+> | Feature | Status |
+> |---|---|
+> | Evidence fleet: EXIF/GPS matcher | ✅ shipped — 38% → 88% accuracy, 0 false matches (`npm run eval`) |
+> | MCP front door + discovery | ✅ shipped and deployed — https://showtonic-hack.showtonic.workers.dev |
+> | Machine auth: scoped agent tokens | ✅ shipped — mint UI at Profile → Connect your agent |
+> | Catalog-gap agent (Tavily) | ⏳ key set and verified; agent not yet wired |
+> | Vision agent | ❌ cut for now — privacy cost vs accuracy gain unresolved |
+> | Draft-writer agent | ❌ not started |
+> | Squad negotiation (phase 4) | ❌ not started — the last 20 rubric points |
+> | Agent payments (AIsa) | ⏳ key verified (104 models); `checkout_tickets` not built |
+>
+> Beyond the original plan: **New York catalog** (1,567 upcoming + a year of
+> history), **venue geocoding** (235/255 located), and a **free-data plane**
+> replacing JamBase (`docs/FREE_DATA.md`) with artist enrichment from
+> Spotify/MusicBrainz.
+
 **Event:** Immersive Commons agentic hackathon, Cloudflare SF, 2026-08-26 (doors 10:00, out 20:00)
 **Track:** EXTERNAL (customer-facing)
 **Base:** the existing `showtonic-hack` app (Next.js 16 + React 19 + Convex + JamBase SF catalog).
