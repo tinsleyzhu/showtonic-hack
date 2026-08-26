@@ -112,9 +112,30 @@ next:     refresh the IC submission; merge lane PRs as they arrive
 ### L2 match · 2026-08-27T00:55Z
 state:    shipped
 now:      catalog-gap agent end to end — pure scorer, Convex action, catalogProposals, eval, wired into reclaim
-shipped:  PR #2 (lane/match → main), 6 commits
+shipped:  PR #2 (lane/match → main), 9 commits
 blocked:  disk full on the machine (120 MiB free) — see NEEDS-HUMAN; git still works
 next:     more adversarial fixtures; setlist.fm signal if that key appears
+
+**Two more found by attacking it, both fixed (93f2107).**
+
+*UTC timestamps silently lost whole nights.* An agent sending correct UTC —
+`2026-06-27T22:30:00Z` — had its 10:30 PM show read as the next morning, which
+falls outside the evening window, so the night vanished with no error and no
+candidate. The caller did nothing obviously wrong and got a confidently empty
+answer. `reclaim_camera_roll` now refuses these with a message stating the
+contract, because silence is the worst failure mode on an agent surface.
+
+*Festival days now return nothing* — **coordinator, this one is your call.**
+Every set at Outside Lands shares one coordinate, so nothing distinguishes
+them and the ambiguity guard declines the whole day. That is the precision
+rule working exactly as designed, and it is the honest answer (we know the
+night, not the set). But it means the app's origin story — a festival night —
+produces no candidates at all. Three options, none of which I should pick
+alone: (a) leave it, declining is correct; (b) match the festival rather than
+the set, which needs `festivalId` threaded into the matcher and a product
+answer about what a festival diary entry even is; (c) match the headliner and
+say so in the evidence card. I have pinned the current behaviour in a test so
+it stays deliberate. Say which and I will build it.
 
 **Numbers, before → after.** The matcher is unchanged: 88% accuracy, 0 false
 matches, against date-only's 38%. What is new is a scoreboard for the layer
