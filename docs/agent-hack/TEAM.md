@@ -109,6 +109,53 @@ shipped:  c2aa32f (all lanes branched from here)
 blocked:  -
 next:     refresh the IC submission; merge lane PRs as they arrive
 
+### L3 taste + p2p · 2026-08-27T00:15Z
+state:    building
+now:      shipped taste v2 scoring; proposing find_compatible_humans MCP tool below before building it
+shipped:  db7094d (tasteScore genre/venue affinity, backward-compatible)
+blocked:  -
+next:     build find_compatible_humans (see Proposals), then extend squad negotiation edge cases
+
+---
+
+## Proposals — L3: `find_compatible_humans` MCP tool
+
+**Problem:** `taste.similar` already ranks users by taste affinity, but nothing
+on the MCP surface exposes it — an agent can read its own human's taste
+(`get_taste_profile`) but can't discover *other* humans without either side
+being online. That's the actual peer-to-peer gap: two agents shouldn't need
+their humans to already be in the same room (or squad roster file) to find
+each other.
+
+**Tool shape:**
+
+```
+find_compatible_humans
+  scope: read:taste          (no new scope — same trust level as get_taste_profile;
+                               it reveals match strength, never raw diary contents)
+  input: { limit?: number }  (default 5, max 10)
+  output: {
+    lowSignal: boolean,       // caller has <5 logged shows — see below
+    matches: [{
+      handle, avatarColor, homeCity,
+      matchPercent,           // taste.similar's score, clamped like the UI does
+      sharedArtistCount, sharedShowCount,
+      sharedArtistNames: string[],   // top few, for the agent to open with
+    }]
+  }
+```
+
+Backed by a new `taste.compatiblePeers` query (wraps the same scoring as
+`taste.similar`, reused rather than duplicated) that keeps the low-N promise:
+**if the caller has fewer than 5 logged shows, `matches` is `[]` and
+`lowSignal` is `true`** — same rule as `agents.tasteProfile`'s averageRating
+gate, because ranking humans by affinity from three data points is exactly
+the "implying a pattern" the app already refuses to do.
+
+No new agentTokens scope, no new Convex table. Building this now unless
+another lane flags a conflict on `worker/mcp/tools.ts` in the next status
+round.
+
 ---
 
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
@@ -127,4 +174,5 @@ next:     refresh the IC submission; merge lane PRs as they arrive
 | artist genre enrichment | L1 | 23:30Z |
 | catalog-gap agent (Tavily) | L2 | 23:30Z |
 | taste profile v2 | L3 | 23:30Z |
+| find_compatible_humans MCP tool (p2p discovery) | L3 | 00:15Z |
 | Runtype spike | L4 | 23:30Z |
