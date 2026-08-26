@@ -57,3 +57,13 @@ export function normalizeBandsintownEvents(
 export function spotifyArtistFields(searchPayload: unknown): SpotifyArtistFields;
 export function musicbrainzArtistFields(searchPayload: unknown): MusicbrainzArtistFields;
 export function toImportEvents(events: NormalizedFreeEvent[]): ImportEvent[];
+
+/**
+ * Last-resort genre guess for artists no API knows, keyed off the rooms they
+ * play and the titles they play under. A Public Works listing is not a Davies
+ * Symphony Hall listing, and that signal is free.
+ */
+export function inferGenresFromContext(context?: {
+  venueNames?: readonly string[];
+  titles?: readonly string[];
+}): string[];
