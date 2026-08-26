@@ -192,28 +192,59 @@ export const get = query({
   },
 });
 
+function tallyCoverage(artists: { genres?: string[] }[]) {
+  const withGenres = artists.filter((artist) => (artist.genres ?? []).length > 0);
+  const genreTally = new Map<string, number>();
+  for (const artist of withGenres) {
+    for (const genre of artist.genres ?? []) genreTally.set(genre, (genreTally.get(genre) ?? 0) + 1);
+  }
+  return {
+    total: artists.length,
+    withGenres: withGenres.length,
+    missing: artists.length - withGenres.length,
+    coveragePct: artists.length ? Math.round((withGenres.length / artists.length) * 1000) / 10 : 0,
+    distinctGenres: genreTally.size,
+    topGenres: [...genreTally.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 15)
+      .map(([name, count]) => ({ name, count })),
+  };
+}
+
 // Enrichment coverage. Genre-first onboarding needs genres, and the JamBase
 // event sync inserts artists with an empty genres array — it only ever learns
 // names and images from the events endpoint. This reports the gap so the
 // enrichment pass has a target and a finish line.
+//
+// `upcoming` is the number that actually matters: onboarding and taste only
+// ever read artists playing upcoming shows in the member's city. Global
+// coverage counts a decade of historical support acts nobody will be offered,
+// so it can look bad while the user-visible surface is fully covered — or look
+// fine while the next month is empty.
 export const enrichmentCoverage = query({
-  args: {},
-  handler: async (ctx) => {
-    const artists = await ctx.db.query("artists").collect();
-    const withGenres = artists.filter((artist) => (artist.genres ?? []).length > 0);
-    const genreTally = new Map<string, number>();
-    for (const artist of withGenres) {
-      for (const genre of artist.genres) genreTally.set(genre, (genreTally.get(genre) ?? 0) + 1);
+  args: { city: v.optional(v.string()), today: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const today = args.today ?? new Date(Date.now()).toISOString().slice(0, 10);
+    const [artists, shows] = await Promise.all([
+      ctx.db.query("artists").collect(),
+      ctx.db.query("shows").collect(),
+    ]);
+
+    const cityNeedle = args.city?.trim().toLowerCase();
+    const upcomingArtistIds = new Set<string>();
+    for (const show of shows) {
+      if (show.date < today) continue;
+      if (cityNeedle && show.city.toLowerCase() !== cityNeedle) continue;
+      for (const artistId of show.artistIds) upcomingArtistIds.add(artistId);
     }
+
     return {
-      total: artists.length,
-      withGenres: withGenres.length,
-      missing: artists.length - withGenres.length,
-      distinctGenres: genreTally.size,
-      topGenres: [...genreTally.entries()]
-        .sort((left, right) => right[1] - left[1])
-        .slice(0, 15)
-        .map(([name, count]) => ({ name, count })),
+      ...tallyCoverage(artists),
+      upcoming: {
+        city: args.city ?? null,
+        since: today,
+        ...tallyCoverage(artists.filter((artist) => upcomingArtistIds.has(artist._id))),
+      },
     };
   },
 });
