@@ -1,6 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
-import { LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
+import { genreWeights, LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
 
 function unique(values: string[]) {
   return [...new Set(values)];
@@ -41,7 +41,7 @@ export const matchDetail = query({
     otherUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const [me, other, myLogs, otherLogs] = await Promise.all([
+    const [me, other, myLogs, otherLogs, allLogs] = await Promise.all([
       ctx.db.get(args.userId),
       ctx.db.get(args.otherUserId),
       ctx.db
@@ -52,11 +52,22 @@ export const matchDetail = query({
         .query("logs")
         .withIndex("by_user", (q) => q.eq("userId", args.otherUserId))
         .collect(),
+      // Genre rarity has to be measured against the same population `similar`
+      // uses, or the list and this page would show two different percentages
+      // for one pair of people, which reads as broken.
+      ctx.db.query("logs").collect(),
     ]);
     if (!me || !other) return null;
 
     const myProfile = buildProfile(myLogs);
     const otherProfile = buildProfile(otherLogs);
+    const genresByUser = new Map<string, string[]>();
+    for (const log of allLogs) {
+      const bucket = genresByUser.get(log.userId) ?? [];
+      bucket.push(...(log.artistGenres ?? []));
+      genresByUser.set(log.userId, bucket);
+    }
+    const weights = genreWeights([...genresByUser.values()]);
     const sharedShowIds = new Set(
       myProfile.showIds.filter((showId) => otherProfile.showIds.includes(showId)),
     );
@@ -116,6 +127,7 @@ export const matchDetail = query({
             genresB: otherProfile.genres,
             venuesA: myProfile.venueNames,
             venuesB: otherProfile.venueNames,
+            genreWeights: weights,
           }) * 100,
         ),
         99,
@@ -156,11 +168,23 @@ export const similar = query({
       logsByUser.set(log.userId, bucket);
     }
 
+    const otherProfiles = new Map(
+      allUsers
+        .filter((user) => user._id !== args.userId)
+        .map((user) => [user._id, buildProfile(logsByUser.get(user._id) ?? [])]),
+    );
+    // The SF catalog is jazz-heavy, so "you both like jazz" is close to "you
+    // both like music". Weight each shared genre by how rare it is in this
+    // population instead of counting them all the same.
+    const weights = genreWeights([
+      targetProfile.genres,
+      ...[...otherProfiles.values()].map((profile) => profile.genres),
+    ]);
+
     const matches = allUsers
       .filter((user) => user._id !== args.userId)
       .map((user) => {
-        const userLogs = logsByUser.get(user._id) ?? [];
-        const profile = buildProfile(userLogs);
+        const profile = otherProfiles.get(user._id)!;
         const sharedArtists = targetProfile.artistNames.filter((artist) =>
           profile.artistNames.includes(artist),
         );
@@ -175,6 +199,7 @@ export const similar = query({
             genresB: profile.genres,
             venuesA: targetProfile.venueNames,
             venuesB: profile.venueNames,
+            genreWeights: weights,
           }),
           sharedArtistNames: sharedArtists,
           sharedShowCount: sharedShows.length,
