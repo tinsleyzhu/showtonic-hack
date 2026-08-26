@@ -119,6 +119,9 @@ next:     refresh the IC submission; merge lane PRs as they arrive
       Only needed if we want mesh-witnessed transcripts. Not blocking.
 - [ ] Door check-in at the badge table — no tool can do it.
 - [ ] Spotify developer app (client id + secret) — would make L1 ~9x faster.
+- [ ] Runtype MCP OAuth: run `claude mcp login runtype` in an interactive terminal with
+      a browser (CLI account already authenticated as tinsleyzhu@gmail.com). Unblocks the
+      $500 bounty spike — L4 has ~40 min left in its timebox once this lands.
 
 ## CLAIMED — take a line before you start, so two lanes never collide
 
@@ -128,3 +131,31 @@ next:     refresh the IC submission; merge lane PRs as they arrive
 | catalog-gap agent (Tavily) | L2 | 23:30Z |
 | taste profile v2 | L3 | 23:30Z |
 | Runtype spike | L4 | 23:30Z |
+| Hacker Bob scan | L4 | 2026-08-26T23:50Z |
+
+### L4 sponsors · 2026-08-26T23:50Z
+state:    building
+now:      Runtype spike dropped (timeboxed, see below); moving to Hacker Bob scan of the deployed worker
+shipped:  -
+blocked:  -
+next:     `npx -y hacker-bob@latest install .` then `/bob-evaluate` against the deployed worker
+
+**Runtype ($500) — dropped, honestly, within the 1-hour timebox:**
+CLI auth completed clean (`runtype auth register --email` → email OTP → `runtype auth
+verify` → full account). `runtype install-mcp --agent claude-code --no-login` installed
+the user-level MCP config and 6 skills. But the MCP connection itself needs interactive
+browser OAuth (`claude mcp login runtype`) — this headless lane session has no browser,
+and the human declined to do it manually right now. Without the MCP connection, the
+`runtype-build-product` skill's own guardrail ("never invent schemas or model IDs; fetch
+docs and model configs") can't be honored — building blind against the raw CLI
+(`flows create` / `agents create` / `dispatch`) would mean guessing at schemas, which
+SPONSOR_SETUP.md explicitly warns against. Forcing it in reads worse than skipping it.
+**Unblock:** anyone with a browser can run `claude mcp login runtype` (creds are already
+authenticated under tinsleyzhu@gmail.com) and this becomes a ~20 min build from there.
+Flagging under NEEDS-HUMAN below rather than blocking on it.
+
+**Also found:** this machine's root volume was at 99% (119Mi free) when I started —
+would have blocked npm installs for every lane. Cleared `~/.npm` cache (933Mi, safe/
+regenerable) to buy headroom; did not touch other apps' caches (Spotify/Codex/Google/
+Firefox were the bigger hogs but out of scope for this repo). Now at 830Mi free — still
+tight, worth knowing if lanes start hitting ENOSPC again.
