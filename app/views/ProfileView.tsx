@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CalendarDays, Check, Heart, ListFilter, MapPin, Share2 } from "lucide-react";
+import { AgentAccess } from "./AgentAccess";
 import { groupMemories, resolveShowImage, toMemory, type LiveMemory } from "../liveData.js";
 import {
   Avatar,
@@ -16,7 +17,7 @@ import {
   type LiveState,
 } from "./shared";
 
-export function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue, onSignOut, onSetFavorites }: { profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void; onSignOut: () => void; onSetFavorites: (logIds: string[]) => Promise<unknown> }) {
+export function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue, onSignOut, onSetFavorites, userId }: { userId: import("../../convex/_generated/dataModel").Id<"users">; profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void; onSignOut: () => void; onSetFavorites: (logIds: string[]) => Promise<unknown> }) {
   const [editingFavorites, setEditingFavorites] = useState(false);
   const [pinDraft, setPinDraft] = useState<string[]>([]);
   const [favoritesError, setFavoritesError] = useState("");
@@ -119,6 +120,7 @@ export function ProfileView({ profile, memories, filter, onFilter, openShow, ope
     <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow="Based on verified logs" title="Top artists" /><div className="mt-4 divide-y divide-white/10">{profile.topArtists.length ? profile.topArtists.map((item, index) => item.artist ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openArtist(item.artist!._id)} type="button"><span className="w-6 text-lg font-black text-[#6B6258]">{index + 1}</span><img alt={item.name} className="h-10 w-10 object-cover" src={resolveShowImage(item.artist.image, [item.name])} /><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#8A8177]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your artists." />}</div></div><div><SectionTitle eyebrow="Based on verified logs" title="Top venues" /><div className="mt-4 divide-y divide-white/10">{profile.topVenues.length ? profile.topVenues.map((item, index) => item.venue ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openVenue(item.venue!._id)} type="button"><span className="w-6 text-lg font-black text-[#6B6258]">{index + 1}</span><span className="flex h-10 w-10 items-center justify-center border border-[#2A2521]"><MapPin className="h-4 w-4 text-[#FF7A50]" /></span><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#8A8177]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your venues." />}</div></div></section>
     <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow={`${profile.followedArtists.length} saved`} title="Artists you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedArtists.length ? profile.followedArtists.map((artist) => artist ? <button className="flex items-center gap-2 border border-[#2A2521] px-3 py-2 text-sm" key={artist._id} onClick={() => openArtist(artist._id)} type="button"><Heart className="h-3 w-3 fill-[#4EC98F] text-[#4EC98F]" /> {artist.name}</button> : null) : <EmptyLine text="Follow artists to keep them here." />}</div></div><div><SectionTitle eyebrow={`${profile.followedVenues.length} saved`} title="Venues you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedVenues.length ? profile.followedVenues.map((venue) => venue ? <button className="flex items-center gap-2 border border-[#2A2521] px-3 py-2 text-sm" key={venue._id} onClick={() => openVenue(venue._id)} type="button"><MapPin className="h-3 w-3 text-[#FF7A50]" /> {venue.name}</button> : null) : <EmptyLine text="Follow venues to keep them here." />}</div></div></section>
     <DiaryArchive filter={filter} memories={memories} onFilter={onFilter} openShow={openShow} />
+  <AgentAccess userId={userId} />
   </div>;
 }
 

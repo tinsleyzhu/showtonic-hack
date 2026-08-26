@@ -571,6 +571,7 @@ export default function Home() {
 
       {view === "profile" && (
         <ProfileView
+          userId={live.user!._id}
           filter={diaryFilter}
           memories={memories}
           onFilter={setDiaryFilter}
