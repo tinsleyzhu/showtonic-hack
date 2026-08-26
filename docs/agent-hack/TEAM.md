@@ -186,6 +186,27 @@ next:     coordinator: after merge/deploy, `npx convex run
           cleanup for genres inferred from the rooms I just dropped).
           I'll keep widening high-precision venue coverage meanwhile.
 
+### L1 enrich · 2026-08-27T (iteration 3)
+state:    building
+now:      hardened the resume path and widened inference — both pushed onto
+          the same PR #4. (a) A throwing fetch used to abort the whole batch
+          AND break the self-scheduling chain, silently stalling the drain
+          with no signal; per-artist lookups now degrade to "no data" (the
+          next pass retries them, since listNeedingEnrichment still reports
+          them missing) and a whole-batch failure reschedules with backoff,
+          giving up only after 5 consecutive failures. A failed batch is no
+          longer mistaken for an empty backlog. (b) Inference now keys off
+          room TYPES ("… Symphony Hall", "… Jazz Club", "… Comedy Club"),
+          which generalize to every city, instead of only Bay Area room
+          names — the catalog is Ticketmaster-driven and not SF-only.
+shipped:  00545b6, 42368db pushed to PR #4 (122 tests green, tsc clean)
+blocked:  -
+next:     waiting on the deployed `upcoming` coverage number to decide where
+          precision still leaks; meanwhile holding the offer of a one-shot
+          cleanup for genres written by the low-precision venue tags I
+          dropped in 6ea0240 — that one deletes data, so it is the
+          coordinator's call, not mine.
+
 ---
 
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
