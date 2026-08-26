@@ -62,6 +62,37 @@ function slug(value) {
     .replace(/^-|-$/g, "");
 }
 
+// JamBase follows schema.org, where a Place carries `geo: { latitude, longitude }`.
+// Different endpoints spell it differently, so accept the documented shape plus the
+// obvious variants. Venue coordinates are what let the backfill matcher tell two
+// same-night shows apart (see convex/backfillMatch.js) — without them the GPS
+// signal is dead on real catalog data, so read them wherever they appear.
+function readCoordinate(...candidates) {
+  for (const candidate of candidates) {
+    const value = typeof candidate === "string" ? Number(candidate) : candidate;
+    if (Number.isFinite(value) && value !== 0) return value;
+  }
+  return undefined;
+}
+
+function venueCoordinates(venue) {
+  const geo = venue?.geo ?? venue?.location?.geo ?? {};
+  return {
+    latitude: readCoordinate(geo.latitude, geo.lat, venue?.latitude, venue?.lat),
+    longitude: readCoordinate(geo.longitude, geo.lon, geo.lng, venue?.longitude, venue?.lng),
+  };
+}
+
+// Spread-safe: omit the keys entirely when there is no coordinate, so the
+// normalized event keeps its existing shape and Convex is never handed
+// `latitude: undefined`.
+function definedCoordinates(venue) {
+  const coordinates = venueCoordinates(venue);
+  return coordinates.latitude !== undefined && coordinates.longitude !== undefined
+    ? coordinates
+    : {};
+}
+
 function normalizeUpcomingEvents(payload, festivalId) {
   const events = Array.isArray(payload?.events) ? payload.events : [];
 
@@ -94,6 +125,7 @@ function normalizeUpcomingEvents(payload, festivalId) {
       venueName: String(venue.name ?? event.venueName ?? ""),
       city: valueName(venue.city ?? address.addressLocality ?? event.city),
       region: valueName(venue.region ?? address.addressRegion ?? event.region) || undefined,
+      ...definedCoordinates(venue),
       image: firstImage(event),
       festivalId: festivalId ?? inferredFestivalId,
       stage: event.stage ?? undefined,
@@ -111,4 +143,5 @@ export {
   extractPrimaryUrl,
   normalizeUpcomingEvents,
   validateJamBaseSourceUrl,
+  venueCoordinates,
 };

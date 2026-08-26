@@ -57,7 +57,7 @@ export const profile = query({
     if (!diary) {
       return null;
     }
-    const [artistFollows, venueFollows, artists, venues] = await Promise.all([
+    const [artistFollows, venueFollows, artists, venues, pinnedFavorites] = await Promise.all([
       ctx.db
         .query("artistFollows")
         .withIndex("by_user", (q) => q.eq("userId", args.userId))
@@ -68,6 +68,10 @@ export const profile = query({
         .collect(),
       ctx.db.query("artists").collect(),
       ctx.db.query("venues").collect(),
+      ctx.db
+        .query("favorites")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .collect(),
     ]);
     const artistByName = new Map(artists.map((artist) => [artist.name, artist]));
     const venueByName = new Map(venues.map((venue) => [venue.name, venue]));
@@ -112,12 +116,20 @@ export const profile = query({
         .filter((item) => item.venue !== undefined)
         .sort(activitySort)
         .slice(0, 5),
-      favoriteShows: [...diary.logs]
-        .sort(
-          (left, right) =>
-            right.rating - left.rating || right.createdAt - left.createdAt,
-        )
-        .slice(0, 4),
+      // Deliberately pinned favorites (design 19) win; before any are pinned,
+      // fall back to the highest-rated logs so the row is never empty.
+      favoriteShows: pinnedFavorites.length
+        ? pinnedFavorites
+            .sort((left, right) => left.rank - right.rank)
+            .map((favorite) => diary.logs.find((log) => log._id === favorite.logId))
+            .filter((log) => log !== undefined)
+        : [...diary.logs]
+            .sort(
+              (left, right) =>
+                right.rating - left.rating || right.createdAt - left.createdAt,
+            )
+            .slice(0, 4),
+      hasPinnedFavorites: pinnedFavorites.length > 0,
     };
   },
 });

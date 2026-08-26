@@ -1,10 +1,14 @@
 const VIBE_VOCABULARY = [
+  // Current tap-only vocabulary (design 18)
   "transcendent",
+  "danced nonstop",
+  "great sound",
+  "too packed",
+  "surprise guest",
+  // Legacy vibes kept valid so seeded/older logs stay writable
   "sound was insane",
   "sweaty",
-  "too packed",
   "sunset set",
-  "surprise guest",
   "all-nighter",
 ];
 
@@ -23,13 +27,16 @@ function validateLogInput({ rating, vibes }) {
 }
 
 function summarizeRatings(logs) {
-  if (logs.length === 0) {
+  // rating 0 marks an unrated (e.g. backfilled, rating skipped) log — it counts
+  // as attendance but never drags an average.
+  const rated = logs.filter((log) => log.rating > 0);
+  if (rated.length === 0) {
     return { rating: 0, ratingCount: 0 };
   }
-  const average = logs.reduce((sum, log) => sum + log.rating, 0) / logs.length;
+  const average = rated.reduce((sum, log) => sum + log.rating, 0) / rated.length;
   return {
     rating: Math.round(average * 10) / 10,
-    ratingCount: logs.length,
+    ratingCount: rated.length,
   };
 }
 

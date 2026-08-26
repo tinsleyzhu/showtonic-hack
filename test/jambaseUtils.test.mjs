@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   normalizeUpcomingEvents,
   validateJamBaseSourceUrl,
+  venueCoordinates,
 } from "../convex/jambaseUtils.js";
 
 test("validateJamBaseSourceUrl only permits the JamBase v3 HTTPS host", () => {
@@ -120,4 +121,60 @@ test("normalizeUpcomingEvents identifies a multi-artist festival as one event", 
 
   assert.equal(event.festivalId, "outside-lands-2026");
   assert.deepEqual(event.artistNames, ["Artist A", "Artist B"]);
+});
+
+// --- Venue coordinates ------------------------------------------------------
+// Venue geo drives the backfill GPS signal (convex/backfillMatch.js). JamBase is
+// schema.org-shaped, but the spelling varies by endpoint.
+
+test("reads schema.org geo from a venue", () => {
+  assert.deepEqual(venueCoordinates({ geo: { latitude: 37.7749, longitude: -122.4194 } }), {
+    latitude: 37.7749,
+    longitude: -122.4194,
+  });
+});
+
+test("accepts lat/lon/lng spellings and numeric strings", () => {
+  assert.deepEqual(venueCoordinates({ geo: { lat: "37.78", lon: "-122.41" } }), {
+    latitude: 37.78,
+    longitude: -122.41,
+  });
+  assert.deepEqual(venueCoordinates({ latitude: 40.7, lng: -73.9 }), {
+    latitude: 40.7,
+    longitude: -73.9,
+  });
+});
+
+test("treats missing, zero, and unparseable coordinates as absent", () => {
+  assert.deepEqual(venueCoordinates({}), { latitude: undefined, longitude: undefined });
+  assert.deepEqual(venueCoordinates(null), { latitude: undefined, longitude: undefined });
+  // 0,0 is Null Island — a stripped value, never a venue.
+  assert.deepEqual(venueCoordinates({ geo: { latitude: 0, longitude: 0 } }), {
+    latitude: undefined,
+    longitude: undefined,
+  });
+  assert.deepEqual(venueCoordinates({ geo: { latitude: "nope", longitude: "nope" } }), {
+    latitude: undefined,
+    longitude: undefined,
+  });
+});
+
+test("normalized events carry venue coordinates through to the catalog", () => {
+  const [event] = normalizeUpcomingEvents({
+    events: [
+      {
+        identifier: "jambase:1",
+        name: "Test Show",
+        startDate: "2026-01-10T21:00:00",
+        location: {
+          name: "The Midway",
+          city: "San Francisco",
+          geo: { latitude: 37.748, longitude: -122.388 },
+        },
+        performer: [{ name: "Someone", identifier: "jambase:a1" }],
+      },
+    ],
+  });
+  assert.equal(event.latitude, 37.748);
+  assert.equal(event.longitude, -122.388);
 });

@@ -12,6 +12,9 @@ const upcomingEvent = v.object({
   venueName: v.string(),
   city: v.string(),
   region: v.optional(v.string()),
+  // Venue geo when JamBase supplies it — powers the backfill GPS signal.
+  latitude: v.optional(v.number()),
+  longitude: v.optional(v.number()),
   image: v.optional(v.string()),
   festivalId: v.optional(v.string()),
   stage: v.optional(v.string()),
@@ -230,6 +233,33 @@ export const detail = query({
       logs: hydratedLogs,
       media: mediaWithUrls,
       recommendedShows: summaries.filter((item) => item.id !== show._id).slice(0, 4),
+      // Venue signal (design 15): verified rating + the freshest one-liner
+      // from logs written at this venue.
+      venueSignal: venue
+        ? await (async () => {
+            const venueLogs = (await ctx.db.query("logs").collect()).filter(
+              (log) => log.venueName === venue.name,
+            );
+            const summary = summarizeRatings(venueLogs);
+            const note = venueLogs
+              .filter((log) => log.note)
+              .sort((left, right) => right.createdAt - left.createdAt)[0]?.note;
+            return { ...summary, note: note ?? null };
+          })()
+        : null,
+      isWatchlisted: args.userId
+        ? Boolean(
+            await ctx.db
+              .query("watchlist")
+              .withIndex("by_user_target", (q) =>
+                q
+                  .eq("userId", args.userId!)
+                  .eq("targetType", "show")
+                  .eq("targetId", String(args.showId)),
+              )
+              .unique(),
+          )
+        : false,
     };
   },
 });
@@ -285,7 +315,23 @@ export const importUpcoming = mutation({
           city: event.city,
           region: event.region,
           image: event.image,
+          latitude: event.latitude,
+          longitude: event.longitude,
         }));
+
+      // Backfill coordinates onto venues stored before geo was mapped. Never
+      // overwrite a coordinate we already have — the geocoder may have filled it.
+      if (
+        existingVenue &&
+        existingVenue.latitude === undefined &&
+        event.latitude !== undefined &&
+        event.longitude !== undefined
+      ) {
+        await ctx.db.patch(existingVenue._id, {
+          latitude: event.latitude,
+          longitude: event.longitude,
+        });
+      }
 
       const payload = {
         title: event.title,

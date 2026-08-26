@@ -8,10 +8,14 @@
  * @module
  */
 
+import type * as activity from "../activity.js";
 import type * as artists from "../artists.js";
 import type * as attendance from "../attendance.js";
+import type * as backfill from "../backfill.js";
+import type * as backfillMatch from "../backfillMatch.js";
 import type * as diary from "../diary.js";
 import type * as discovery from "../discovery.js";
+import type * as favorites from "../favorites.js";
 import type * as follows from "../follows.js";
 import type * as jambase from "../jambase.js";
 import type * as jambaseUtils from "../jambaseUtils.js";
@@ -27,6 +31,7 @@ import type * as taste from "../taste.js";
 import type * as tasteMath from "../tasteMath.js";
 import type * as users from "../users.js";
 import type * as venues from "../venues.js";
+import type * as watchlist from "../watchlist.js";
 
 import type {
   ApiFromModules,
@@ -35,10 +40,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activity: typeof activity;
   artists: typeof artists;
   attendance: typeof attendance;
+  backfill: typeof backfill;
+  backfillMatch: typeof backfillMatch;
   diary: typeof diary;
   discovery: typeof discovery;
+  favorites: typeof favorites;
   follows: typeof follows;
   jambase: typeof jambase;
   jambaseUtils: typeof jambaseUtils;
@@ -54,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   tasteMath: typeof tasteMath;
   users: typeof users;
   venues: typeof venues;
+  watchlist: typeof watchlist;
 }>;
 
 /**

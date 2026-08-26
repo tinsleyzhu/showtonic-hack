@@ -28,6 +28,9 @@ export type Show = {
   stage: string;
   venueId: string;
   venueName?: string;
+  // Venue coordinates power the backfill GPS signal — see convex/backfillMatch.js.
+  venueLatitude?: number;
+  venueLongitude?: number;
   city?: string;
   region?: string;
   artistIds: string[];
@@ -62,14 +65,13 @@ export type FakeUser = {
   favoriteArtists: string[];
 };
 
+// Fixed tap-only vibe vocabulary (design 18).
 export const vibes = [
   "transcendent",
-  "sound was insane",
-  "sweaty",
+  "danced nonstop",
+  "great sound",
   "too packed",
-  "sunset set",
   "surprise guest",
-  "all-nighter",
 ];
 
 export const artists: Artist[] = [

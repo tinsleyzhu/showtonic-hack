@@ -1,21 +1,40 @@
 @import "tailwindcss";
 
+/* Cinematic Nocturne × Archival — tokens per DESIGN.md and showtonic-design-exports */
 :root {
-  --background: #14181c;
-  --foreground: #f4f6f8;
+  --background: #0a0908; /* ink: near-black canvas */
+  --foreground: #f5f1e8; /* bone */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --color-ink: #0a0908;
+  --color-surface: #141210;
+  --color-raised: #1a1713;
+  --color-line: #2a2521;
+  --color-bone: #f5f1e8;
+  --color-fog: #c9c1b4;
+  --color-muted: #8a8177;
+  --color-dim: #6b6258;
+  --color-ember: #ff7a50; /* single action accent */
+  --color-mint: #4ec98f; /* ratings, stats, success only — never a button fill */
+  --font-sans: -apple-system, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Display serif for headlines, artist names, and big numbers */
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
 }
 
 * {
@@ -46,8 +65,8 @@ button:disabled {
 }
 
 ::selection {
-  background: #20d6aa;
-  color: #0e151b;
+  background: #ff7a50;
+  color: #0a0908;
 }
 
 @keyframes onboarding-reveal {

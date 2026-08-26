@@ -6,6 +6,8 @@ export type NormalizedUpcomingEvent = {
   venueName: string;
   city: string;
   region?: string;
+  latitude?: number;
+  longitude?: number;
   image?: string;
   festivalId?: string;
   stage?: string;

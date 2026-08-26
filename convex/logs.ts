@@ -21,6 +21,70 @@ async function hydrateUser(ctx: QueryCtx, userId: Id<"users">) {
   return ctx.db.get(userId);
 }
 
+type LogSource = "live" | "backfill" | "reclaim" | "morning_after";
+
+// Shared insert/upsert used by the live log flow and the backfill accept path.
+// A rating of 0 means "logged but unrated" (design 10's "Skip rating") and is
+// excluded from averages by summarizeRatings.
+export async function insertVerifiedLog(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    showId: Id<"shows">;
+    rating: number;
+    vibes: string[];
+    note?: string;
+    caption?: string;
+    song?: string;
+    source?: LogSource;
+    createdAt?: number;
+  },
+) {
+  if (args.rating !== 0) {
+    validateLogInput({ rating: args.rating, vibes: args.vibes });
+  }
+  const user = await ctx.db.get(args.userId);
+  const show = await ctx.db.get(args.showId);
+  if (!user || !show) {
+    throw new Error("Missing user or show");
+  }
+  if (show.date >= new Date().toISOString().slice(0, 10)) {
+    throw new Error("Shows can only be logged after they happen");
+  }
+
+  const existing = await getLogByUserAndShow(ctx, args.userId, args.showId);
+  const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
+  const createdAt = args.createdAt ?? Date.now();
+  const payload = {
+    userId: args.userId,
+    showId: args.showId,
+    rating: args.rating,
+    vibes: [...args.vibes],
+    note: args.note,
+    caption: args.caption,
+    song: args.song,
+    source: args.source ?? "live",
+    showTitle: show.title,
+    showDate: show.date,
+    showImage: show.image,
+    artistNames: [...show.artistNames],
+    venueName: show.venueName,
+    city: show.city,
+    artistGenres: [...new Set(artists.flatMap((artist) => artist?.genres ?? []))],
+    createdAt,
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, payload);
+    await upsertAttendance(ctx, args.userId, args.showId, "logged", createdAt);
+    return existing._id;
+  }
+
+  const logId = await ctx.db.insert("logs", payload);
+  await upsertAttendance(ctx, args.userId, args.showId, "logged", createdAt);
+  return logId;
+}
+
 export const create = mutation({
   args: {
     userId: v.id("users"),
@@ -30,50 +94,17 @@ export const create = mutation({
     note: v.optional(v.string()),
     caption: v.optional(v.string()),
     song: v.optional(v.string()),
+    source: v.optional(
+      v.union(
+        v.literal("live"),
+        v.literal("backfill"),
+        v.literal("reclaim"),
+        v.literal("morning_after"),
+      ),
+    ),
     createdAt: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    validateLogInput({ rating: args.rating, vibes: args.vibes });
-    const user = await ctx.db.get(args.userId);
-    const show = await ctx.db.get(args.showId);
-    if (!user || !show) {
-      throw new Error("Missing user or show");
-    }
-    if (show.date >= new Date().toISOString().slice(0, 10)) {
-      throw new Error("Shows can only be logged after they happen");
-    }
-
-    const existing = await getLogByUserAndShow(ctx, args.userId, args.showId);
-    const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
-    const createdAt = args.createdAt ?? Date.now();
-    const payload = {
-      userId: args.userId,
-      showId: args.showId,
-      rating: args.rating,
-      vibes: [...args.vibes],
-      note: args.note,
-      caption: args.caption,
-      song: args.song,
-      showTitle: show.title,
-      showDate: show.date,
-      showImage: show.image,
-      artistNames: [...show.artistNames],
-      venueName: show.venueName,
-      city: show.city,
-      artistGenres: [...new Set(artists.flatMap((artist) => artist?.genres ?? []))],
-      createdAt,
-    };
-
-    if (existing) {
-      await ctx.db.patch(existing._id, payload);
-      await upsertAttendance(ctx, args.userId, args.showId, "logged", createdAt);
-      return existing._id;
-    }
-
-    const logId = await ctx.db.insert("logs", payload);
-    await upsertAttendance(ctx, args.userId, args.showId, "logged", createdAt);
-    return logId;
-  },
+  handler: async (ctx, args) => insertVerifiedLog(ctx, args),
 });
 
 export const listByUser = query({

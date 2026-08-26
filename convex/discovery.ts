@@ -23,11 +23,16 @@ function displayTime(value?: string) {
 }
 
 export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
-  const [shows, logs, attendance] = await Promise.all([
+  const [shows, logs, attendance, venues] = await Promise.all([
     ctx.db.query("shows").collect(),
     ctx.db.query("logs").collect(),
     ctx.db.query("attendance").collect(),
+    ctx.db.query("venues").collect(),
   ]);
+
+  // Venue coordinates ride along so the on-device backfill scan can score
+  // photo GPS against the room without a maps API. See docs/agent-hack/SPEC.md.
+  const venuesById = new Map(venues.map((venue) => [venue._id, venue]));
 
   const logsByShow = new Map<string, Doc<"logs">[]>();
   for (const log of logs) {
@@ -63,6 +68,8 @@ export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
         stage: show.stage ?? show.venueName,
         venueId: show.venueId,
         venueName: show.venueName,
+        venueLatitude: show.venueId ? venuesById.get(show.venueId)?.latitude : undefined,
+        venueLongitude: show.venueId ? venuesById.get(show.venueId)?.longitude : undefined,
         city: show.city,
         region: show.region,
         festivalId: show.festivalId,
@@ -80,14 +87,56 @@ export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
     .sort((left, right) => left.date.localeCompare(right.date) || left.title.localeCompare(right.title));
 }
 
+// Public, pre-identity payoff numbers for the onboarding home-base step
+// (designs 05/06): upcoming show counts per city, plus per-artist counts so the
+// step can say "including N artists you selected".
+export const cityStats = query({
+  args: { today: v.string() },
+  handler: async (ctx, args) => {
+    const shows = await ctx.db.query("shows").collect();
+    const upcoming = shows.filter((show) => show.date >= args.today);
+    const byCity = new Map<string, { city: string; upcomingCount: number; artistNames: Set<string> }>();
+    for (const show of upcoming) {
+      if (!show.city) continue;
+      const entry = byCity.get(show.city) ?? {
+        city: show.city,
+        upcomingCount: 0,
+        artistNames: new Set<string>(),
+      };
+      entry.upcomingCount += 1;
+      for (const name of show.artistNames) entry.artistNames.add(name);
+      byCity.set(show.city, entry);
+    }
+    return [...byCity.values()]
+      .sort((left, right) => right.upcomingCount - left.upcomingCount)
+      .map((entry) => ({
+        city: entry.city,
+        upcomingCount: entry.upcomingCount,
+        artistNames: [...entry.artistNames],
+      }));
+  },
+});
+
 export const home = query({
   args: { userId: v.id("users"), today: v.string() },
   handler: async (ctx, args) => {
     const shows = await listShowSummaries(ctx, args.userId);
     const jamBaseShows = shows.filter((show) => show.isJamBase && show.city === "San Francisco");
+    const watchlist = await ctx.db
+      .query("watchlist")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    const watchedShowIds = new Set(
+      watchlist.filter((row) => row.targetType === "show").map((row) => row.targetId),
+    );
     return {
       shows,
-      shelves: buildDiscoveryShelves(shows, args.today),
+      shelves: {
+        ...buildDiscoveryShelves(shows, args.today),
+        fromYourWatchlist: shows
+          .filter((show) => show.date >= args.today && watchedShowIds.has(show.id))
+          .slice(0, 6),
+      },
       catalogStats: {
         historical: jamBaseShows.filter((show) => show.date < args.today).length,
         upcoming: jamBaseShows.filter((show) => show.date >= args.today).length,

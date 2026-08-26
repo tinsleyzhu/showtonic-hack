@@ -2,8 +2,11 @@ const HANDLE_KEY = "showtonic.handle";
 const FAVORITES_KEY = "showtonic.favoriteArtists.v1";
 const COMPLETION_KEY = "showtonic.onboarding.v1";
 const SESSION_KEY = "showtonic.session.v1";
+const HOME_CITY_KEY = "showtonic.homeCity"; // shared with the Discover home-base picker
+const VISIBILITY_KEY = "showtonic.visibility.v1";
 const DEFAULT_HANDLE = "tinsley";
 
+// Fallback taste-seed suggestions when the live catalog has not loaded yet.
 const ONBOARDING_ARTISTS = [
   "Charli XCX",
   "RÜFÜS DU SOL",
@@ -13,6 +16,17 @@ const ONBOARDING_ARTISTS = [
   "MUNA",
   "Jamie xx",
 ];
+
+// The 5-step wizard (design exports 01–07). "welcome" doubles as the sign-in
+// gate; "handoff" becomes the backfill offer in Phase 2.
+const ONBOARDING_STEPS = ["welcome", "identity", "taste", "homebase", "handoff"];
+
+// Design 04: "Pick at least five" — the UI gate for leaving the taste step.
+const TASTE_SEED_MIN = 5;
+// Persistence invariant for a completed profile. Deliberately lower than the
+// UI gate so profiles stored by earlier builds keep working.
+const TASTE_COMPLETE_MIN = 2;
+const FAVORITES_CAP = 24;
 
 function normalizeOnboardingHandle(value) {
   const handle = String(value ?? "")
@@ -40,16 +54,75 @@ function validateOnboardingHandle(value) {
   return { handle, error: "" };
 }
 
+// Taste seeds come from the live catalog (design 04), so any non-empty artist
+// name is allowed; dedupe case-insensitively, keep first casing, cap the list.
 function normalizeFavoriteArtists(values) {
-  const allowed = new Map(ONBOARDING_ARTISTS.map((artist) => [artist.toLowerCase(), artist]));
+  const seen = new Set();
   const normalized = [];
   for (const value of Array.isArray(values) ? values : []) {
-    const artist = allowed.get(String(value ?? "").trim().toLowerCase());
-    if (artist && !normalized.includes(artist)) {
-      normalized.push(artist);
-    }
+    if (typeof value !== "string") continue;
+    const artist = value.trim();
+    const key = artist.toLowerCase();
+    if (!artist || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(artist);
+    if (normalized.length >= FAVORITES_CAP) break;
   }
   return normalized;
+}
+
+function normalizeVisibility(value) {
+  return value === "private" ? "private" : "public";
+}
+
+function normalizeHomeCity(value) {
+  return String(value ?? "").trim().slice(0, 60);
+}
+
+function onboardingStepIndex(step) {
+  const index = ONBOARDING_STEPS.indexOf(step);
+  return index === -1 ? 0 : index;
+}
+
+function nextOnboardingStep(step) {
+  const index = onboardingStepIndex(step);
+  return ONBOARDING_STEPS[Math.min(index + 1, ONBOARDING_STEPS.length - 1)];
+}
+
+function previousOnboardingStep(step) {
+  const index = onboardingStepIndex(step);
+  return ONBOARDING_STEPS[Math.max(index - 1, 0)];
+}
+
+// Whether the wizard may advance past `step` with the current draft.
+// Home base is deliberately skippable (design 06: "Skip for now").
+function canLeaveOnboardingStep(step, draft = {}) {
+  if (step === "identity") {
+    const { error } = validateOnboardingHandle(draft.handle);
+    if (error) return { ok: false, reason: error };
+    return { ok: true, reason: "" };
+  }
+  if (step === "taste") {
+    const count = normalizeFavoriteArtists(draft.favoriteArtists).length;
+    if (count < TASTE_SEED_MIN) {
+      return {
+        ok: false,
+        reason: `Pick ${TASTE_SEED_MIN - count} more ${TASTE_SEED_MIN - count === 1 ? "artist" : "artists"} to personalize Discover.`,
+      };
+    }
+    return { ok: true, reason: "" };
+  }
+  return { ok: true, reason: "" };
+}
+
+// The meter line under the taste grid (design 04).
+function describeTasteSelection(count) {
+  if (count <= 0) return `Pick at least ${TASTE_SEED_MIN} artists you'd cross town to see.`;
+  if (count < TASTE_SEED_MIN) {
+    const missing = TASTE_SEED_MIN - count;
+    return `${count} selected · ${missing} more to personalize`;
+  }
+  return `${count} selected · enough to personalize`;
 }
 
 function readOnboardingProfile(storage) {
@@ -57,6 +130,8 @@ function readOnboardingProfile(storage) {
     completed: false,
     handle: DEFAULT_HANDLE,
     favoriteArtists: [],
+    homeCity: "",
+    visibility: "public",
   };
   if (!storage) return profile;
 
@@ -78,10 +153,23 @@ function readOnboardingProfile(storage) {
   }
 
   try {
+    profile.homeCity = normalizeHomeCity(storage.getItem(HOME_CITY_KEY));
+  } catch {
+    profile.homeCity = "";
+  }
+
+  try {
+    profile.visibility = normalizeVisibility(storage.getItem(VISIBILITY_KEY));
+  } catch {
+    profile.visibility = "public";
+  }
+
+  try {
     const sessionState = storage.getItem(SESSION_KEY);
     const hasReturningSession = sessionState === "authenticated";
     const finishedOnboarding =
-      storage.getItem(COMPLETION_KEY) === "complete" && profile.favoriteArtists.length >= 2;
+      storage.getItem(COMPLETION_KEY) === "complete" &&
+      profile.favoriteArtists.length >= TASTE_COMPLETE_MIN;
     profile.completed =
       sessionState !== "signed-out" && hasValidHandle && (hasReturningSession || finishedOnboarding);
   } catch {
@@ -95,6 +183,8 @@ function markOnboardingSignedOut(storage, profile) {
     completed: false,
     handle: normalizeOnboardingHandle(profile?.handle),
     favoriteArtists: normalizeFavoriteArtists(profile?.favoriteArtists),
+    homeCity: normalizeHomeCity(profile?.homeCity),
+    visibility: normalizeVisibility(profile?.visibility),
   };
   if (!storage) return result;
 
@@ -110,15 +200,19 @@ function writeOnboardingProfile(storage, profile) {
   const validation = validateOnboardingHandle(profile?.handle);
   const handle = validation.handle;
   const favoriteArtists = normalizeFavoriteArtists(profile?.favoriteArtists);
-  if (validation.error || favoriteArtists.length < 2) {
-    return { completed: false, handle, favoriteArtists };
+  const homeCity = normalizeHomeCity(profile?.homeCity);
+  const visibility = normalizeVisibility(profile?.visibility);
+  if (validation.error || favoriteArtists.length < TASTE_COMPLETE_MIN) {
+    return { completed: false, handle, favoriteArtists, homeCity, visibility };
   }
-  const result = { completed: true, handle, favoriteArtists };
+  const result = { completed: true, handle, favoriteArtists, homeCity, visibility };
   if (!storage) return result;
 
   try {
     storage.setItem(HANDLE_KEY, handle);
     storage.setItem(FAVORITES_KEY, JSON.stringify(favoriteArtists));
+    if (homeCity) storage.setItem(HOME_CITY_KEY, homeCity);
+    storage.setItem(VISIBILITY_KEY, visibility);
     storage.setItem(COMPLETION_KEY, "complete");
     storage.setItem(SESSION_KEY, "authenticated");
   } catch {
@@ -131,13 +225,21 @@ function writeLoginProfile(storage, value, favoriteArtists = []) {
   const validation = validateOnboardingHandle(value);
   const normalizedFavorites = normalizeFavoriteArtists(favoriteArtists);
   if (validation.error) {
-    return { completed: false, handle: validation.handle, favoriteArtists: normalizedFavorites };
+    return {
+      completed: false,
+      handle: validation.handle,
+      favoriteArtists: normalizedFavorites,
+      homeCity: "",
+      visibility: "public",
+    };
   }
 
   const result = {
     completed: true,
     handle: validation.handle,
     favoriteArtists: normalizedFavorites,
+    homeCity: "",
+    visibility: "public",
   };
   if (!storage) return result;
 
@@ -181,11 +283,18 @@ function findFirstHistoricalPreferredShow(shows, favoriteArtists, today) {
 
 export {
   ONBOARDING_ARTISTS,
+  ONBOARDING_STEPS,
+  TASTE_SEED_MIN,
+  canLeaveOnboardingStep,
+  describeTasteSelection,
   findFirstHistoricalPreferredShow,
   findFirstPreferredShow,
   markOnboardingSignedOut,
+  nextOnboardingStep,
   normalizeFavoriteArtists,
   normalizeOnboardingHandle,
+  onboardingStepIndex,
+  previousOnboardingStep,
   prioritizeShowsByArtists,
   readOnboardingProfile,
   validateOnboardingHandle,

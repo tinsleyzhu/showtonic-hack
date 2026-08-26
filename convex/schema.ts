@@ -59,6 +59,10 @@ export default defineSchema({
     handle: v.string(),
     avatarColor: v.string(),
     isFake: v.boolean(), // seeded demo users for taste matching
+    homeCity: v.optional(v.string()),
+    visibility: v.optional(v.union(v.literal("public"), v.literal("private"))),
+    claimed: v.optional(v.boolean()), // account claimed with email/Apple (v1.5 stub)
+    tasteArtistIds: v.optional(v.array(v.id("artists"))), // onboarding taste seed
   }).index("by_handle", ["handle"]),
 
   logs: defineTable({
@@ -77,6 +81,15 @@ export default defineSchema({
     venueName: v.optional(v.string()),
     city: v.optional(v.string()),
     artistGenres: v.optional(v.array(v.string())),
+    // how this log entered the diary — powers backfill/reclaim receipts
+    source: v.optional(
+      v.union(
+        v.literal("live"),
+        v.literal("backfill"),
+        v.literal("reclaim"),
+        v.literal("morning_after"),
+      ),
+    ),
     createdAt: v.number(),
   })
     .index("by_user", ["userId"])
@@ -109,6 +122,70 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_venue", ["venueId"])
     .index("by_user_venue", ["userId", "venueId"]),
+
+  // Pin up to 4 all-time favorite shows atop the diary (design 19).
+  favorites: defineTable({
+    userId: v.id("users"),
+    showId: v.id("shows"),
+    logId: v.id("logs"),
+    rank: v.number(), // 1–4
+  }).index("by_user", ["userId"]),
+
+  // Saved shows/artists/venues; upcoming ones surface in Discover.
+  watchlist: defineTable({
+    userId: v.id("users"),
+    targetType: v.union(v.literal("show"), v.literal("artist"), v.literal("venue")),
+    targetId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_target", ["userId", "targetType", "targetId"]),
+
+  // Client-computed photo-scan matches awaiting confirmation (designs 08–11).
+  // Only metadata lands here — original photos never upload.
+  backfillCandidates: defineTable({
+    userId: v.id("users"),
+    showId: v.optional(v.id("shows")),
+    clusterDate: v.string(), // ISO date of the night
+    photoCount: v.number(),
+    captureWindow: v.optional(v.string()), // "10:22 PM–12:14 AM"
+    confidence: v.number(), // 0–1
+    // Why the matcher believes this — rendered as the evidence card's rows.
+    // Derived strings only: raw photo coordinates stay on the device.
+    evidence: v.optional(
+      v.array(
+        v.object({
+          kind: v.string(), // date | gps | volume | taste | venue | vision | web
+          detail: v.string(),
+          delta: v.number(),
+        }),
+      ),
+    ),
+    // Draft-writer output (phase 3) — pre-fills the accept sheet.
+    draft: v.optional(
+      v.object({
+        caption: v.optional(v.string()),
+        vibes: v.optional(v.array(v.string())),
+      }),
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("rejected"),
+      v.literal("reassigned"),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"]),
+
+  // v1.5 — likes on show logs/reviews in the activity feed (design 21).
+  reviewLikes: defineTable({
+    userId: v.id("users"),
+    logId: v.id("logs"),
+  })
+    .index("by_log", ["logId"])
+    .index("by_user_log", ["userId", "logId"]),
 
   media: defineTable({
     logId: v.id("logs"),

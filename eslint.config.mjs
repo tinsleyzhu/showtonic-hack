@@ -12,6 +12,13 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Build artifacts and scratch output — not source.
+    "dist/**",
+    "output/**",
+    ".wrangler/**",
+    ".playwright-cli/**",
+    "worker/**",
+    "convex/_generated/**",
   ]),
 ]);
 

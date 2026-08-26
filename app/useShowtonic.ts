@@ -12,11 +12,15 @@ type AttendanceStatus = "interested" | "going" | "logged";
 
 type HookArgs = {
   handle?: string;
+  homeCity?: string;
+  visibility?: "public" | "private";
   selectedShowId?: string;
   selectedArtistId?: string;
   selectedVenueId?: string;
+  selectedMatchUserId?: string;
   query: string;
   leaderboardScope: LeaderboardScope;
+  activityScope?: "friends" | "you";
 };
 
 type SaveLogInput = {
@@ -37,11 +41,15 @@ function localDate() {
 
 export function useShowtonic({
   handle,
+  homeCity,
+  visibility,
   selectedShowId,
   selectedArtistId,
   selectedVenueId,
+  selectedMatchUserId,
   query,
   leaderboardScope,
+  activityScope = "friends",
 }: HookArgs) {
   const [identity, setIdentity] = useState<KeyedIdentity<Doc<"users">>>({
     handle: undefined,
@@ -56,6 +64,9 @@ export function useShowtonic({
   const attachMedia = useMutation(api.media.attach);
   const toggleArtistFollowMutation = useMutation(api.follows.toggleArtist);
   const toggleVenueFollowMutation = useMutation(api.follows.toggleVenue);
+  const toggleWatchlistMutation = useMutation(api.watchlist.toggle);
+  const setFavoritesMutation = useMutation(api.favorites.set);
+  const toggleReviewLikeMutation = useMutation(api.activity.toggleLike);
   const syncCatalogAction = useAction(api.jambase.syncCatalog);
   const today = localDate();
 
@@ -68,7 +79,7 @@ export function useShowtonic({
       };
     }
 
-    getOrCreateUser({ handle })
+    getOrCreateUser({ handle, homeCity, visibility })
       .then((nextUser) => {
         if (active && nextUser) {
           setIdentity({ handle, user: nextUser, error: "" });
@@ -86,7 +97,7 @@ export function useShowtonic({
     return () => {
       active = false;
     };
-  }, [getOrCreateUser, handle]);
+  }, [getOrCreateUser, handle, homeCity, visibility]);
 
   const { user, error: identityError } = selectIdentityForHandle(handle, identity);
   const userId = user?._id;
@@ -108,6 +119,16 @@ export function useShowtonic({
     userId ? { userId, scope: leaderboardScope } : "skip",
   );
   const tasteMatches = useQuery(api.taste.similar, userId ? { userId } : "skip");
+  const activityFeed = useQuery(
+    api.activity.feed,
+    userId ? { userId, scope: activityScope } : "skip",
+  );
+  const tasteMatchDetail = useQuery(
+    api.taste.matchDetail,
+    userId && selectedMatchUserId
+      ? { userId, otherUserId: selectedMatchUserId as Id<"users"> }
+      : "skip",
+  );
   const artistDetail = useQuery(
     api.artists.get,
     userId && selectedArtistId
@@ -129,6 +150,21 @@ export function useShowtonic({
   async function toggleVenueFollow(venueId: Id<"venues">) {
     if (!userId) throw new Error("Local user is still loading");
     return toggleVenueFollowMutation({ userId, venueId });
+  }
+
+  async function toggleWatchlist(targetType: "show" | "artist" | "venue", targetId: string) {
+    if (!userId) throw new Error("Local user is still loading");
+    return toggleWatchlistMutation({ userId, targetType, targetId });
+  }
+
+  async function toggleReviewLike(logId: Id<"logs">) {
+    if (!userId) throw new Error("Local user is still loading");
+    return toggleReviewLikeMutation({ userId, logId });
+  }
+
+  async function setFavorites(logIds: Id<"logs">[]) {
+    if (!userId) throw new Error("Local user is still loading");
+    return setFavoritesMutation({ userId, logIds });
   }
 
   async function setAttendance(showId: Id<"shows">, status: AttendanceStatus) {
@@ -222,6 +258,7 @@ export function useShowtonic({
   }
 
   return {
+    activityFeed: activityFeed ?? [],
     artistDetail,
     diary,
     discovery,
@@ -236,8 +273,12 @@ export function useShowtonic({
     showDetail,
     syncCatalog,
     tasteMatches: tasteMatches ?? [],
+    tasteMatchDetail,
+    toggleReviewLike,
+    setFavorites,
     toggleArtistFollow,
     toggleVenueFollow,
+    toggleWatchlist,
     user,
     venueDetail,
     saveLog,

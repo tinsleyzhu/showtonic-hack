@@ -23,6 +23,12 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    // exifr is imported lazily inside the browser (app/photoMeta.js) to keep
+    // Node built-ins out of the Workers SSR bundle. Vite's dependency scan
+    // cannot see a dynamic import, so without this it optimizes exifr on first
+    // scan and force-reloads the page — mid-flow, exactly when someone is
+    // reclaiming their camera roll. Pre-bundling it keeps the scan atomic.
+    optimizeDeps: { include: ["exifr"] },
     server: isCodexSeatbeltSandbox ? { watch: { useFsEvents: false, usePolling: true } } : undefined,
     plugins: [
       vinext(),

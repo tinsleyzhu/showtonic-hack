@@ -56,6 +56,8 @@ function toShow(summary) {
     stage: summary.stage ?? "Stage TBA",
     venueId: summary.venueId ? String(summary.venueId) : "",
     venueName: summary.venueName,
+    venueLatitude: Number.isFinite(summary.venueLatitude) ? summary.venueLatitude : undefined,
+    venueLongitude: Number.isFinite(summary.venueLongitude) ? summary.venueLongitude : undefined,
     city: summary.city,
     region: summary.region,
     artistIds: (summary.artistIds ?? []).map(String),
@@ -164,8 +166,11 @@ function groupMemories(memories, filter) {
       };
     })
     .sort(
+      // "Most visited" first (design 20), then recency, then name.
       (left, right) =>
-        right.latestDate.localeCompare(left.latestDate) || left.label.localeCompare(right.label),
+        right.count - left.count ||
+        right.latestDate.localeCompare(left.latestDate) ||
+        left.label.localeCompare(right.label),
     );
 }
 
