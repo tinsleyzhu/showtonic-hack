@@ -233,6 +233,20 @@ test("inferGenresFromContext lets a confident room outrank a conflicting title",
   );
 });
 
+// The catalog is Ticketmaster-driven and not SF-only, so room-type patterns
+// have to carry to cities whose venue names we have never seen.
+test("inferGenresFromContext generalizes to venues outside San Francisco", () => {
+  const cases = [
+    ["Boston Symphony Hall", ["classical"]],
+    ["Blue Note Jazz Club", ["jazz"]],
+    ["Laugh Factory", ["comedy"]],
+    ["Freight & Salvage", ["folk"]],
+  ];
+  for (const [venue, expected] of cases) {
+    assert.deepEqual(inferGenresFromContext({ venueNames: [venue] }), expected, venue);
+  }
+});
+
 test("inferGenresFromContext agrees across several rooms of the same family", () => {
   assert.deepEqual(
     inferGenresFromContext({ venueNames: ["Public Works", "1015 Folsom", "Monarch"] }),

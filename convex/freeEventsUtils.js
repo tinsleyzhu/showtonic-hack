@@ -274,23 +274,38 @@ function musicbrainzArtistFields(searchPayload) {
 
 // `family` groups genres that describe the same kind of night, so conflicting
 // evidence can be detected. Two families firing = the context is uninformative.
+// Generic patterns first — the catalog is Ticketmaster-driven and not
+// SF-only, so a room type ("… Symphony Hall", "… Jazz Club") generalizes to
+// every city, while named rooms only cover the Bay Area.
 const VENUE_GENRE_HINTS = [
   {
     family: "classical",
-    pattern: /symphony|opera house|philharmonic|conservatory|orchestra hall|davies\b/i,
+    pattern:
+      /symphony|opera house|philharmonic|conservatory|orchestra hall|concert hall|recital hall|\bdavies\b/i,
     genres: ["classical"],
   },
   {
     family: "jazz",
-    pattern: /\bjazz\b|sfjazz|keystone korner|mr\.? tipple|black cat sf/i,
+    pattern:
+      /\bjazz\b|sfjazz|jazz club|jazz center|keystone korner|mr\.? tipple|yoshi'?s|blue note|village vanguard|birdland/i,
     genres: ["jazz"],
   },
   {
     family: "electronic",
-    pattern: /public works|1015 folsom|halcyon|monarch|f8\b|great northern|the endup|temple nightclub|audio sf/i,
+    pattern:
+      /public works|1015 folsom|halcyon|monarch|f8\b|great northern|the endup|temple nightclub|audio sf|nightclub/i,
     genres: ["electronic", "dance"],
   },
-  { family: "comedy", pattern: /punch line|cobb'?s comedy|comedy club/i, genres: ["comedy"] },
+  {
+    family: "comedy",
+    pattern: /punch line|cobb'?s comedy|comedy club|comedy cellar|laugh factory|improv\b/i,
+    genres: ["comedy"],
+  },
+  {
+    family: "folk",
+    pattern: /freight (&|and) salvage|folk (music )?(center|hall|club)/i,
+    genres: ["folk"],
+  },
 ];
 
 const TITLE_GENRE_HINTS = [
