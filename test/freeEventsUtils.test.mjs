@@ -205,13 +205,39 @@ test("inferGenresFromContext returns nothing when neither venue nor title carrie
   assert.deepEqual(inferGenresFromContext(), []);
 });
 
-test("inferGenresFromContext dedupes and caps at 5 across venue + title hints", () => {
-  const genres = inferGenresFromContext({
-    venueNames: ["Public Works", "The Fillmore"],
-    titles: ["DJ Set", "Metal Night", "Hip Hop Showcase"],
-  });
-  assert.ok(genres.length <= 5);
-  assert.equal(new Set(genres).size, genres.length);
+// Precision guards — the coverage number is worthless if the tags are noise.
+test("inferGenresFromContext does not tag broad rooms that book every genre", () => {
+  for (const room of ["The Fillmore", "The Warfield", "Chase Center", "The Independent"]) {
+    assert.deepEqual(inferGenresFromContext({ venueNames: [room] }), [], `${room} should stay untagged`);
+  }
+});
+
+test("inferGenresFromContext declines to guess when an artist's rooms disagree", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Davies Symphony Hall", "Public Works"] }),
+    [],
+  );
+});
+
+test("inferGenresFromContext declines to guess when show titles disagree", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Unknown Room"], titles: ["DJ Set", "Metal Night"] }),
+    [],
+  );
+});
+
+test("inferGenresFromContext lets a confident room outrank a conflicting title", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["SFJAZZ Center"], titles: ["DJ Set"] }),
+    ["jazz"],
+  );
+});
+
+test("inferGenresFromContext agrees across several rooms of the same family", () => {
+  assert.deepEqual(
+    inferGenresFromContext({ venueNames: ["Public Works", "1015 Folsom", "Monarch"] }),
+    ["electronic", "dance"],
+  );
 });
 
 test("musicbrainzArtistFields returns mbid, hometown, and top tags", () => {
