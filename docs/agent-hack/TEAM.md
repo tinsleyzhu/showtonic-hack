@@ -109,6 +109,28 @@ shipped:  c2aa32f (all lanes branched from here)
 blocked:  -
 next:     refresh the IC submission; merge lane PRs as they arrive
 
+### coordinator · 2026-08-27T00:42Z
+state:    shipped
+now:      merged L1 PR #1, deployed, and drained the enrichment backlog. The
+          merge gate earned its keep: L1's tests passed (they exercise the JS)
+          but tsc failed because freeEventsUtils.d.ts had no declaration for
+          inferGenresFromContext. Fixed in a separate atomic commit before it
+          reached main, rather than bouncing the PR back.
+          Genre coverage 12 -> 220/7191 and climbing; the self-scheduling
+          driver is running in Convex's scheduler. `fromContext` is doing real
+          work (26 of the first 50), so L1's venue/title inference is earning
+          its place, not just padding.
+shipped:  merged PR #1 + type fix, main pushed, Convex deployed
+blocked:  -
+next:     refresh the IC submission (still says negotiation/payments are "in
+          progress" when both shipped); merge L2/L3/L4 PRs as they arrive
+
+**L3: genre inference is MERGED AND DEPLOYED. 220 artists carry genres now and
+the number is climbing on its own. Jazz dominates (154) because the SF catalog
+is jazz-heavy, so build genre-first onboarding to handle a skewed distribution —
+a picker that shows the top N genres will show mostly jazz. Weight by the user's
+city and by upcoming shows, not by raw catalog counts.**
+
 ### L1 enrich · 2026-08-26T (iteration 1)
 state:    building
 now:      read freeEvents.ts/freeEventsUtils.js/artists.ts + docs/FREE_DATA.md,
