@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  hasTimezoneDesignator,
   DELTA_DATE,
   DELTA_GPS_FAR,
   DELTA_GPS_NEAR,
@@ -254,4 +255,40 @@ test("future shows are never matched", () => {
     { today: "2026-08-26" },
   );
   assert.deepEqual(candidates, []);
+});
+
+// --- Adversarial: cases found by attacking the matcher ----------------------
+
+test("a UTC timestamp is detectable, because silently losing a night is worse", () => {
+  // A night is defined by the clock on the wall where the photo was taken.
+  // Converting to UTC moves a 10:30 PM show to the next morning, which falls
+  // outside the evening window entirely — the night vanishes with no error.
+  // reclaim_camera_roll refuses these loudly rather than returning nothing.
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00Z"), true);
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00+02:00"), true);
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00-0700"), true);
+  assert.equal(hasTimezoneDesignator("2026-06-27T22:30:00"), false);
+
+  // The bug it guards, stated without depending on the runner's timezone: the
+  // same wall-clock string and its UTC-labelled twin are not interchangeable.
+  const wall = clusterPhotosIntoNights(
+    Array.from({ length: 5 }, () => ({ takenAt: "2026-06-27T22:30:00" })),
+  );
+  assert.equal(wall[0].clusterDate, "2026-06-27");
+});
+
+test("a festival day is declined, because GPS cannot say which set you saw", () => {
+  // Every set shares one coordinate, so nothing distinguishes them. Naming one
+  // would be a coin flip; the honest answer is that we know the night and not
+  // the set. Flagged to the coordinator as a product decision, not a silent one.
+  const park = { latitude: 37.7694, longitude: -122.4862 };
+  const lineup = ["Headliner", "Second", "Third"].map((name, index) => ({
+    id: `ol-${index}`,
+    date: "2025-11-15",
+    artistNames: [name],
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  }));
+  assert.deepEqual(matchClustersToShows([clusterAt(park)], lineup, { today: "2026-08-26" }), []);
 });

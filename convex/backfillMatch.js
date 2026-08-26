@@ -103,6 +103,15 @@ function nightDateOf(takenAt) {
   return `${year}-${month}-${day}`;
 }
 
+// Every hour comparison here runs in the server's local zone, so a caller that
+// helpfully sends correct UTC ("2026-06-27T22:30:00Z") gets its night shifted —
+// often out of the evening window entirely, which means the night is dropped
+// with no error and no candidate. Silence is the worst possible failure for an
+// agent-facing surface, so callers can detect the ambiguity and say so.
+function hasTimezoneDesignator(takenAt) {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(String(takenAt ?? "").trim());
+}
+
 function isEveningPhoto(takenAt) {
   const hours = new Date(takenAt).getHours();
   return hours >= EVENING_START_HOUR || hours < NIGHT_END_HOUR;
@@ -377,6 +386,7 @@ export {
   describeDistance,
   describeReclaimSpan,
   formatCaptureWindow,
+  hasTimezoneDesignator,
   haversineMeters,
   locateCluster,
   matchClustersToShows,
