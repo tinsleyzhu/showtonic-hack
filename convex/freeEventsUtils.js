@@ -255,6 +255,64 @@ function musicbrainzArtistFields(searchPayload) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Genre inference from venue/title context — last-resort fallback for artists
+// no API knows anything about. A Public Works listing is not a Davies Symphony
+// Hall listing: the room and the show title carry a genre signal even when
+// Spotify and MusicBrainz have never heard of the act (local support acts,
+// DJs, community-hall bookings). Pure + keyword-based, so it is honest about
+// being a heuristic, not a confirmed tag.
+// ---------------------------------------------------------------------------
+
+const VENUE_GENRE_HINTS = [
+  { pattern: /symphony|opera|philharmonic|conservatory|orchestra hall/i, genres: ["classical"] },
+  { pattern: /jazz/i, genres: ["jazz"] },
+  {
+    pattern: /public works|audio( sf)?|halcyon|monarch|f8\b|as you like it|great northern|el rio|the endup|temple nightclub|origin sf|holy cow/i,
+    genres: ["electronic", "dance"],
+  },
+  {
+    pattern: /fillmore|warfield|masonic|regency ballroom|bill graham|shoreline|chase center|oracle park|concord pavilion|greek theatre/i,
+    genres: ["rock", "pop"],
+  },
+  {
+    pattern: /independent|rickshaw stop|bottom of the hill|great american music hall|dna lounge|starline|cafe du nord|hemlock tavern|make-?out room/i,
+    genres: ["indie", "alternative"],
+  },
+  { pattern: /punch line|cobb'?s comedy|comedy club/i, genres: ["comedy"] },
+  { pattern: /blues/i, genres: ["blues"] },
+  { pattern: /folk/i, genres: ["folk"] },
+];
+
+const TITLE_GENRE_HINTS = [
+  { pattern: /\bdj\b|rave|house music|techno|\bedm\b|drum\s*(and|&)\s*bass|dubstep/i, genres: ["electronic"] },
+  { pattern: /orchestra|symphony|philharmonic|classical/i, genres: ["classical"] },
+  { pattern: /jazz/i, genres: ["jazz"] },
+  { pattern: /metal|hardcore|punk/i, genres: ["metal"] },
+  { pattern: /hip.?hop|\brap\b/i, genres: ["hip hop"] },
+  { pattern: /country/i, genres: ["country"] },
+  { pattern: /comedy/i, genres: ["comedy"] },
+  { pattern: /folk/i, genres: ["folk"] },
+  { pattern: /blues/i, genres: ["blues"] },
+];
+
+function matchGenreHints(hints, text) {
+  const genres = [];
+  for (const { pattern, genres: hintGenres } of hints) {
+    if (pattern.test(text)) genres.push(...hintGenres);
+  }
+  return genres;
+}
+
+// venueNames / titles are the raw strings pulled off the artist's shows.
+// Venue hints are considered a stronger signal (a room's genre identity is
+// sticky) than title keywords, so venue matches are placed first.
+function inferGenresFromContext({ venueNames = [], titles = [] } = {}) {
+  const fromVenues = matchGenreHints(VENUE_GENRE_HINTS, venueNames.join(" \n "));
+  const fromTitles = matchGenreHints(TITLE_GENRE_HINTS, titles.join(" \n "));
+  return [...new Set([...fromVenues, ...fromTitles])].slice(0, 5);
+}
+
 // Strip the non-schema `_genres` / `_songs` hints before handing events to the
 // `importUpcoming` mutation (its validator rejects unknown keys).
 function toImportEvents(events) {
@@ -274,5 +332,6 @@ export {
   normalizeBandsintownEvents,
   spotifyArtistFields,
   musicbrainzArtistFields,
+  inferGenresFromContext,
   toImportEvents,
 };

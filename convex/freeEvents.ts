@@ -7,6 +7,7 @@ import {
   normalizeBandsintownEvents,
   spotifyArtistFields,
   musicbrainzArtistFields,
+  inferGenresFromContext,
   toImportEvents,
 } from "./freeEventsUtils.js";
 import type { NormalizedFreeEvent } from "./freeEventsUtils.js";
@@ -407,13 +408,14 @@ export const enrichArtists = action({
   handler: async (
     ctx,
     args,
-  ): Promise<{ scanned: number; enriched: number; skipped: number }> => {
+  ): Promise<{ scanned: number; enriched: number; skipped: number; fromContext: number }> => {
     const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
     const artists = await ctx.runQuery(api.artists.listNeedingEnrichment, { limit });
     const token = await spotifyToken();
 
     let enriched = 0;
     let skipped = 0;
+    let fromContext = 0;
 
     for (const artist of artists) {
       const patch: {
@@ -457,6 +459,21 @@ export const enrichArtists = action({
         }
       }
 
+      // Last resort: neither Spotify nor MusicBrainz knows this act (a local
+      // support slot, a DJ, a community-hall booking). Infer from the rooms
+      // and titles it's actually booked under — a Public Works listing is not
+      // a Davies Symphony Hall listing.
+      if (!patch.genres || !patch.genres.length) {
+        const inferred = inferGenresFromContext({
+          venueNames: artist.venueNames,
+          titles: artist.titles,
+        });
+        if (inferred.length) {
+          patch.genres = inferred;
+          fromContext += 1;
+        }
+      }
+
       if (Object.keys(patch).length === 0) {
         skipped += 1;
         continue;
@@ -467,6 +484,47 @@ export const enrichArtists = action({
       enriched += 1;
     }
 
-    return { scanned: artists.length, enriched, skipped };
+    return { scanned: artists.length, enriched, skipped, fromContext };
+  },
+});
+
+// Drives enrichArtists across the whole backlog with one call: runs a batch,
+// then reschedules itself for the next one until a batch comes back scanning
+// fewer than `limit` artists (the backlog is empty) or maxBatches is hit.
+// Safe to call repeatedly or interrupt — each batch is independently
+// idempotent (see enrichArtists), so resuming just means calling this again.
+export const enrichArtistsContinuously = action({
+  args: {
+    limit: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    batchIndex: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    batchIndex: number;
+    scanned: number;
+    enriched: number;
+    skipped: number;
+    fromContext: number;
+    done: boolean;
+  }> => {
+    const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
+    const maxBatches = Math.max(args.maxBatches ?? 200, 1);
+    const batchIndex = args.batchIndex ?? 0;
+
+    const result = await ctx.runAction(api.freeEvents.enrichArtists, { limit });
+    const done = result.scanned < limit; // fewer than a full page: backlog is empty
+
+    if (!done && batchIndex + 1 < maxBatches) {
+      await ctx.scheduler.runAfter(500, api.freeEvents.enrichArtistsContinuously, {
+        limit,
+        maxBatches,
+        batchIndex: batchIndex + 1,
+      });
+    }
+
+    return { batchIndex, ...result, done };
   },
 });

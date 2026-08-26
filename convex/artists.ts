@@ -21,10 +21,20 @@ export const listNeedingEnrichment = query({
     // an artist appears on, counting upcoming ones double.
     const today = args.today ?? new Date(Date.now()).toISOString().slice(0, 10);
     const weight = new Map<string, number>();
+    // Venue names + show titles per artist, for the genre-inference fallback
+    // (convex/freeEventsUtils.js:inferGenresFromContext) when neither Spotify
+    // nor MusicBrainz has heard of the act. Collected here since `shows` is
+    // already in memory for the weight pass.
+    const venueNames = new Map<string, Set<string>>();
+    const titles = new Map<string, Set<string>>();
     for (const show of shows) {
       const bump = show.date >= today ? 2 : 1;
       for (const artistId of show.artistIds) {
         weight.set(artistId, (weight.get(artistId) ?? 0) + bump);
+        if (!venueNames.has(artistId)) venueNames.set(artistId, new Set());
+        if (!titles.has(artistId)) titles.set(artistId, new Set());
+        if (show.venueName) venueNames.get(artistId)!.add(show.venueName);
+        if (show.title) titles.get(artistId)!.add(show.title);
       }
     }
 
@@ -33,7 +43,12 @@ export const listNeedingEnrichment = query({
       .filter((artist) => (args.upcomingOnly ? (weight.get(artist._id) ?? 0) > 0 : true))
       .sort((left, right) => (weight.get(right._id) ?? 0) - (weight.get(left._id) ?? 0))
       .slice(0, limit)
-      .map((artist) => ({ _id: artist._id, name: artist.name }));
+      .map((artist) => ({
+        _id: artist._id,
+        name: artist.name,
+        venueNames: [...(venueNames.get(artist._id) ?? [])],
+        titles: [...(titles.get(artist._id) ?? [])],
+      }));
   },
 });
 
