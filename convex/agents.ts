@@ -186,7 +186,12 @@ export const tasteProfile = query({
 // This runs the same scorer as the browser scan (convex/backfillMatch.js), so a
 // night matched by an agent and a night matched in the UI get identical
 // evidence and identical confidence.
-import { clusterPhotosIntoNights, matchClustersToShows, unmatchedClusters } from "./backfillMatch.js";
+import {
+  clusterPhotosIntoNights,
+  hasTimezoneDesignator,
+  matchClustersToShows,
+  unmatchedClusters,
+} from "./backfillMatch.js";
 import { insertVerifiedLog } from "./logs";
 
 export const reclaimCameraRoll = mutation({
@@ -204,6 +209,20 @@ export const reclaimCameraRoll = mutation({
   },
   handler: async (ctx, args) => {
     if (!args.photos.length) throw new Error("No photo metadata supplied");
+
+    // A caller that sends correct UTC gets its nights shifted into the wrong
+    // day — often out of the evening window entirely, so the night vanishes
+    // with no error and no candidate. Refusing loudly beats returning a
+    // confidently empty result to an agent that did nothing obviously wrong.
+    const zoned = args.photos.filter((photo) => hasTimezoneDesignator(photo.takenAt)).length;
+    if (zoned) {
+      throw new Error(
+        `${zoned} of ${args.photos.length} timestamps carry a timezone offset. ` +
+          "takenAt must be local wall-clock time with no suffix (2026-06-27T22:30:00) — " +
+          "a night is defined by the clock on the wall where the photo was taken, " +
+          "and converting to UTC moves it into the wrong night.",
+      );
+    }
     const user = await ctx.db.get(args.userId);
     if (!user) throw new Error("Unknown user");
 
