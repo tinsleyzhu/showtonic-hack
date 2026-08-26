@@ -386,6 +386,25 @@ export const previewFreeUpcoming = action({
 // Fills the empty artist rows that importUpcoming creates.
 // ---------------------------------------------------------------------------
 
+// Enrichment drains thousands of artists against third-party APIs, so a 429, a
+// 5xx, or a dropped connection is routine rather than exceptional. Letting one
+// throw would abort the whole batch and — worse — break the self-scheduling
+// chain in enrichArtistsContinuously, silently stalling the drain. A failed
+// lookup degrades to "no data for this artist"; the next pass retries it,
+// because listNeedingEnrichment still reports it as missing.
+async function fetchJsonOrNull(
+  url: string,
+  headers: Record<string, string>,
+): Promise<unknown | null> {
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 async function spotifyToken(): Promise<string | undefined> {
   const id = process.env.SPOTIFY_CLIENT_ID;
   const secret = process.env.SPOTIFY_CLIENT_SECRET;
@@ -426,12 +445,12 @@ export const enrichArtists = action({
       } = {};
 
       if (token) {
-        const search = await fetch(
+        const payload = await fetchJsonOrNull(
           `${SPOTIFY_ORIGIN}/search?q=${encodeURIComponent(artist.name)}&type=artist&limit=1`,
-          { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
+          { Authorization: `Bearer ${token}`, Accept: "application/json" },
         );
-        if (search.ok) {
-          const fields = spotifyArtistFields(await search.json());
+        if (payload) {
+          const fields = spotifyArtistFields(payload);
           if (fields.image) patch.image = fields.image;
           if (fields.genres && fields.genres.length) patch.genres = fields.genres;
           if (fields.spotifyUrl) patch.topTrack = fields.spotifyUrl;
@@ -441,17 +460,17 @@ export const enrichArtists = action({
 
       // MusicBrainz fills hometown and a genre fallback when Spotify is quiet.
       if (!patch.genres || !patch.hometown) {
-        const mb = await fetch(
+        const payload = await fetchJsonOrNull(
           `${MUSICBRAINZ_ORIGIN}/artist?${new URLSearchParams({
             query: `artist:"${artist.name}"`,
             fmt: "json",
             limit: "1",
           }).toString()}`,
-          { headers: { Accept: "application/json", "User-Agent": USER_AGENT } },
+          { Accept: "application/json", "User-Agent": USER_AGENT },
         );
         await sleep(1100);
-        if (mb.ok) {
-          const fields = musicbrainzArtistFields(await mb.json());
+        if (payload) {
+          const fields = musicbrainzArtistFields(payload);
           if (!patch.hometown && fields.hometown) patch.hometown = fields.hometown;
           if ((!patch.genres || !patch.genres.length) && fields.genres?.length) {
             patch.genres = fields.genres;
@@ -493,11 +512,14 @@ export const enrichArtists = action({
 // fewer than `limit` artists (the backlog is empty) or maxBatches is hit.
 // Safe to call repeatedly or interrupt — each batch is independently
 // idempotent (see enrichArtists), so resuming just means calling this again.
+const MAX_CONSECUTIVE_BATCH_FAILURES = 5;
+
 export const enrichArtistsContinuously = action({
   args: {
     limit: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
     batchIndex: v.optional(v.number()),
+    failures: v.optional(v.number()),
   },
   handler: async (
     ctx,
@@ -509,22 +531,47 @@ export const enrichArtistsContinuously = action({
     skipped: number;
     fromContext: number;
     done: boolean;
+    failed: boolean;
   }> => {
     const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
     const maxBatches = Math.max(args.maxBatches ?? 200, 1);
     const batchIndex = args.batchIndex ?? 0;
+    const failures = args.failures ?? 0;
 
-    const result = await ctx.runAction(api.freeEvents.enrichArtists, { limit });
-    const done = result.scanned < limit; // fewer than a full page: backlog is empty
-
-    if (!done && batchIndex + 1 < maxBatches) {
-      await ctx.scheduler.runAfter(500, api.freeEvents.enrichArtistsContinuously, {
-        limit,
-        maxBatches,
-        batchIndex: batchIndex + 1,
-      });
+    // A batch can still fail as a whole (a Convex-level error, a bad Spotify
+    // token). Losing the chain here would stall the drain with no signal, so
+    // reschedule with a backoff and only give up after several in a row.
+    let result: { scanned: number; enriched: number; skipped: number; fromContext: number } | null =
+      null;
+    try {
+      result = await ctx.runAction(api.freeEvents.enrichArtists, { limit });
+    } catch {
+      result = null;
     }
 
-    return { batchIndex, ...result, done };
+    const failed = result === null;
+    const nextFailures = failed ? failures + 1 : 0;
+    // Fewer than a full page means the backlog is empty. A failed batch is not
+    // "done" — it has to be retried, not treated as a finish line.
+    const done = !failed && result!.scanned < limit;
+    const exhausted = nextFailures >= MAX_CONSECUTIVE_BATCH_FAILURES;
+
+    if (!done && !exhausted && batchIndex + 1 < maxBatches) {
+      await ctx.scheduler.runAfter(
+        failed ? 5_000 * nextFailures : 500,
+        api.freeEvents.enrichArtistsContinuously,
+        { limit, maxBatches, batchIndex: batchIndex + 1, failures: nextFailures },
+      );
+    }
+
+    return {
+      batchIndex,
+      scanned: result?.scanned ?? 0,
+      enriched: result?.enriched ?? 0,
+      skipped: result?.skipped ?? 0,
+      fromContext: result?.fromContext ?? 0,
+      done,
+      failed,
+    };
   },
 });
