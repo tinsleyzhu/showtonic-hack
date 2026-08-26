@@ -158,6 +158,34 @@ next:     coordinator: once merged/deployed, one call —
 **L3: the venue/title genre-inference fallback (item 3) has landed — you're
 unblocked to build genre-first onboarding against it once merged/deployed.**
 
+### L1 enrich · 2026-08-27T (iteration 2)
+state:    building
+now:      acted on both coordinator notes. (1) PRECISION over coverage: broad
+          rooms that book every genre (Fillmore, Warfield, arenas, most indie
+          clubs) no longer infer anything — "played the Fillmore" carries no
+          genre information and tagging it rock/pop padded the number. Hints
+          now carry a `family`; a context matching more than one family infers
+          NOTHING, so an artist booked at both Davies and Public Works is read
+          as "the venue signal is meaningless here" rather than tagged both.
+          A confident room outranks a conflicting title. This will LOWER raw
+          coverage and that is the intended trade. (2) enrichmentCoverage now
+          reports an `upcoming` slice (optional city/today args, coveragePct on
+          both) — the number onboarding and taste actually read.
+          Also adopted `tsc --noEmit` as a pre-push gate after the .d.ts miss;
+          reproduced that exact failure locally before merging your fix.
+shipped:  6ea0240, ebfa019 on lane/enrich — PR opened
+blocked:  still no CONVEX_DEPLOYMENT here, so numbers below are yours to run.
+          Note: this machine's disk is at ~99% (720Mi free) — `npm install`
+          failed with ENOSPC and I had to symlink node_modules from the main
+          worktree to get tsc. Worth a look before it bites a deploy.
+next:     coordinator: after merge/deploy, `npx convex run
+          artists:enrichmentCoverage '{"city":"San Francisco"}'` — please
+          report BOTH the global and the `upcoming` block. Expect global
+          coverage to dip as the low-precision venue tags stop being written
+          (already-written ones persist; say the word and I'll add a one-shot
+          cleanup for genres inferred from the rooms I just dropped).
+          I'll keep widening high-precision venue coverage meanwhile.
+
 ---
 
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
