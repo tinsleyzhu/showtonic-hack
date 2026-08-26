@@ -25,14 +25,20 @@ function omit(source, keys) {
 
 // v1 saw neither photo GPS nor venue coordinates. Simulate it by removing both
 // from the inputs — the engine itself is never branched on strategy.
+//
+// `ambiguityMargin: 0` is the one exception, and it is the same idea: v1 also
+// had no ambiguity guard, so the baseline must not quietly inherit one. A
+// baseline that gets today's improvements is not a baseline.
 const STRATEGIES = {
   "date-only": {
     label: "date-only (v1)",
+    options: { ambiguityMargin: 0 },
     photos: (photos) => photos.map((photo) => omit(photo, ["latitude", "longitude"])),
     shows: (shows) => shows.map((show) => omit(show, ["venueLatitude", "venueLongitude"])),
   },
   gps: {
     label: "gps + evidence",
+    options: {},
     photos: (photos) => photos,
     shows: (shows) => shows,
   },
@@ -63,7 +69,10 @@ function runStrategy(strategyKey, fixtures) {
 
   for (const night of fixtures.nights) {
     const clusters = clusterPhotosIntoNights(strategy.photos(night.photos));
-    const candidates = matchClustersToShows(clusters, shows, { today: fixtures.today });
+    const candidates = matchClustersToShows(clusters, shows, {
+      today: fixtures.today,
+      ...strategy.options,
+    });
     const candidate = candidates.find((entry) => entry.clusterDate === night.clusterDate) ?? null;
 
     const scenario = byScenario.get(night.scenario) ?? emptyTally();

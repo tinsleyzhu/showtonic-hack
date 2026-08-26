@@ -26,6 +26,17 @@ const DELTA_TASTE_ARTIST = 0.2;
 const DELTA_VISITED_VENUE = 0.2;
 const HEAVY_DOCUMENTATION_PHOTOS = 8;
 
+// How much better the winner's LOCATING evidence must be than the runner-up's
+// before we are willing to name it. Below this the two shows are, as far as
+// anything we know about where you were, the same show — and picking between
+// them is a coin flip wearing a confidence score.
+const AMBIGUITY_MARGIN = 0.05;
+
+// Which evidence actually places a person in a room. Taste and venue history
+// describe what someone LIKES; they must never be what decides where they
+// were, or the matcher just confirms what it already believed.
+const LOCATING_KINDS = new Set(["date", "gps", "volume"]);
+
 // ---------------------------------------------------------------------------
 // Geo
 // ---------------------------------------------------------------------------
@@ -190,10 +201,16 @@ function scoreShow(cluster, show, context) {
   if (distance !== null) {
     const photoWord = cluster.gps.sampleCount === 1 ? "photo" : "photos";
     if (distance <= context.nearMeters) {
+      // Graded, not flat. Two clubs on one block — 1015 Folsom and its
+      // neighbours are 60 m apart — used to score identically inside this band,
+      // which left the winner to be decided by database iteration order. Being
+      // nearer is evidence, so it has to move the number.
       evidence.push({
         kind: "gps",
         detail: `${cluster.gps.sampleCount} ${photoWord} within a block of ${venueLabel}`,
-        delta: DELTA_GPS_NEAR,
+        delta:
+          DELTA_GPS_NEAR -
+          (distance / context.nearMeters) * (DELTA_GPS_NEAR - DELTA_GPS_NEARBY),
       });
     } else if (distance <= VENUE_NEARBY_METERS) {
       evidence.push({
@@ -243,7 +260,12 @@ function scoreShow(cluster, show, context) {
     evidence.reduce((total, row) => total + row.delta, 0),
     0.99,
   );
-  return { confidence, evidence, distanceMeters: distance };
+  // Tracked separately so a crowded night is decided by where the photos were,
+  // never by which act the person already likes.
+  const locating = evidence
+    .filter((row) => LOCATING_KINDS.has(row.kind))
+    .reduce((total, row) => total + row.delta, 0);
+  return { confidence, locating, evidence, distanceMeters: distance };
 }
 
 // shows: [{ id, date, artistNames?, venueName?, venueId?, venueLatitude?,
@@ -255,6 +277,10 @@ function matchClustersToShows(clusters, shows, options = {}) {
     visited: new Set(options.visitedVenueIds ?? []),
     nearMeters: options.venueRadiusMeters ?? VENUE_NEAR_METERS,
   };
+  // Exposed so the eval can reproduce v1 faithfully: what shipped at Outside
+  // Lands had no ambiguity guard, and a baseline that quietly gets today's
+  // improvements is not a baseline.
+  const ambiguityMargin = options.ambiguityMargin ?? AMBIGUITY_MARGIN;
   const today = options.today ?? "9999-12-31";
 
   const byDate = new Map();
@@ -268,12 +294,21 @@ function matchClustersToShows(clusters, shows, options = {}) {
   const candidates = [];
   for (const cluster of Array.isArray(clusters) ? clusters : []) {
     const sameNight = byDate.get(cluster.clusterDate) ?? [];
-    let best = null;
-    for (const show of sameNight) {
-      const scored = scoreShow(cluster, show, context);
-      if (!best || scored.confidence > best.confidence) best = { show, ...scored };
-    }
-    if (best && best.confidence >= MIN_CONFIDENCE) {
+    const scored = sameNight
+      .map((show) => ({ show, ...scoreShow(cluster, show, context) }))
+      .sort((left, right) => right.locating - left.locating || right.confidence - left.confidence);
+
+    const best = scored[0] ?? null;
+    const runnerUp = scored[1] ?? null;
+
+    // A night where two shows are equally well located is a night we cannot
+    // explain — so we decline it and it becomes the catalog-gap agent's
+    // problem, rather than a coin flip in someone's diary. Note the comparison
+    // is on LOCATING evidence only: taste may raise a candidate's confidence,
+    // but it is not allowed to be the reason one show beat another.
+    const ambiguous = runnerUp !== null && best.locating - runnerUp.locating < ambiguityMargin;
+
+    if (best && !ambiguous && best.confidence >= MIN_CONFIDENCE) {
       candidates.push({
         clusterDate: cluster.clusterDate,
         photoCount: cluster.photoCount,
@@ -326,6 +361,7 @@ function describeReclaimSpan(candidates) {
 }
 
 export {
+  AMBIGUITY_MARGIN,
   DELTA_DATE,
   DELTA_GPS_FAR,
   DELTA_GPS_NEAR,

@@ -160,9 +160,9 @@ unblocked to build genre-first onboarding against it once merged/deployed.**
 ### L2 match · 2026-08-27T00:55Z
 state:    shipped
 now:      catalog-gap agent end to end — pure scorer, Convex action, catalogProposals, eval, wired into reclaim
-shipped:  PR pending (ed613c6, 7879e3c, e5e57c5, 173e4f5 on lane/match)
+shipped:  PR #2 (lane/match → main), 6 commits
 blocked:  disk full on the machine (120 MiB free) — see NEEDS-HUMAN; git still works
-next:     adversarial fixtures against my own matcher; setlist.fm signal if that key appears
+next:     more adversarial fixtures; setlist.fm signal if that key appears
 
 **Numbers, before → after.** The matcher is unchanged: 88% accuracy, 0 false
 matches, against date-only's 38%. What is new is a scoreboard for the layer
@@ -184,6 +184,32 @@ venue, and a headliner from a contested night into the catalog.
 Why a higher bar here (0.6) than the matcher's (0.5): a wrong candidate is one
 person's diary, recoverable. A wrong *proposal* becomes catalog data that every
 later user matches against. Cost is asymmetric, so the threshold is too.
+
+**Then I attacked my own matcher, and it had two holes.** Both produced a
+confident wrong show, so both are now fixed (a3d18e7):
+
+1. *Adjacent venues tied.* "Within a block" was a flat +0.35, so two clubs 60 m
+   apart — 1015 Folsom and its neighbours, not a hypothetical — both scored
+   0.85 and the winner was whichever row the database returned first.
+   Reversing the catalog order changed the answer. GPS is now graded across
+   the near band.
+2. *Taste decided nights that location could not.* On a GPS-stripped crowded
+   night: date 0.5 + taste 0.2 + venue history 0.2 = **0.90 confidence** for
+   the show by the artist you already like. Worse than guessing — it is biased
+   toward what the system already believed, and it tells people they saw the
+   acts they already listen to. Confidence is now split into locating evidence
+   (date, gps, volume) and the rest; only locating evidence may separate two
+   candidates, and if nothing does, the night is declined.
+
+| Matcher | accuracy | precision | wrong | false matches |
+|---|---|---|---|---|
+| date-only (v1) | 38% | 33% | 5 | 1 |
+| before this fix | 88% | 88% | 1 | 0 |
+| **after** | 88% | **100%** | **0** | 0 |
+
+Accuracy is unchanged — the night it now declines is one it previously got
+*wrong*, not one it got right. Precision is the promise this feature actually
+makes, and it is now perfect on the fixture set.
 
 **Vision evidence (SPEC 1c) — not shipped, and this is a decision, not a
 shortfall.** The app promises on screen that photos never leave the device.
