@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Act 3 — three agents plan one night together.
+// Act 3 — a squad of agents plans one night together.
 //
 //   node agents/squad.mjs [--base https://showtonic-hack.showtonic.workers.dev]
 //
@@ -9,8 +9,14 @@
 //
 // Scopes are deliberately uneven — only the payer holds `pay` — so the scope
 // model does visible work here instead of merely existing in the manifest.
+//
+// The squad is however many members the roster has, not three. The negotiation
+// itself lives in ./negotiate.mjs so its edge cases — a group that has to
+// split, a night nobody can agree on — are unit-tested rather than hoped for.
 
 import { readFileSync } from "node:fs";
+
+import { negotiate } from "./negotiate.mjs";
 
 const BASE =
   process.argv.includes("--base")
@@ -43,32 +49,6 @@ const transcript = [];
 function say(agent, handle, message) {
   transcript.push({ agent, handle, message });
   console.log(`  ${agent.padEnd(16)} ${message}`);
-}
-
-// How much an agent wants a show, from its human's real logged history.
-// Genres are sparse until enrichment finishes, so artists and venues carry the
-// weight — and a member with almost no diary should not be given false
-// confidence, hence the lowSignal damping.
-function score(show, taste) {
-  const artists = new Set((taste.topArtists ?? []).map((a) => a.name.toLowerCase()));
-  const loved = new Set((taste.lovedArtists ?? []).map((a) => a.toLowerCase()));
-  const venues = new Set((taste.topVenues ?? []).map((v) => v.name.toLowerCase()));
-  const genres = new Set((taste.topGenres ?? []).map((g) => g.name.toLowerCase()));
-
-  let points = 0;
-  const because = [];
-  for (const name of show.artists ?? []) {
-    const key = String(name).toLowerCase();
-    if (loved.has(key)) { points += 5; because.push(`${name} is one of my human's favourites`); }
-    else if (artists.has(key)) { points += 3; because.push(`they've seen ${name} before`); }
-  }
-  if (show.venue && venues.has(show.venue.toLowerCase())) {
-    points += 2; because.push(`${show.venue} is a room they keep going back to`);
-  }
-  if ((show.genres ?? []).some((g) => genres.has(String(g).toLowerCase()))) points += 1;
-  if (taste.lowSignal) points = points * 0.5; // thin diary, weak opinion
-
-  return { points, because };
 }
 
 console.log(`Squad night · ${BASE}\n`);
@@ -127,47 +107,76 @@ say(
   `Searched ${wanted.length} things this group actually cares about; ${slate.length} upcoming shows on the table.`,
 );
 
-// 3. Score independently, then eliminate anything someone actively refuses.
-const tally = slate.map((show) => {
-  const votes = squad.map((member) => ({ member, ...score(show, member.taste) }));
-  return { show, votes, total: votes.reduce((sum, v) => sum + v.points, 0) };
-});
-const ranked = tally.sort((a, b) => b.total - a.total);
-const winner = ranked[0];
+// 3. Negotiate. Three outcomes, and two of them are not "everyone goes out
+//    together" — see negotiate.mjs. Refusing is a real answer.
+const result = negotiate(squad, slate, { floor: ROSTER.floor ?? 1 });
 
-if (!winner || winner.total === 0) {
-  say("orchestrator", "-", "Nobody had a real preference. Refusing to invent consensus.");
+if (result.outcome === "refused") {
+  say(
+    "orchestrator",
+    "-",
+    `No night clears the bar for this group (${result.reason}). Refusing to invent a consensus nobody holds.`,
+  );
   process.exit(0);
 }
 
-for (const vote of winner.votes) {
-  const reason = vote.because.length ? vote.because.join("; ") : "no strong feelings, won't block";
-  say(vote.member.agent, vote.member.taste.handle, `On "${winner.show.title}": ${reason}.`);
+const [agreed] = result.plans;
+const going = agreed.group;
+
+for (const vote of agreed.votes) {
+  const reason = vote.because.length
+    ? vote.because.join("; ")
+    : vote.stance === "blocks"
+      ? "nothing here for my human, and there is somewhere they'd rather be"
+      : "no strong feelings, won't block";
+  say(vote.member.agent, vote.member.taste.handle, `On "${agreed.show.title}": ${reason}.`);
 }
-say(
-  "orchestrator",
-  "-",
-  `Consensus: ${winner.show.title} at ${winner.show.venue} on ${winner.show.date}.`,
-);
+
+if (result.outcome === "split") {
+  // A subgroup going out is a better answer than dragging along someone who
+  // would rather be elsewhere — but the ones left out get named, not dropped.
+  for (const member of agreed.excluded) {
+    say(
+      member.agent,
+      member.taste.handle,
+      "Sitting this one out — my human would rather be somewhere else that night.",
+    );
+  }
+  say(
+    "orchestrator",
+    "-",
+    `No night worked for all ${squad.length}. ${going.length} are going to ${agreed.show.title}; ${agreed.excluded
+      .map((m) => `@${m.taste.handle}`)
+      .join(", ")} sitting out.`,
+  );
+} else {
+  say(
+    "orchestrator",
+    "-",
+    `Consensus across all ${going.length}: ${agreed.show.title} at ${agreed.show.venue} on ${agreed.show.date}.`,
+  );
+}
 
 // 4. Each agent RSVPs for its OWN human. Nobody can RSVP for anyone else —
 //    the token is per-person, so the boundary is enforced, not just agreed.
-for (const member of squad) {
-  await call(member.token, "set_attendance", { showId: winner.show.showId, status: "going" });
+for (const member of going) {
+  await call(member.token, "set_attendance", { showId: agreed.show.showId, status: "going" });
   say(member.agent, member.taste.handle, "RSVP'd going.");
 }
 
 // 5. Record the plan and its transcript so a human can read the reasoning.
-const plan = await call(convener.token, "record_squad_plan", {
-  showId: winner.show.showId,
-  userHandles: squad.map((m) => m.taste.handle),
+const recorder = going.includes(convener) ? convener : going[0];
+const plan = await call(recorder.token, "record_squad_plan", {
+  showId: agreed.show.showId,
+  userHandles: going.map((m) => m.taste.handle),
   transcript,
 });
 say("orchestrator", "-", `Plan recorded (${plan.planId}).`);
 
-// 6. Only the payer holds `pay`. Prove the others cannot.
-const payer = squad.find((m) => m.pays) ?? squad[0];
-for (const member of squad) {
+// 6. Only the payer holds `pay`. Prove the others cannot. The payer has to be
+//    someone actually on the plan — settle refuses a payer who isn't.
+const payer = going.find((m) => m.pays) ?? going[0];
+for (const member of going) {
   if (member === payer) continue;
   try {
     await call(member.token, "checkout_tickets", { planId: plan.planId, amountCents: 1 });
@@ -177,7 +186,7 @@ for (const member of squad) {
   }
 }
 
-const amount = (ROSTER.ticketPriceCents ?? 3500) * squad.length;
+const amount = (ROSTER.ticketPriceCents ?? 3500) * going.length;
 const receipt = await call(payer.token, "checkout_tickets", {
   planId: plan.planId,
   amountCents: amount,

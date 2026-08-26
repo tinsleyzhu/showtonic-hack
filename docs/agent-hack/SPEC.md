@@ -11,7 +11,9 @@
 > | Catalog-gap agent (Tavily) | ✅ shipped — `convex/catalogGap.ts` + `catalogProposals`. Evidence-gated: 100% precision, 0 false proposals against a naive top-result baseline's 33% / 6 (`npm run eval`) |
 > | Vision agent | ❌ cut for now — privacy cost vs accuracy gain unresolved |
 > | Draft-writer agent | ❌ not started |
-> | Squad negotiation (phase 4) | ✅ shipped — `agents/squad.mjs`, 3 agents / 3 tokens / uneven scopes, verified against production |
+> | Squad negotiation (phase 4) | ✅ shipped — `agents/squad.mjs` + `agents/negotiate.mjs`, N agents from the roster / uneven scopes, verified against production. Three outcomes: consensus, split (a subgroup goes and the rest are named), refused |
+> | Taste v2 + peer discovery | ✅ shipped — genre affinity when both sides have genres, artist/venue fallback when they don't; `find_compatible_humans` finds compatible humans with neither human online, and refuses under five logged shows |
+> | Squad plan in the app UI | ✅ shipped — `app/views/SquadPlan.tsx` on Profile: the plan, who's going, what actually settled, and the full transcript, for a human who owns no agent |
 > | Agent payments (AIsa) | ✅ shipped — `checkout_tickets`, scope-gated on `pay`. Settles a real metered AIsa transaction and stores its id. The ticket purchase itself is still recorded as `simulated`, because no ticketing API here sells to agents. |
 >
 > Beyond the original plan: **New York catalog** (1,567 upcoming + a year of
