@@ -10,7 +10,9 @@ Plan of record for the Immersive Commons agentic hackathon build. Reading order:
    criteria and the pre-committed cut order.
 4. [`DESIGN.md`](DESIGN.md) — new UI surfaces only (evidence cards, vision consent,
    connect-your-agent, squad plan card).
-5. [`DEMO.md`](DEMO.md) — the 4-minute script, failure drill, Q&A ammo.
+5. [`SPONSOR_SETUP.md`](SPONSOR_SETUP.md) — which sponsor MCPs to install, exact
+   commands, and the three signups only a human can do.
+6. [`DEMO.md`](DEMO.md) — the 4-minute script, failure drill, Q&A ammo.
 
 Base app docs: [`../SPEC.md`](../SPEC.md), [`../BUILD_PLAN.md`](../BUILD_PLAN.md),
 [`../FEATURES.md`](../FEATURES.md). Nothing in this folder changes the base app's scope;

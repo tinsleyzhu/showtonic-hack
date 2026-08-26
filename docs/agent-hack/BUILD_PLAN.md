@@ -5,15 +5,39 @@ Doors 10:00, building clears 20:00. Assume demo/judging ≈ 18:00–19:30, so **
 
 ---
 
-## Tonight (prep — do before the event)
+## Tonight (prep)
 
-| # | Task | Why it's tonight |
+### Done already
+- **Convex deploys clean**; schema carries `evidence` + `draft`.
+- **Venue coordinates**: JamBase geo now mapped when present, and
+  `npm run geocode:venues` (Nominatim, free, no key) filled the rest —
+  SF is at **50/70 venues located**. Re-run it after any new city sync.
+- **Camera-roll checker built**: `npm run scan:check -- <folder>`.
+
+### Yours to run (nobody else can)
+| # | Task | Why |
 |---|---|---|
-| P1 | `exifr` spike on YOUR real camera-roll export (AirDrop 2–3 real nights, HEIC included). Confirm dates **and GPS** come out. | #1 risk. If your photos yield no EXIF, the whole Act 1 plan changes and you want to know now, not at 15:00. |
-| P2 | `npx convex dev` + `npx convex run seed:run` — confirm the app still boots and seeds. | Dead dev deployment at 10:05 wastes the sharpest hour. |
-| P3 | Check the JamBase trial key still works (`jambase:syncCatalog` dry run). | Catalog freshness feeds matching. |
-| P4 | Skim Cotal + AIsa quickstarts (15 min each, no code). Write down the one question to ask their engineers. | Turns morning spikes from reading into building. |
-| P5 | Read `SPEC.md` + `ARCHITECTURE.md` in this folder once. | Shared context with any co-builder/agent. |
+| P1 | Export 2–3 real nights from Photos.app (**File → Export → Export Unmodified Original**, keep "include location"), then `npm run scan:check -- <folder>` | THE risk. Prints date/GPS extraction rates and the nights it found, then tells you if you are ready. Phone-browser uploads strip GPS — use laptop originals. |
+| P2 | Decide **which city your photos are from** and sync that catalog if it isn't SF (see "Catalog coverage" below) | Backfill can only match nights the catalog contains. Today the catalog is SF-only with 189 past shows. |
+| P3 | Create accounts + keys: Tavily, AIsa, Runtype, Immersive Commons | Human-in-the-loop signups an agent cannot do. See MCP list below. |
+| P4 | Skim the sponsor MCP list, install the two or three you'll use | Turns morning spikes into building. |
+
+### Catalog coverage (checked 2026-08-26)
+SF only: 935 shows (746 upcoming, **189 historical**), 70 venues, 1087 artists.
+Historical depth is the constraint — JamBase's trial tier requires an artist or
+venue filter for past events, so past coverage is thin by construction.
+
+```bash
+# find a city id
+npx convex run jambase:searchCities '{"cityName":"New York"}'
+# sync it (past year + upcoming), then re-geocode the new venues
+npx convex run jambase:syncCatalog '{"cityId":"jambase:XXXX","cityName":"New York","historyDays":365,"maxPagesPerRange":30,"reconcileHistorical":true}'
+npm run geocode:venues
+```
+
+This is also exactly why the **catalog-gap agent (phase 3)** exists: it turns a
+coverage hole into a web search and a new catalog row, so thin history stops
+being a blocker and becomes the demo's best moment.
 
 ## Phase 1 — ✅ DONE (built early, 2026-08-26) · EXIF/GPS matcher upgrade
 
