@@ -1,8 +1,15 @@
 // Human-readable eval report: `npm run eval`.
-// Prints the date-only baseline against the GPS matcher so a change in match
-// quality is a number you can see, not a vibe.
+//
+// Two scoreboards, one per layer:
+//   1. Matching   — date-only baseline vs the GPS matcher, on nights the
+//                   catalog can explain.
+//   2. Catalog gap — naive top-result parsing vs evidence-gated proposals, on
+//                   nights the catalog CANNOT explain.
+//
+// Both exist so a change in quality is a number you can see, not a vibe.
 
 import { runEval } from "./matchEval.mjs";
+import { runGapEval } from "./gapEval.mjs";
 
 const percent = (value) => (value === null ? "  — " : `${(value * 100).toFixed(0).padStart(3)}%`);
 const pad = (value, width) => String(value).padEnd(width);
@@ -63,10 +70,51 @@ function printEvidenceSample(result) {
   }
 }
 
+// --- Catalog-gap agent ------------------------------------------------------
+
+function printGapOverall(results) {
+  console.log("\nOVERALL");
+  console.log(
+    `  ${pad("strategy", 20)} ${"acc".padStart(5)} ${"prec".padStart(5)} ${"refused".padStart(8)} proposed correct false-proposal`,
+  );
+  for (const result of Object.values(results)) {
+    const o = result.overall;
+    console.log(
+      `  ${pad(result.label, 20)} ${percent(o.accuracy)} ${percent(o.precision)} ${percent(o.refusalRate).padStart(8)}` +
+        `  ${String(o.proposals).padStart(7)} ${String(o.correct).padStart(7)} ${String(o.falseProposals).padStart(14)}`,
+    );
+  }
+}
+
+function printGapRows(result) {
+  console.log(`\n${result.label} — every night, and what it proposed:`);
+  for (const row of result.rows) {
+    const got = row.actual ? row.actual.join(" + ") : "—";
+    console.log(
+      `  ${row.clusterDate}  ${pad(row.scenario, 22)} ${pad(row.outcome, 19)}` +
+        ` expected=${pad(row.expected ? row.expected.join(" + ") : "nothing", 18)} got=${got}`,
+    );
+  }
+}
+
 const { results } = runEval();
 console.log("Showtonic — backfill match quality");
 printOverall(results);
 printByScenario(results);
 printMisses(results.gps);
 printEvidenceSample(results.gps);
+
+console.log("\n\nShowtonic — catalog-gap agent (nights the catalog cannot explain)");
+const gap = runGapEval().results;
+printGapOverall(gap);
+printGapRows(gap.evidenced);
+// The baseline is worth printing in full: its failures are the specific
+// mistakes the evidence gate exists to prevent, and they are not abstract.
+const naiveFailures = gap.naive.rows.filter((row) => row.outcome === "false-proposal");
+if (naiveFailures.length) {
+  console.log(`\n${gap.naive.label} — what it would have put in the catalog:`);
+  for (const row of naiveFailures) {
+    console.log(`  ${row.clusterDate}  ${pad(row.scenario, 22)} "${row.actual.join(" + ")}"`);
+  }
+}
 console.log("");

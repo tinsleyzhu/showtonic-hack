@@ -1,4 +1,5 @@
 import { mutation, query } from "./_generated/server";
+import { api } from "./_generated/api";
 import { v } from "convex/values";
 
 // Agent identity for Showtonic's MCP surface.
@@ -272,11 +273,36 @@ export const reclaimCameraRoll = mutation({
 
     // Nights we could not place are not a failure — they are the catalog-gap
     // agent's queue, and we say so rather than silently dropping them.
-    const gaps = unmatchedClusters(clusters, candidates).map((cluster: { clusterDate: string; photoCount: number; gps: unknown }) => ({
+    type UnplacedCluster = {
+      clusterDate: string;
+      photoCount: number;
+      gps: { latitude: number; longitude: number } | null;
+    };
+    const unplaced: UnplacedCluster[] = unmatchedClusters(clusters, candidates);
+    const gaps = unplaced.map((cluster) => ({
       clusterDate: cluster.clusterDate,
       photoCount: cluster.photoCount,
       hasLocation: Boolean(cluster.gps),
     }));
+
+    // Hand the queue to the gap agent. Scheduled rather than awaited because
+    // this is a mutation and the search is network I/O: the human gets their
+    // candidates back immediately, and proposals arrive when they arrive.
+    //
+    // The cluster's median position goes to the action so it can name the room
+    // the photos were near. It is not stored and it does not leave Convex — the
+    // outbound search carries a venue NAME and a date, never a coordinate.
+    if (unplaced.length) {
+      await ctx.scheduler.runAfter(0, api.catalogGap.search, {
+        nights: unplaced.map((cluster) => ({
+          clusterDate: cluster.clusterDate,
+          latitude: cluster.gps?.latitude,
+          longitude: cluster.gps?.longitude,
+          city: user.homeCity ?? undefined,
+        })),
+        requestedByUserId: args.userId,
+      });
+    }
 
     return {
       photosRead: args.photos.length,
