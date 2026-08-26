@@ -2,6 +2,8 @@
 
 Plan of record for the Immersive Commons agentic hackathon build. Reading order:
 
+0. [`PLATFORM.md`](PLATFORM.md) — Immersive Commons runbook: token scopes, MCP
+   connect, the clock, drafted apply/submit payloads, and the rubric ordering.
 1. [`SPEC.md`](SPEC.md) — what we're building: the three-act pitch, evidence fleet,
    MCP front door, squad negotiation, sponsor map, out-of-scope list.
 2. [`ARCHITECTURE.md`](ARCHITECTURE.md) — agent plane, data flows, schema deltas,

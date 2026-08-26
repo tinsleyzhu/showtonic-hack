@@ -1,7 +1,15 @@
-# Showtonic Agent-Ready — Build Plan (one day)
+# Showtonic Agent-Ready — Build Plan
 
-Doors 10:00, building clears 20:00. Assume demo/judging ≈ 18:00–19:30, so **feature-freeze
-17:00**. Every phase ends runnable ("demoable at every hour" — inherited ground rule).
+> **RE-PLANNED Wed 2026-08-26 12:07 PDT.** Real deadline is **submissions lock
+> Thursday 15:00** (see `PLATFORM.md`), not end of day one — so this is a
+> two-day build with ~13 working hours left, of which the first morning is gone.
+>
+> **Rubric changes the order.** 30 pts ride on the agent-native surface and 20 on
+> coordination; both are unbuilt. Phase 1 (done) feeds the bands we were already
+> winning. So **phase 2 is now the single highest-value thing to build**, ahead of
+> finishing the evidence fleet. Phases 3 and 5's vision agent drop to optional.
+
+Every phase ends runnable ("demoable at every hour" — inherited ground rule).
 
 ---
 
