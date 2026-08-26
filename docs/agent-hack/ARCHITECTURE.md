@@ -147,7 +147,7 @@ it is the same public URL the browser already ships, not a secret.
 | `backfillCandidates` | ✅ extended with `evidence[]` (`kind`/`detail`/`delta`) and `draft{caption,vibes[]}` |
 | `venues` | ✅ `latitude`/`longitude` now populated — JamBase schema.org geo, plus Nominatim for the rest |
 | `catalogProposals` | ❌ not built — catalog-gap agent still to come |
-| `squadPlans` | ❌ not built — phase 4 |
+| `squadPlans` | ✅ built — `userIds[]`, `showId`, denormalized show fields, `status`, `settlement`/`paymentRef`/`amountCents`/`payerUserId`, `transcript[]`; index `by_show`. Rendered on Profile by `app/views/SquadPlan.tsx` |
 
 Hashing happens at the **edge** (browser at mint, Worker at verify), never in a
 Convex mutation: mutations are deterministic and Web Crypto belongs outside them.

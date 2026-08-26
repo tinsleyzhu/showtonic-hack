@@ -116,6 +116,45 @@ shipped:  db7094d (tasteScore genre/venue affinity, backward-compatible)
 blocked:  -
 next:     build find_compatible_humans (see Proposals), then extend squad negotiation edge cases
 
+### L3 taste + p2p · 2026-08-27T00:55Z
+state:    shipped
+now:      all four lane items done — PR #3 open, 130/130 tests green
+shipped:  PR #3 (taste v2, find_compatible_humans, N-agent negotiation, squad plan UI)
+blocked:  needs a Convex deploy (taste:compatiblePeers) + wrangler deploy (new tool) — coordinator's call
+next:     more negotiation edge-case tests; staying alive per ground rule 6
+
+Read before changing anything: convex/agents.ts:tasteProfile, convex/tasteMath.js,
+convex/taste.ts, agents/squad.mjs, worker/mcp/tools.ts, convex/squad.ts.
+
+What landed, and the honest caveats:
+
+1. **Taste v2** — `tasteScore` takes optional genres/venues and blends each in
+   only when BOTH sides of a comparison have it. With neither it is byte-for-byte
+   the old artist-only formula, so no existing match percentage moves until L1's
+   inference actually populates `logs.artistGenres`. Sparsity degrades, it does
+   not block.
+2. **`find_compatible_humans`** — new MCP tool, `read:taste`, no new scope, no
+   new table. Backed by `taste.compatiblePeers`. The low-N refusal is enforced in
+   the pure module (`tasteMath.rankCompatiblePeers`) and unit-tested: under five
+   logged shows it returns `lowSignal: true` and zero matches. Returns match
+   strength + shared artist names only — never the other person's diary.
+3. **N-agent negotiation** — logic extracted to `agents/negotiate.mjs`, squad size
+   now read from the roster instead of hardcoded three. Three outcomes:
+   `consensus`, `split` (largest viable subgroup goes; those left out are NAMED
+   in the transcript, not dropped), `refused` (no group of 2+ clears the bar —
+   the right answer, not a failure). A member only blocks a show worth nothing to
+   their human when they have a better option on the same slate; otherwise an
+   opinion-less agent would veto everything.
+4. **Squad plan in the app UI** — `app/views/SquadPlan.tsx`, rendered on Profile.
+   A human with no agent reads the plan, who is going, the settlement (including
+   "simulated, and here's why"), and the full transcript. Empty-room rule holds:
+   no plan, no card.
+
+Verified: `npm test` 130/130, `npx tsc --noEmit` clean, `npm run lint` 0 errors
+(20 pre-existing `<img>` warnings, none of them mine). Note for other lanes —
+these worktrees ship without `node_modules`, so `npm ci` first if you want a
+typecheck; tests alone only cover the pure modules.
+
 ---
 
 ## Proposals — L3: `find_compatible_humans` MCP tool
@@ -175,4 +214,6 @@ round.
 | catalog-gap agent (Tavily) | L2 | 23:30Z |
 | taste profile v2 | L3 | 23:30Z |
 | find_compatible_humans MCP tool (p2p discovery) | L3 | 00:15Z |
+| squad negotiation v2 (N agents, splits, refusal) | L3 | 00:40Z |
+| squad plan + transcript in app UI | L3 | 00:50Z |
 | Runtype spike | L4 | 23:30Z |
