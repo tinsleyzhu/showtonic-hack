@@ -1,20 +1,34 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
-import { tasteScore } from "./tasteMath.js";
+import { LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
 
 function unique(values: string[]) {
   return [...new Set(values)];
 }
 
-function buildProfile(logs: Array<{ showId: string; showTitle: string; artistNames: string[] }>) {
+function buildProfile(
+  logs: Array<{
+    showId: string;
+    showTitle: string;
+    artistNames: string[];
+    artistGenres?: string[];
+    venueName?: string;
+  }>,
+) {
   const artistNames = unique(logs.flatMap((log) => log.artistNames));
   const showIds = unique(logs.map((log) => log.showId));
   const showTitles = unique(logs.map((log) => log.showTitle));
+  // Taste v2 signals: sparse until L1 enrichment lands, so tasteScore only
+  // leans on these when both sides in a comparison actually have them.
+  const genres = unique(logs.flatMap((log) => log.artistGenres ?? []));
+  const venueNames = unique(logs.map((log) => log.venueName ?? "").filter(Boolean));
 
   return {
     artistNames,
     showIds,
     showTitles,
+    genres,
+    venueNames,
   };
 }
 
@@ -97,7 +111,12 @@ export const matchDetail = query({
       // over 99 reads as broken, so clamp for display.
       matchPercent: Math.min(
         Math.round(
-          tasteScore(myProfile.artistNames, otherProfile.artistNames, bothThere.length) * 100,
+          tasteScore(myProfile.artistNames, otherProfile.artistNames, bothThere.length, {
+            genresA: myProfile.genres,
+            genresB: otherProfile.genres,
+            venuesA: myProfile.venueNames,
+            venuesB: otherProfile.venueNames,
+          }) * 100,
         ),
         99,
       ),
@@ -151,7 +170,12 @@ export const similar = query({
           userId: user._id,
           handle: user.handle,
           avatarColor: user.avatarColor,
-          score: tasteScore(targetProfile.artistNames, profile.artistNames, sharedShows.length),
+          score: tasteScore(targetProfile.artistNames, profile.artistNames, sharedShows.length, {
+            genresA: targetProfile.genres,
+            genresB: profile.genres,
+            venuesA: targetProfile.venueNames,
+            venuesB: profile.venueNames,
+          }),
           sharedArtistNames: sharedArtists,
           sharedShowCount: sharedShows.length,
           sharedShowTitles: targetProfile.showTitles.filter((title) =>
@@ -164,5 +188,58 @@ export const similar = query({
       .slice(0, 5);
 
     return matches;
+  },
+});
+
+// Peer-to-peer discovery for the MCP surface (find_compatible_humans): an
+// agent asks this on its own human's behalf to find compatible humans without
+// either side needing to be online. Same scoring as `similar`, but shaped for
+// an agent to act on (top shared artists to open a conversation with) and
+// gated by the same low-N promise as `agents.tasteProfile` — ranking humans
+// by affinity from a handful of logs is exactly the "implying a pattern" the
+// app already refuses to do.
+export const compatiblePeers = query({
+  args: {
+    userId: v.id("users"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const [targetUser, targetLogs] = await Promise.all([
+      ctx.db.get(args.userId),
+      ctx.db
+        .query("logs")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .collect(),
+    ]);
+    if (!targetUser) return { lowSignal: false, matches: [] };
+
+    if (targetLogs.length < LOW_SIGNAL_SHOWS) {
+      return { lowSignal: true, matches: [] };
+    }
+
+    const [allUsers, allLogs] = await Promise.all([
+      ctx.db.query("users").collect(),
+      ctx.db.query("logs").collect(),
+    ]);
+
+    const logsByUser = new Map<string, typeof allLogs>();
+    for (const log of allLogs) {
+      const bucket = logsByUser.get(log.userId) ?? [];
+      bucket.push(log);
+      logsByUser.set(log.userId, bucket);
+    }
+
+    return rankCompatiblePeers(
+      { ...buildProfile(targetLogs), logCount: targetLogs.length },
+      allUsers
+        .filter((user) => user._id !== args.userId)
+        .map((user) => ({
+          handle: user.handle,
+          avatarColor: user.avatarColor,
+          homeCity: user.homeCity ?? null,
+          ...buildProfile(logsByUser.get(user._id) ?? []),
+        })),
+      args.limit,
+    );
   },
 });
