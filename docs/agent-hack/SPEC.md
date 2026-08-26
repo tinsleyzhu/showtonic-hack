@@ -8,7 +8,7 @@
 > | Evidence fleet: EXIF/GPS matcher | ✅ shipped — 38% → 88% accuracy, 0 false matches (`npm run eval`) |
 > | MCP front door + discovery | ✅ shipped and deployed — https://showtonic-hack.showtonic.workers.dev |
 > | Machine auth: scoped agent tokens | ✅ shipped — mint UI at Profile → Connect your agent |
-> | Catalog-gap agent (Tavily) | ⏳ key set and verified; agent not yet wired — unmatched nights already come back named as gaps, so the queue exists with no consumer |
+> | Catalog-gap agent (Tavily) | ✅ shipped — `convex/catalogGap.ts` + `catalogProposals`. Evidence-gated: 100% precision, 0 false proposals against a naive top-result baseline's 33% / 6 (`npm run eval`) |
 > | Vision agent | ❌ cut for now — privacy cost vs accuracy gain unresolved |
 > | Draft-writer agent | ❌ not started |
 > | Squad negotiation (phase 4) | ✅ shipped — `agents/squad.mjs`, 3 agents / 3 tokens / uneven scopes, verified against production |

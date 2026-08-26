@@ -109,6 +109,49 @@ shipped:  c2aa32f (all lanes branched from here)
 blocked:  -
 next:     refresh the IC submission; merge lane PRs as they arrive
 
+### L2 match · 2026-08-27T00:55Z
+state:    shipped
+now:      catalog-gap agent end to end — pure scorer, Convex action, catalogProposals, eval, wired into reclaim
+shipped:  PR pending (ed613c6, 7879e3c, e5e57c5, 173e4f5 on lane/match)
+blocked:  disk full on the machine (120 MiB free) — see NEEDS-HUMAN; git still works
+next:     adversarial fixtures against my own matcher; setlist.fm signal if that key appears
+
+**Numbers, before → after.** The matcher is unchanged: 88% accuracy, 0 false
+matches, against date-only's 38%. What is new is a scoreboard for the layer
+under it — nights the catalog *cannot* explain, where there was previously no
+consumer at all and therefore no number.
+
+| Catalog-gap strategy | accuracy | precision | refused correctly | false proposals |
+|---|---|---|---|---|
+| naive (top result) | 100% | 33% | 14% | **6** |
+| evidence-gated (shipped) | 100% | 100% | 100% | **0** |
+
+Ten labeled nights, `npm run eval`. Accuracy is identical — the gate costs
+nothing on nights the web can actually explain. The whole difference is in the
+refusals, which is the argument for building it this way expressed as a number.
+The naive baseline is what "just ask the model" looks like; it would have put
+`Art and Music Complex`, a Jamie xx show from two years earlier at the right
+venue, and a headliner from a contested night into the catalog.
+
+Why a higher bar here (0.6) than the matcher's (0.5): a wrong candidate is one
+person's diary, recoverable. A wrong *proposal* becomes catalog data that every
+later user matches against. Cost is asymmetric, so the threshold is too.
+
+**Vision evidence (SPEC 1c) — not shipped, and this is a decision, not a
+shortfall.** The app promises on screen that photos never leave the device.
+Doing it properly means a per-night consent step with copy that admits the
+exception, a ≤3-photo cap, and deletion after analysis — a UI change in L4's
+and the coordinator's territory, not a scoring change in mine. Shipping it
+without that consent step would break a promise the product makes in writing,
+and the accuracy it buys does not outrank that. Available on request if the
+coordinator wants to own the consent screen.
+
+**For the coordinator, at deploy:** `convex/_generated/api.d.ts` has hand-added
+entries for `catalogGap`/`catalogGapUtils` so the lane typechecks without a
+deployment; `npx convex dev` will regenerate them identically. The new table
+needs a schema push. Missing `TAVILY_API_KEY` is a deliberate no-op, so
+deploying before the key is set breaks nothing.
+
 ---
 
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
@@ -119,6 +162,12 @@ next:     refresh the IC submission; merge lane PRs as they arrive
       Only needed if we want mesh-witnessed transcripts. Not blocking.
 - [ ] Door check-in at the badge table — no tool can do it.
 - [ ] Spotify developer app (client id + secret) — would make L1 ~9x faster.
+- [ ] **Disk is full — 120 MiB free on the whole volume** (found by L2 at
+      00:55Z). Not caused by this repo; it will hit every lane's installs,
+      builds, and deploys. Reclaimable without touching project files:
+      `~/Library/Developer` 18G (Xcode DerivedData), Spotify cache 2.3G,
+      Codex cache 1.9G, `~/.npm` 933M. L2 did not delete anything — that is a
+      human's call.
 
 ## CLAIMED — take a line before you start, so two lanes never collide
 
