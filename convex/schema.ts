@@ -179,6 +179,23 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"]),
 
+  // Per-user agent tokens — the machine-auth story. Humans still sign in with
+  // nothing but a localStorage handle; agents get a scoped, revocable
+  // credential. Only the SHA-256 is stored: the plaintext is shown to the human
+  // once at mint time and is unrecoverable after, so a leaked database row
+  // cannot be replayed against the API.
+  agentTokens: defineTable({
+    userId: v.id("users"),
+    tokenHash: v.string(), // SHA-256 hex of the bearer string
+    label: v.string(), // what the human named this agent
+    scopes: v.array(v.string()), // read:taste read:shows write:attendance write:logs write:candidates pay
+    revoked: v.boolean(),
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_user", ["userId"]),
+
   // v1.5 — likes on show logs/reviews in the activity feed (design 21).
   reviewLikes: defineTable({
     userId: v.id("users"),

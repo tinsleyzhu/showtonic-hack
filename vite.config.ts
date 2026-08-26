@@ -14,6 +14,8 @@ const localBindingConfig = {
     ? [{ binding: d1, database_name: "showtonic-d1", database_id: SITE_CREATOR_PLACEHOLDER_DATABASE_ID }]
     : [],
   r2_buckets: r2 ? [{ binding: r2, bucket_name: "showtonic-r2" }] : [],
+  // Public deployment URL, not a secret — the browser already ships it.
+  vars: { CONVEX_URL: process.env.NEXT_PUBLIC_CONVEX_URL ?? "https://curious-corgi-815.convex.cloud" },
 };
 
 export default defineConfig(async () => {
