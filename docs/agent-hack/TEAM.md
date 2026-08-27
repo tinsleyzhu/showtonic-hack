@@ -133,12 +133,32 @@ next:     refresh the IC submission; merge lane PRs as they arrive
 | Runtype spike | L4 | 23:30Z |
 | Hacker Bob scan | L4 | 2026-08-26T23:50Z |
 
-### L4 sponsors · 2026-08-26T23:50Z
-state:    building
-now:      Runtype spike dropped (timeboxed, see below); moving to Hacker Bob scan of the deployed worker
-shipped:  -
-blocked:  -
-next:     `npx -y hacker-bob@latest install .` then `/bob-evaluate` against the deployed worker
+### L4 sponsors · 2026-08-27T00:10Z
+state:    blocked
+now:      Hacker Bob installed clean into st-sponsors (agents, /bob-evaluate command, MCP
+          server in .mcp.json). Its MCP tools only register on a fresh Claude Code
+          session start — this running session can't pick up a mid-session .mcp.json
+          change. Human is restarting the st-sponsors session now to pick it up.
+shipped:  6a42b4d (TEAM.md), pending: .gitignore commit below
+blocked:  waiting on session restart (human doing it now) to run `/bob-evaluate` against
+          https://showtonic-hack.showtonic.workers.dev
+next:     once restarted, run `/bob-evaluate https://showtonic-hack.showtonic.workers.dev`,
+          triage findings, fix cheap ones, record the rest here
+
+**Hacker Bob install notes:** hit two environmental snags worth knowing about if any
+other lane runs sponsor CLIs today:
+1. Root volume was at 99% (see above) — installs failed with ENOSPC mid-extraction,
+   which left a *corrupted* npx cache entry for hacker-bob (missing its own
+   `node_modules/@anthropic-ai/claude-agent-sdk` despite being a declared dependency).
+   Second install attempt reused the broken cache silently and gave a misleading
+   "Runtime dependency ... is missing; run npm install" error even after `npm install`
+   succeeded in the project. Fix was `rm -rf ~/.npm/_npx/<hash>` to force a clean
+   re-extract, not `npm install` in the project (their own dependency, not ours).
+2. `.mcp.json` that `hacker-bob install` writes bakes in an absolute, machine-specific
+   path (`/Users/.../mcp/server.js`) and drags in a 254M vendored runtime — added
+   `.hacker-bob/`, `/mcp/`, `/testing/`, `.mcp.json` to `.gitignore` rather than commit
+   it. Each teammate who wants Bob's MCP tools should run their own
+   `npx -y hacker-bob@latest install .` locally.
 
 **Runtype ($500) — dropped, honestly, within the 1-hour timebox:**
 CLI auth completed clean (`runtype auth register --email` → email OTP → `runtype auth

@@ -54,3 +54,10 @@ skills-lock.json
 convex/_generated/ai/
 agents/squad.tokens.json
 .cotal/
+
+# hacker-bob (local, machine-specific install — .mcp.json bakes in an absolute
+# path; each teammate installs their own via `npx -y hacker-bob@latest install .`)
+.hacker-bob/
+/mcp/
+/testing/
+.mcp.json
