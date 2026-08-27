@@ -2,6 +2,7 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { summarizeRatings } from "./showtonicUtils.js";
+import { looksLikeDroppedVenueInference } from "./freeEventsUtils.js";
 
 // Artists that importUpcoming created as stubs (no image or no genres) and that
 // the free-source enricher (convex/freeEvents.ts) should fill from Spotify /
@@ -52,6 +53,66 @@ export const listNeedingEnrichment = query({
   },
 });
 
+
+// One-shot cleanup of the low-precision venue tags written before 6ea0240,
+// when inference still tagged artists from broad rooms that book every genre
+// (a support act at the Fillmore recorded as rock/pop on no evidence). A wrong
+// genre is worse than no genre, and those rows skew every consumer.
+//
+// Idempotent and re-runnable: a cleared artist has no genres, so it no longer
+// matches the predicate, and re-running is a no-op. It also goes straight back
+// onto listNeedingEnrichment, so a false positive costs one re-lookup rather
+// than losing real data. Run with dryRun first to see the count and samples.
+export const clearInferredGenres = mutation({
+  args: { limit: v.optional(v.number()), dryRun: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(args.limit ?? 500, 1), 2000);
+    const [artists, shows] = await Promise.all([
+      ctx.db.query("artists").collect(),
+      ctx.db.query("shows").collect(),
+    ]);
+
+    const venueNames = new Map<string, Set<string>>();
+    const titles = new Map<string, Set<string>>();
+    for (const show of shows) {
+      for (const artistId of show.artistIds) {
+        if (!venueNames.has(artistId)) venueNames.set(artistId, new Set());
+        if (!titles.has(artistId)) titles.set(artistId, new Set());
+        if (show.venueName) venueNames.get(artistId)!.add(show.venueName);
+        if (show.title) titles.get(artistId)!.add(show.title);
+      }
+    }
+
+    const withGenresBefore = artists.filter((artist) => (artist.genres ?? []).length > 0).length;
+    const suspect = artists.filter((artist) =>
+      looksLikeDroppedVenueInference({
+        genres: artist.genres ?? [],
+        venueNames: [...(venueNames.get(artist._id) ?? [])],
+        titles: [...(titles.get(artist._id) ?? [])],
+      }),
+    );
+
+    const batch = suspect.slice(0, limit);
+    if (!args.dryRun) {
+      for (const artist of batch) await ctx.db.patch(artist._id, { genres: [] });
+    }
+
+    return {
+      dryRun: args.dryRun ?? false,
+      total: artists.length,
+      withGenresBefore,
+      matched: suspect.length,
+      cleared: args.dryRun ? 0 : batch.length,
+      remaining: suspect.length - batch.length, // re-run to finish
+      withGenresAfter: args.dryRun ? withGenresBefore : withGenresBefore - batch.length,
+      samples: batch.slice(0, 10).map((artist) => ({
+        name: artist.name,
+        genres: artist.genres,
+        venues: [...(venueNames.get(artist._id) ?? [])].slice(0, 3),
+      })),
+    };
+  },
+});
 
 // Patch enrichment fields without clobbering anything already present.
 export const enrich = mutation({

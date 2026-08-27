@@ -10,6 +10,7 @@ import {
   spotifyArtistFields,
   musicbrainzArtistFields,
   inferGenresFromContext,
+  looksLikeDroppedVenueInference,
   toImportEvents,
 } from "../convex/freeEventsUtils.js";
 
@@ -252,6 +253,69 @@ test("inferGenresFromContext agrees across several rooms of the same family", ()
     inferGenresFromContext({ venueNames: ["Public Works", "1015 Folsom", "Monarch"] }),
     ["electronic", "dance"],
   );
+});
+
+// Cleanup provenance — the predicate behind artists.clearInferredGenres.
+test("looksLikeDroppedVenueInference catches the tags the broad-room hints wrote", () => {
+  assert.equal(
+    looksLikeDroppedVenueInference({
+      genres: ["rock", "pop"],
+      venueNames: ["The Fillmore"],
+      titles: ["An Evening With"],
+    }),
+    true,
+  );
+  assert.equal(
+    looksLikeDroppedVenueInference({
+      genres: ["indie", "alternative"],
+      venueNames: ["Bottom of the Hill"],
+      titles: [],
+    }),
+    true,
+  );
+});
+
+test("looksLikeDroppedVenueInference leaves real API tags alone", () => {
+  // Spotify/MusicBrainz tags are not explainable by a dropped hint.
+  assert.equal(
+    looksLikeDroppedVenueInference({
+      genres: ["hyperpop", "dance pop"],
+      venueNames: ["The Fillmore"],
+    }),
+    false,
+  );
+  // A partially-explainable set still fails: "shoegaze" came from somewhere else.
+  assert.equal(
+    looksLikeDroppedVenueInference({
+      genres: ["indie", "shoegaze"],
+      venueNames: ["The Independent"],
+    }),
+    false,
+  );
+});
+
+test("looksLikeDroppedVenueInference keeps tags the current rules still produce", () => {
+  assert.equal(
+    looksLikeDroppedVenueInference({ genres: ["classical"], venueNames: ["Davies Symphony Hall"] }),
+    false,
+  );
+  assert.equal(
+    looksLikeDroppedVenueInference({ genres: ["folk"], venueNames: ["Freight & Salvage"] }),
+    false,
+  );
+});
+
+test("looksLikeDroppedVenueInference needs a room that actually matched a dropped hint", () => {
+  assert.equal(
+    looksLikeDroppedVenueInference({ genres: ["rock", "pop"], venueNames: ["Some Unknown Room"] }),
+    false,
+  );
+  assert.equal(looksLikeDroppedVenueInference({ genres: ["rock", "pop"], venueNames: [] }), false);
+});
+
+test("looksLikeDroppedVenueInference is idempotent — a cleared artist never re-matches", () => {
+  assert.equal(looksLikeDroppedVenueInference({ genres: [], venueNames: ["The Fillmore"] }), false);
+  assert.equal(looksLikeDroppedVenueInference(), false);
 });
 
 test("musicbrainzArtistFields returns mbid, hometown, and top tags", () => {

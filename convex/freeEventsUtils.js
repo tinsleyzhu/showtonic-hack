@@ -348,6 +348,65 @@ function inferGenresFromContext({ venueNames = [], titles = [] } = {}) {
   return [...new Set(agreeingGenreHints(TITLE_GENRE_HINTS, titles))].slice(0, 5);
 }
 
+// ---------------------------------------------------------------------------
+// Cleanup of the low-precision venue tags written before 6ea0240.
+//
+// An earlier version of the inference above tagged artists from broad rooms
+// that book every genre, so a support act at the Fillmore was recorded as
+// rock/pop on no evidence. Those rows persist and skew every consumer, and a
+// wrong genre is worse than no genre. `artists` carries no provenance field,
+// so identification is by signature: the stored genres must be explainable
+// ENTIRELY by a dropped hint, the artist must actually have played one of the
+// rooms that hint matched, and the current rules must not reproduce the tag.
+//
+// Clearing is recoverable, not destructive: an artist with no genres goes
+// straight back onto listNeedingEnrichment, so a false positive costs one
+// re-lookup against Spotify/MusicBrainz rather than losing real data.
+// ---------------------------------------------------------------------------
+
+const DROPPED_VENUE_HINTS = [
+  {
+    pattern:
+      /fillmore|warfield|masonic|regency ballroom|bill graham|shoreline|chase center|oracle park|concord pavilion|greek theatre/i,
+    genres: ["rock", "pop"],
+  },
+  {
+    pattern:
+      /independent|rickshaw stop|bottom of the hill|great american music hall|dna lounge|starline|cafe du nord|hemlock tavern|make-?out room/i,
+    genres: ["indie", "alternative"],
+  },
+  { pattern: /blues/i, genres: ["blues"] },
+  { pattern: /folk/i, genres: ["folk"] },
+];
+
+function sameGenreSet(left, right) {
+  if (left.length !== right.length) return false;
+  const seen = new Set(left.map((genre) => String(genre).toLowerCase()));
+  return right.every((genre) => seen.has(String(genre).toLowerCase()));
+}
+
+function looksLikeDroppedVenueInference({ genres = [], venueNames = [], titles = [] } = {}) {
+  if (!Array.isArray(genres) || genres.length === 0) return false;
+
+  // Still explainable under the current, stricter rules — this is a tag we
+  // would write again today, so it stays.
+  if (sameGenreSet(genres, inferGenresFromContext({ venueNames, titles }))) return false;
+
+  const venueText = venueNames.filter(Boolean).join(" \n ");
+  if (!venueText) return false;
+
+  const explainable = new Set(
+    DROPPED_VENUE_HINTS.filter((hint) => hint.pattern.test(venueText)).flatMap(
+      (hint) => hint.genres,
+    ),
+  );
+  if (explainable.size === 0) return false;
+
+  // Every stored genre has to be accounted for by the dropped hints. A real
+  // Spotify tag ("hyperpop", "dance pop") would fail this and be left alone.
+  return genres.every((genre) => explainable.has(String(genre).toLowerCase()));
+}
+
 // Strip the non-schema `_genres` / `_songs` hints before handing events to the
 // `importUpcoming` mutation (its validator rejects unknown keys).
 function toImportEvents(events) {
@@ -368,5 +427,6 @@ export {
   spotifyArtistFields,
   musicbrainzArtistFields,
   inferGenresFromContext,
+  looksLikeDroppedVenueInference,
   toImportEvents,
 };
