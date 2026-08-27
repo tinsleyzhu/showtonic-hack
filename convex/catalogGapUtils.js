@@ -494,7 +494,13 @@ function mentionsVenue(text, venueName) {
 // said", never "guess". A wrong merge is worse than a duplicate: it moves a
 // show into a room it was not in.
 // The words a venue's name grows by without becoming another venue: who is
-// paying for it, where it is, and what kind of room it is.
+// paying for it, where it is, and what kind of BUILDING it is.
+//
+// Deliberately missing: bar, room, lounge, basement, cafe. Those name a room
+// INSIDE a venue, and a nested room is its own room — the human's 2026-08-27
+// signoff on L1's alias sweep says so explicitly, and "The Chapel Bar" is not
+// "The Chapel". Merging on them would move shows between rooms in one
+// building, which no later reader could tell had happened.
 const VENUE_TAG_WORDS = new Set([
   "powered",
   "presented",
@@ -512,11 +518,7 @@ const VENUE_TAG_WORDS = new Set([
   "hall",
   "theatre",
   "theater",
-  "lounge",
   "ballroom",
-  "room",
-  "bar",
-  "cafe",
   "arena",
   "amphitheater",
   "amphitheatre",

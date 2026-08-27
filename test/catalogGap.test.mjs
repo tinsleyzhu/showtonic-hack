@@ -597,3 +597,16 @@ test("two plausible rows mean the catalog is ambiguous, so nothing is merged", (
   ];
   assert.equal(canonicalVenue("Blue Note Jazz", "New York", twins), null);
 });
+
+test("a room inside a venue is its own room", () => {
+  // The human's signoff on L1's alias sweep keeps nested rooms separate, and
+  // the resolver has to agree or approval quietly moves shows between rooms in
+  // one building — a change no later reader could detect.
+  const catalog = [{ name: "The Chapel", city: "San Francisco" }];
+  assert.equal(canonicalVenue("The Chapel Bar", "San Francisco", catalog), null);
+  assert.equal(canonicalVenue("The Chapel Lounge", "San Francisco", catalog), null);
+  // A curly apostrophe is still the same room, which is the twin the Browse
+  // dropdown was showing.
+  const bimbos = [{ name: "Bimbo's 365 Club", city: "San Francisco" }];
+  assert.equal(canonicalVenue("Bimbo’s 365 Club", "San Francisco", bimbos)?.name, "Bimbo's 365 Club");
+});
