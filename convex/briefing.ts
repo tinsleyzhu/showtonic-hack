@@ -24,12 +24,15 @@ import { rankCompatiblePeers } from "./tasteMath.js";
 // 4,096 limit, and this screen is the new home surface. Every read below is
 // either indexed or explicitly capped.
 const SHOW_READ_CAP = 1500;
-const SQUAD_PLAN_READ_CAP = 200;
+const SQUAD_PLAN_KEEP = 200;
 const CANDIDATE_READ_CAP = 20;
 // Friend-going evidence is the most expensive row on a card, so it is bounded
 // on three axes rather than left to the size of the catalog.
 const PEER_SHOW_LOOKUPS = 6;
-const PEER_ATTENDEES_PER_SHOW = 20;
+// A budget ceiling, not a selection: attendance rows are read before we can
+// tell which are peers rather than the member's own, so the cap is set high
+// enough that filtering afterwards still leaves candidates.
+const PEER_ATTENDEES_PER_SHOW = 40;
 const PEER_PROFILE_CAP = 8;
 const PEER_LOG_CAP = 40;
 
@@ -103,9 +106,16 @@ export const forUser = query({
         .map((show) => [show._id, show]),
     );
 
-    const squadPlans = (await ctx.db.query("squadPlans").take(SQUAD_PLAN_READ_CAP)).filter((plan) =>
-      plan.userIds.some((id) => id === args.userId),
-    );
+    // Collected, not `.take()`n. `squadPlans` has no index by member, so a cap
+    // here would truncate in insertion order BEFORE the membership filter —
+    // the same cap-before-scope bug that blanked the artist page, and it would
+    // silently drop a member's own squad night from their feed. The table is
+    // small and this is one call; the cap moves to after the filter, where it
+    // is about how much to show rather than what to look at.
+    const squadPlans = (await ctx.db.query("squadPlans").collect())
+      .filter((plan) => plan.userIds.some((id) => id === args.userId))
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, SQUAD_PLAN_KEEP);
 
     const followedArtists = await Promise.all(follows.map((follow) => ctx.db.get(follow.artistId)));
     const followedArtistNames = followedArtists

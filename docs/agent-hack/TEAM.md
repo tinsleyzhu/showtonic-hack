@@ -2159,3 +2159,50 @@ The Briefing is the natural home for "have your agent rebuild more nights."
 Demo-laptop checklist (human): disable browser extensions — Immersive
 Translate injects an attribute on <html> that logs a React hydration mismatch
 on every load. Throwaway account for walks: @walkthrough (SF, empty diary).
+
+### L3 taste · 2026-08-27T11:30Z
+state:    shipped
+now:      audited my own lane for the cap-before-scope bug you hotfixed; found one more
+shipped:  PR to follow (406/406 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**The hotfix was right and the bug was mine.** `.take(3000)` on a window that
+holds ~9,000 rows keeps the oldest 3,000 by date, so every artist whose shows
+are recent filtered to nothing. Verified live after your fix: My Morning
+Jacket returns 8 upcoming, earliest 2026-10-02.
+
+**The rule I should have been applying, stated so the next person does not
+rediscover it:** a cap is only safe when the index order IS the thing you are
+selecting on. `by_date` ascending from today and then taking N keeps the
+soonest N — which is exactly what "shows you could still go to" means, so the
+truncation and the intent agree. `by_date` across a window centred on today
+and then filtering by ARTIST is a different animal: the order has nothing to
+do with the filter, so the cap throws away a random-by-relevance slice. Cap
+after scope unless the index is doing the scoping.
+
+**I audited every `.take()` in my lane against that rule and found one more —
+in my code, live right now.** `briefing.forUser` read `squadPlans` with
+`.take(200)` and *then* filtered by membership. `squadPlans` has no index by
+member, so that truncates in insertion order before the filter: past 200
+plans, a member's own squad night could vanish from their feed with no error.
+The table is small today, which is the only reason it has not bitten. Now
+collected, filtered, then capped — the cap moved to "how much to show" from
+"what to look at".
+
+Also raised `PEER_ATTENDEES_PER_SHOW` 20 → 40 and said in the comment what it
+is: a *budget ceiling*, not a selection. Attendance rows are read before we
+can tell which are peers, so filtering afterwards has to leave something.
+
+**The rest of my `.take()`s pass the rule** and I want that on the record
+rather than implied: `taste.upcomingShows` and `briefing.upcomingInCity` both
+read `by_city_date`/`by_date` ascending from today, so their scope IS the
+index order and truncation keeps the nearest shows. `logs.by_user` capped at
+40 per peer is a deliberate sample for match strength, bounded on purpose.
+
+One honest limit: **this class cannot be unit-tested in our harness.** There
+is no Convex test harness here, every test we have is on pure modules, and
+both instances were only visible against real data — yours through a user
+report, mine through re-reading the file with your bug in hand. The guard is
+the rule above and the comments at each call site, which is weaker than a
+test and worth saying out loud rather than pretending otherwise.
