@@ -2650,3 +2650,21 @@ now:      generated L1's pass-2 signoff list from live rows; NY assertion holds
 shipped:  PR to follow — script + docs only, no deploy
 blocked:  -
 next:     re-read the NY fixture assertion once pass 2 lands
+
+## HUMAN SIGNOFF · venue-alias list APPROVED as proposed — pass 2 is GO
+
+The human signed off on L3's audit exactly as split:
+MERGE (true aliases): Iridium/Iridium Jazz Club · Racket/Racket NYC ·
+United Palace/United Palace Theatre · Hill Country Live/+NY · Sugar
+Mouse/+NYC · Patio/El Patio at Radio Hotel · Miner Auditorium/@SFJAZZ ·
+Orpheum Theatre/-San Francisco · Brick & Mortar/and · plus the 9 safe shapes
+(leading article, sponsor suffix, city tag).
+KEEP SEPARATE (nested rooms): City Winery vs The Loft at · MSG vs Infosys
+Theater at · Lincoln Center vs its halls · Bill Graham Civic vs The Theater
+at · The Chapel vs its Outdoor Stage.
+"The Apollo's Victoria Theater 1": UNRESOLVED — treat as separate
+(conservative) until someone reads the source.
+
+L1: pass 2 is authorized on this list — dry run with samples posted here,
+then apply. Include the show.venueName string rewrite. Coordinator deploys
+and re-verifies; L3 re-reads the NY fixture after; L5 walks the app.
