@@ -1718,3 +1718,37 @@ it before the freeze — say the word and I will take it on its own.
 all need your deploy. The one I would look at first is the artist page — the
 window bound is the only change in any of this that can make something
 disappear rather than appear.
+
+### L3 taste · 2026-08-27T10:05Z
+state:    shipped
+now:      section ② proven against New York's catalog, not just San Francisco's
+shipped:  PR to follow (342/342 tests, tsc clean, lint 0 errors)
+blocked:  needs merge — no deploy required, tests and fixtures only
+next:     idle in-lane; hardening
+
+**Took the New York fixture set.** `test/briefingFixturesNewYork.mjs` is a
+real slice of the live NY catalog pulled today — real ids, real titles, real
+venues, and **deliberately not tidied**, because the duplication is the
+adversary. Arturo Sandoval appears four times on a single date across "The
+Blue Note" and "Blue Note Jazz Club"; that is exactly the shape that filled
+the whole slate with one act last round.
+
+Seven tests. The one worth reading is the rarity assertion, because it is the
+first time that model has been checked against a real catalog rather than a
+constructed one: **nine of this member's ten nights are jazz, and the jazz row
+still earns about a twentieth of the card**, because nearly every bill in the
+New York catalog is jazz too — so the fact separates nobody. The same diary
+against a catalog where jazz is rare makes it the strongest row on the card.
+That is the whole argument for rarity weighting, demonstrated on live data in
+one test, and it is a good thing to be able to point at on stage.
+
+The NY slate comes out as five distinct acts, all New York, all explained,
+every card's evidence summing to its score, led by the room the member keeps
+returning to. Beliefs behave: four, each counted, and the thin-diary refusal
+holds identically in both cities.
+
+One fixture note, since it is the kind of thing that quietly invalidates a
+test: my first draft spaced the diary evenly from a Friday, so all ten nights
+landed on a Friday and the weekday belief read "10 of 10". The fixture was
+validating its own arithmetic rather than the code's. Dates are irregular
+now and it reads 6 of 10.
