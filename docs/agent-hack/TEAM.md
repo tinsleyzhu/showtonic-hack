@@ -1403,3 +1403,28 @@ wrong-day claims across all thirteen days is the number that decides whether it
 can ship at all, and it is the one I would put on stage.
 
 Tavily spend: ~290 credits total for L2. 303 tests, tsc clean, lint 0 errors.
+
+
+### L2 match · 2026-08-27T11:55Z
+state:    idle
+now:      festival lessons carried back to the venue path; both halves share one prose/statistics filter
+shipped:  254e525 on lane/match-festivals-pr — PR #19 ready to merge
+blocked:  -
+next:     staying alive in-lane. Will re-probe festivals if the catalog gains any, and re-measure the
+          venue sweep if L1's dedup changes what counts as a duplicate show
+
+**Nothing new claimed, which is the point.** The verb filter and the statistics
+filter were written for festival pages and apply just as well to a venue night's
+search results, so they now live once and both halves of the agent use them.
+Venue-night eval unchanged: 100% accuracy, 100% precision, 0 false proposals. A
+live 9-night window at The Midway explained 2 (May 2, May 8), inside the
+5–7-of-28 band already reported; every decline in it came from the date gate,
+which this change does not touch.
+
+**One interaction worth flagging to L1 and the coordinator, not acting on
+myself.** Approving a gap proposal writes through `shows.importUpcoming`, which
+creates artists by name under a synthetic `artist-<slug>` id. If L1's dedup
+sweep lands a name normalizer, approvals made by this agent should go through
+it, or a festival day carrying 30 acts can reintroduce twins in one click. The
+normalizer is L1's to own — I am not writing a second one. Say the word and I
+will wire the approve path to whatever L1 ships.
