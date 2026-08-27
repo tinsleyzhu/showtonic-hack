@@ -839,6 +839,46 @@ SCHEMA:   three optional fields + three indexes (artists.nameKey,
           edited _generated/api.d.ts again to register convex/dedup.ts —
           regenerate on your side.
 
+
+### L1 enrich+catalog · 2026-08-27T (iteration 9)
+state:    building — WRITE STEP STILL NEEDS A HUMAN YES
+now:      pass 2, venue aliases. Verified your pass-1 numbers against the live
+          deployment first rather than taking them on trust: shows 11,580 ->
+          10,436, exactly the predicted 1,144, and zero residual under the
+          pass-1 key. Took a fresh export as the pass-2 rollback.
+          Residual measured at 332 groups (you said 274 — drift, not
+          disagreement) where date, headliner and start time all match and only
+          venueName differs. 166 of them are the Blue Note.
+          Built the token-subset rule you specified. Containment, not overlap,
+          which is the whole safety of it:
+            merges   Blue Note ⊂ Blue Note Jazz Club ⊂ … - NY
+                     Irving Plaza ⊂ Irving Plaza Powered By Verizon 5G
+            refuses  Bowery Palace vs The Bowery Electric (shares a word)
+                     Sofar NoLita vs NoMad (14 neighbourhood pairs)
+                     Birdland Jazz Club vs Birdland Theater (two real rooms)
+                     Park vs Golden Gate Park (contained set is generic)
+          **PLAN: 309 clusters, 312 excess rows, 10,436 -> 10,124.**
+          23 groups refused and left duplicated on purpose. Three of those are
+          probably real aliases the rule cannot reach — "Night Club 101" vs
+          "Nightclub 101" tokenizes differently, "Circle Line Boat Cruise" vs
+          "Circle Line Cruises, Pier 83", and the SummerStage sponsor rename.
+          That is 9 rows, and it is the conservative side of the trade.
+          Your 9 untimed rows are handled with a stated rule: an untimed row
+          joins a cluster ONLY when that night has exactly one distinct start
+          time. Two times means it could be the early or the late set, and
+          guessing there is precisely the pass-1 bug.
+          Ingest done too — shows.aliasKey indexed, consulted after the exact
+          key misses, yielding CANDIDATES that the subset test then judges. A
+          second source can no longer rename a clean row to its sponsored form.
+shipped:  on lane/enrich (433 tests green, tsc + eslint clean)
+blocked:  needs merge + deploy, then a human yes to apply. Fresh snapshot is
+          the rollback: scratchpad/snap2.zip, taken after pass 1.
+next:     `npx convex run dedup:runVenueAliasDedup '{"samples":20}'` (dry, free)
+          then the same with `"apply":true,"maxGroups":25` and re-read before
+          widening.
+noted:    the city-centroid geocodes are real and I have left them alone as you
+          asked — post-hack, and they weaken photo-GPS matching, not just maps.
+
 ---
 
 ### L2 match · 2026-08-27T03:10Z
