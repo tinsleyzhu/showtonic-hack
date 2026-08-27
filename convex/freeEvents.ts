@@ -8,6 +8,7 @@ import {
   spotifyArtistFields,
   musicbrainzArtistFields,
   inferGenresFromContext,
+  artistGenreUpdatesFromEvents,
   toImportEvents,
 } from "./freeEventsUtils.js";
 import type { NormalizedFreeEvent } from "./freeEventsUtils.js";
@@ -46,18 +47,28 @@ type ImportSummary = {
   updated: number;
   pages: number;
   truncated: boolean;
+  // Artists that got genres from the source's event classifications.
+  genreArtists: number;
 };
 
 function emptySummary(): ImportSummary {
-  return { available: 0, fetched: 0, inserted: 0, updated: 0, pages: 0, truncated: false };
+  return {
+    available: 0,
+    fetched: 0,
+    inserted: 0,
+    updated: 0,
+    pages: 0,
+    truncated: false,
+    genreArtists: 0,
+  };
 }
 
 async function sink(
   ctx: Pick<ActionCtx, "runMutation">,
   events: NormalizedFreeEvent[],
   dryRun: boolean,
-): Promise<{ inserted: number; updated: number }> {
-  if (dryRun || events.length === 0) return { inserted: 0, updated: 0 };
+): Promise<{ inserted: number; updated: number; genreArtists: number }> {
+  if (dryRun || events.length === 0) return { inserted: 0, updated: 0, genreArtists: 0 };
   const importable = toImportEvents(events);
   let inserted = 0;
   let updated = 0;
@@ -68,7 +79,19 @@ async function sink(
     inserted += result.inserted;
     updated += result.updated;
   }
-  return { inserted, updated };
+
+  // Harvest the genre/subGenre the events already carried. Runs after the
+  // import so the artist rows it keys off exist. Sourced, free, and it never
+  // clobbers a richer Spotify/MusicBrainz tag.
+  let genreArtists = 0;
+  const updates = artistGenreUpdatesFromEvents(events);
+  for (let i = 0; i < updates.length; i += 50) {
+    const result = await ctx.runMutation(api.artists.applyEventGenres, {
+      updates: updates.slice(i, i + 50),
+    });
+    genreArtists += result.patched;
+  }
+  return { inserted, updated, genreArtists };
 }
 
 // ---------------------------------------------------------------------------
@@ -118,9 +141,10 @@ async function importTicketmasterUpcoming(
       return true;
     });
     summary.fetched += events.length;
-    const { inserted, updated } = await sink(ctx, events, dryRun);
+    const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
     summary.inserted += inserted;
     summary.updated += updated;
+    summary.genreArtists += genreArtists;
     summary.pages += 1;
     if (dryRun) break;
     page += 1;
@@ -198,9 +222,10 @@ async function importSetlistFmHistory(
           return true;
         });
       summary.fetched += events.length;
-      const { inserted, updated } = await sink(ctx, events, dryRun);
+      const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
       summary.inserted += inserted;
       summary.updated += updated;
+      summary.genreArtists += genreArtists;
       summary.pages += 1;
 
       // Setlists are newest-first; once a page is entirely older than the
@@ -250,9 +275,10 @@ async function importBandsintownUpcoming(
         });
       summary.available += events.length;
       summary.fetched += events.length;
-      const { inserted, updated } = await sink(ctx, events, dryRun);
+      const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
       summary.inserted += inserted;
       summary.updated += updated;
+      summary.genreArtists += genreArtists;
     }
     await sleep(300);
   }
@@ -328,6 +354,7 @@ export const syncFreeCatalog = action({
       upcoming.inserted += bit.inserted;
       upcoming.updated += bit.updated;
       upcoming.pages += bit.pages;
+      upcoming.genreArtists += bit.genreArtists;
       upcomingSources.push("bandsintown");
     }
 
@@ -351,6 +378,7 @@ export const syncFreeCatalog = action({
         updated: result.updated,
         pages: result.pages,
         truncated: result.truncated,
+        genreArtists: result.genreArtists,
       };
     }
 

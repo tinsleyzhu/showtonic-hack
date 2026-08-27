@@ -11,6 +11,8 @@ import {
   musicbrainzArtistFields,
   inferGenresFromContext,
   looksLikeDroppedVenueInference,
+  normalizeGenreTags,
+  artistGenreUpdatesFromEvents,
   toImportEvents,
 } from "../convex/freeEventsUtils.js";
 
@@ -253,6 +255,52 @@ test("inferGenresFromContext agrees across several rooms of the same family", ()
     inferGenresFromContext({ venueNames: ["Public Works", "1015 Folsom", "Monarch"] }),
     ["electronic", "dance"],
   );
+});
+
+// Ticketmaster classifications -> artist genres.
+test("normalizeGenreTags lowercases and splits compound Ticketmaster names", () => {
+  assert.deepEqual(normalizeGenreTags(["Hip-Hop/Rap", "Trap"]), ["hip-hop", "rap", "trap"]);
+  assert.deepEqual(normalizeGenreTags(["Pop", "Electro Pop"]), ["pop", "electro pop"]);
+});
+
+test("normalizeGenreTags drops the Undefined placeholder and dedupes", () => {
+  assert.deepEqual(normalizeGenreTags(["Rock", "Undefined", "rock", "ROCK"]), ["rock"]);
+  assert.deepEqual(normalizeGenreTags([]), []);
+  assert.deepEqual(normalizeGenreTags(undefined), []);
+});
+
+test("artistGenreUpdatesFromEvents keys genres by artist across several events", () => {
+  const updates = artistGenreUpdatesFromEvents([
+    { artistJambaseIds: ["tm-attraction:A"], _genres: ["Pop"] },
+    { artistJambaseIds: ["tm-attraction:A"], _genres: ["Electro Pop"] },
+    { artistJambaseIds: ["tm-attraction:B"], _genres: ["Hip-Hop/Rap"] },
+  ]);
+  assert.deepEqual(updates, [
+    { artistJambaseId: "tm-attraction:A", genres: ["pop", "electro pop"] },
+    { artistJambaseId: "tm-attraction:B", genres: ["hip-hop", "rap"] },
+  ]);
+});
+
+test("artistGenreUpdatesFromEvents applies a bill's classification to every attraction", () => {
+  const updates = artistGenreUpdatesFromEvents([
+    { artistJambaseIds: ["tm-attraction:A", "tm-attraction:B"], _genres: ["Jazz"] },
+  ]);
+  assert.deepEqual(updates.map((update) => update.artistJambaseId), [
+    "tm-attraction:A",
+    "tm-attraction:B",
+  ]);
+});
+
+test("artistGenreUpdatesFromEvents ignores events with no genres or no artist ids", () => {
+  assert.deepEqual(
+    artistGenreUpdatesFromEvents([
+      { artistJambaseIds: ["tm-attraction:A"], _genres: [] },
+      { artistJambaseIds: undefined, _genres: ["Pop"] },
+      { artistJambaseIds: ["tm-attraction:C"], _genres: ["Undefined"] },
+    ]),
+    [],
+  );
+  assert.deepEqual(artistGenreUpdatesFromEvents(undefined), []);
 });
 
 // Cleanup provenance — the predicate behind artists.clearInferredGenres.

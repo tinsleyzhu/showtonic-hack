@@ -69,6 +69,20 @@ export function inferGenresFromContext(context?: {
 }): string[];
 
 /**
+ * Lowercase and split compound Ticketmaster genre names ("Hip-Hop/Rap") so
+ * they share a vocabulary with Spotify/MusicBrainz tags.
+ */
+export function normalizeGenreTags(names: readonly unknown[] | undefined): string[];
+
+/**
+ * Collapse normalized events into one genre set per artist jambase id, from
+ * the Ticketmaster classifications carried on `_genres`.
+ */
+export function artistGenreUpdatesFromEvents(
+  events: readonly NormalizedFreeEvent[] | undefined,
+): { artistJambaseId: string; genres: string[] }[];
+
+/**
  * True when an artist's stored genres look like they were written by the
  * low-precision venue tags dropped in 6ea0240 — explainable entirely by a
  * dropped hint, backed by a room that hint matched, and not reproduced by the
