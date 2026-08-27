@@ -116,7 +116,17 @@ function drawOverlap(ctx, { story, format = "story" }) {
   // Shared artists — the receipts. Named, because a percentage on its own is
   // a claim and three names are evidence.
   if (story.names.length) {
-    y += square ? 20 : 34;
+    // Centred in the space between the headline and the invitation, for the
+    // same reason as the reclaim card: this list is capped at three names, so
+    // top-flowing it left a void on EVERY overlap card. Invisible to a
+    // geometry probe, obvious in the exported image.
+    const headerHeight = square ? 56 + 50 : 72 + 60;
+    const rowHeight = square ? 52 : 62;
+    const blockHeight = headerHeight + story.names.length * rowHeight + (story.shows > 0 ? 40 : 0);
+    const gapTop = y + (square ? 20 : 34);
+    const gapBottom = height - (square ? 150 : 190) - (square ? 70 : 90);
+    y = gapTop + Math.max(0, (gapBottom - gapTop - blockHeight) / 2);
+
     ctx.fillStyle = "rgba(255,255,255,0.12)";
     ctx.fillRect(PAD, y, inner, 2);
     y += square ? 56 : 72;

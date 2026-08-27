@@ -62,3 +62,6 @@ agents/squad.tokens.json
 /testing/
 .mcp.json
 .gstack/
+
+# Catalog-reference snapshots (scripts/catalog-refs-snapshot.mjs) — local verification state.
+.snapshots/

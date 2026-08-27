@@ -52,6 +52,62 @@ function isUsableCoordinate(latitude, longitude) {
   );
 }
 
+const VIDEO_EXT = /\.(mov|mp4|m4v)$/i;
+// iPhone MOVs put the moov atom (where the metadata lives) at the END of the
+// file, after gigabytes of mdat. Read both ends; never the middle.
+const VIDEO_TAIL_BYTES = 1024 * 1024;
+const VIDEO_HEAD_BYTES = 64 * 1024;
+
+/**
+ * Pull the two signals we need out of QuickTime/MP4 metadata bytes without a
+ * full atom walk: Apple writes `com.apple.quicktime.creationdate` as ISO-8601
+ * WITH the capture-local UTC offset ("2026-08-07T21:14:32-0700") — the naive
+ * part IS the local wall-clock our night-clustering wants — and location as an
+ * ISO-6709 string ("+37.7797-122.4136+011.028/"). Both are plain ASCII inside
+ * moov, and both formats are specific enough that a match in binary noise is
+ * implausible. Exported for tests.
+ */
+function findQuickTimeSignals(text) {
+  const out = { takenAt: null };
+  const date = text.match(/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?[+-]\d{2}:?\d{2}/);
+  if (date) out.takenAt = date[1];
+  const gps = text.match(/([+-]\d{1,2}\.\d{3,})([+-]\d{1,3}\.\d{3,})(?:[+-]\d+\.?\d*)?\//);
+  if (gps) {
+    const latitude = Number(gps[1]);
+    const longitude = Number(gps[2]);
+    if (isUsableCoordinate(latitude, longitude)) {
+      out.latitude = latitude;
+      out.longitude = longitude;
+    }
+  }
+  return out;
+}
+
+async function readVideoMetadata(file) {
+  const result = { name: file?.name, takenAt: null };
+  try {
+    const head = await file.slice(0, VIDEO_HEAD_BYTES).arrayBuffer();
+    const tailStart = Math.max(0, file.size - VIDEO_TAIL_BYTES);
+    const tail = tailStart > 0 ? await file.slice(tailStart).arrayBuffer() : null;
+    const decoder = new TextDecoder("latin1");
+    // Tail first: that is where an iPhone's moov actually lives.
+    for (const buffer of [tail, head]) {
+      if (!buffer) continue;
+      const found = findQuickTimeSignals(decoder.decode(buffer));
+      if (found.takenAt) {
+        Object.assign(result, found);
+        return result;
+      }
+    }
+  } catch {
+    // Unreadable container — fall through to the file date below.
+  }
+  if (Number.isFinite(file?.lastModified)) {
+    result.takenAt = toLocalIso(new Date(file.lastModified));
+  }
+  return result;
+}
+
 /**
  * Read one picked file into `{ takenAt, latitude?, longitude?, name }`.
  *
@@ -61,6 +117,9 @@ function isUsableCoordinate(latitude, longitude) {
  * date — GPS is a confidence boost, never a requirement.
  */
 async function readPhotoMetadata(file) {
+  // A concert night is filmed more than it is photographed; a video carries
+  // the same date+GPS evidence, just in QuickTime atoms instead of EXIF.
+  if (VIDEO_EXT.test(file?.name ?? "")) return readVideoMetadata(file);
   const result = { name: file?.name, takenAt: null };
 
   try {
@@ -118,4 +177,4 @@ function summarizeRoll(photos) {
   return { total, geotagged, withoutLocation: total - geotagged };
 }
 
-export { readCameraRoll, readPhotoMetadata, summarizeRoll, toLocalIso };
+export { findQuickTimeSignals, readCameraRoll, readPhotoMetadata, summarizeRoll, toLocalIso };

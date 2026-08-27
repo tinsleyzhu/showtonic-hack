@@ -787,6 +787,58 @@ next:     coordinator: merge + deploy, then
           true before the batch proved the rate.
 credits:  25 of 1500 spent, 1475 remaining.
 
+
+### L1 enrich+catalog · 2026-08-27T (iteration 8)
+state:    building — WRITE STEP NEEDS A HUMAN YES
+now:      took the dedup sweep. Reproduced your key exactly (2,284 groups /
+          2,581 excess, to the row) and then found it would have deleted real
+          shows, so read this before anyone runs it.
+
+          **THE KEY IS MISSING START TIME.** A jazz club plays an 8:30 and a
+          10:30 set: two separately ticketed events, same date, same room, same
+          headliner. Ron Carter at Birdland on 2026-10-09 is four rows that look
+          like one show x4 and are actually TWO SHOWS x2 — each set ingested
+          once from Ticketmaster and once from JamBase. Of your 2,581 excess
+          rows, **1,652 are real, distinct, differently-timed events.**
+          Not a judgement call: inside those groups 1,433 of 1,453 time gaps
+          are >=90 minutes (early/late set spacing) against 20 gaps of an hour
+          or less, which is the only band where door-time vs stage-time could
+          be one show reported twice. Exact start time under-merges by at most
+          ~20 groups and over-deletes by none. Leaving a duplicate is
+          recoverable; deleting a show is not.
+
+          **DRY RUN — corrected key, run against your snapshot, nothing written:**
+          | table | rows | groups | excess | after |
+          |---|---|---|---|---|
+          | shows | 11,580 | 1,110 | **1,144 (9.9%)** | 10,436 |
+          | artists | 9,162 | 1,322 | **1,347 (14.7%)** | 7,815 |
+          | venues | 298 | 8 | **8 (2.7%)** | 290 |
+          Merging ADDS as well as removes: 1,093 survivors gain support acts,
+          117 gain genres, 33 gain a real image. That last one because 3,650 of
+          9,162 artists carry JamBase's default silhouette — counting it as
+          "has an image" let a placeholder outrank a real photograph.
+
+          **Your reference list is short four entries.** favorites.showId,
+          catalogProposals.showId, squadPlans.showId and users.tasteArtistIds
+          all point at rows this deletes. watchlist is the awkward one: it
+          stores its target as a bare string for all three entity types, so it
+          cannot be found by index. All covered.
+
+          Ingest fixed at the one chokepoint — every sync funnels through
+          shows.importUpcoming — with three indexed normalized keys, so the
+          next Ticketmaster run cannot re-insert what the sweep removed.
+shipped:  on lane/enrich, added to PR #17 (425 tests green, tsc + eslint clean)
+blocked:  **the write step is not mine to authorise.** `runDedup` defaults to
+          apply:false. Deleting 2,499 rows from the live deployment needs a
+          human yes, and the snapshot is the only rollback.
+next:     order when the yes comes: shows -> artists -> venues, each dry run
+          first, then apply with maxGroups small (25) and re-read before
+          widening.
+SCHEMA:   three optional fields + three indexes (artists.nameKey,
+          venues.dedupKey, shows.dedupKey). L2 also edits schema.ts. I hand-
+          edited _generated/api.d.ts again to register convex/dedup.ts —
+          regenerate on your side.
+
 ---
 
 ### L2 match · 2026-08-27T03:10Z
@@ -2010,6 +2062,297 @@ wrong-day placements, 0 acts on two days. 301 tests, tsc clean, lint 0 errors.
 under it by the concierge session, which discarded uncommitted lane work once;
 the fence exists for exactly that reason.
 
+### L5 share · 2026-08-27T12:35Z
+state:    shipped
+now:      merged main, and the Briefing integration immediately showed two defects
+shipped:  PR (lane/share): duplicate heading + background-tab clock, plus the voice pass
+blocked:  -
+next:     idle in-lane, watching for integration fallout. Ping me for demo-surface work.
+
+**L6 — "While you were away" was rendering TWICE on the home surface, live in
+main.** `BriefingView` composes `AgentActivity` inside its own titled section,
+and the component rendered its own section and title too: two headings in a
+row, inside two nested landmarks with the same accessible name. Fixed on my
+side, since the composer should own the chrome and the component should own the
+rows — my `<section>` and `SectionTitle` are gone, the count moved into the
+opening line, props unchanged. Nothing needed from you.
+
+⚠️ **L6, one for your file that I did not touch.** Several Briefing sections
+carry `aria-labelledby="briefing-activity"`, `"briefing-beliefs"` and friends,
+but `SectionTitle` renders an `<h2>` with no `id`, so every one of those
+references points at nothing — the sections end up unnamed. `SectionTitle`
+takes no `id` prop, which is why I used a plain `aria-label` in my own code.
+Either add an `id` prop to `SectionTitle` (yours) or swap those for
+`aria-label`. Two-minute fix, and it is on the surface a judge will open first.
+
+**A bug I could not have written a test for.** The feed renders absolute
+timestamps until the client has a clock, and the clock was set from a
+`requestAnimationFrame` — which Chrome **pauses in a backgrounded tab**. A
+briefing left open on a second monitor is the normal case, and every row showed
+its full timestamp instead of "4h ago". Found only because I was driving a tab
+that did not have focus. A `setTimeout` still fires there. **If any other lane
+sets first-paint state from rAF, check it the same way.**
+
+**Voice pass done** (the optional one), scoped to what this lane owns. The rule,
+so it is a rule and not a taste: the AGENT says "I" when reporting its own work
+(activity feed, recap provenance, caption note); the APP says "you" where the
+human is deciding (the contract — a not-yet-hired agent has no standing to have
+a voice); the HUMAN speaks on the share cards, because those get posted from
+their account. "Generated from your logs" was nobody's sentence and is now "I
+counted these from your logs". **The recap's own headline/span/share text live
+in `convex/recapSummary.js` and are untouched — not my lane.** Whoever owns
+them may want the same rule.
+
+## COORDINATOR · broadcast: rAF does not fire in background tabs
+
+L5 found first-paint state set from requestAnimationFrame never arriving in a
+backgrounded tab — Chrome pauses rAF there, and no test will ever catch it.
+If your lane gates any render state on rAF, switch to setTimeout(…, 0). A
+briefing open on a second monitor is the normal case, not the edge.
+
+L6, two minutes, first screen a judge opens: several Briefing sections use
+aria-labelledby="briefing-…" but SectionTitle renders an h2 with NO id, so the
+references resolve to nothing and the landmarks are unnamed. Give SectionTitle
+an id prop or switch those to aria-label. Fold it into the flip PR.
+
+### L5 share · 2026-08-27T13:05Z
+state:    idle
+now:      audit pass on the deployed app — FILING, not fixing, per the freeze
+shipped:  - (docs only)
+blocked:  two things need a human call, both below
+next:     more passes if the browser env is restored; happy to fix any of these on your word
+
+**FINDING 1 — demo-critical. The reclaim story card is on the path the demo
+does not take.** There are TWO confirm paths that write the same diary entries:
+
+| path | where | offers the card |
+|---|---|---|
+| `BackfillFlow` scan → confirm → complete | modal | **yes** (`BackfillFlow.tsx:494`) |
+| `PendingCandidates` on the Briefing → "Yes, I was there" | Decisions you owe | **no** |
+
+Act 1 as you described it — *reclaim summary → Briefing decisions → confirm →
+reclaim story card offer* — runs through the second path. Nothing is offered
+there: the row simply leaves the queue and the moment ends. That is also the
+**agent-native** path (candidates arriving from `reclaim_camera_roll` over MCP),
+which is precisely where "my agent rebuilt N nights I never logged" is most
+true.
+
+Fix is small and entirely in `PendingCandidates.tsx`: accumulate accepted
+candidates in local state (they already flow through `decide()`), and render
+`<ReclaimShareCard handle={handle} nights={accepted} />` once `accepted.length
+> 0`. The card is already pure, tested and empty-room-safe, and takes exactly
+`{ clusterDate, artistNames?, showTitle? }`. **~15 lines. Say the word and it is
+done in ten minutes; I am not touching it unasked during the freeze.**
+
+**FINDING 2 — the reclaim entry point is three taps deep for anyone with a
+diary.** All three `onOpenBackfill` call sites are conditional, and two are
+empty-state-only:
+- `BriefingView.tsx:208` — only in the "nothing to scout yet" empty state.
+- `ProfileView.tsx` (`DiaryArchive`) — only in "Nothing logged yet" / "Nothing
+  to group yet" empty states.
+- `DiscoverView.tsx:197` — only when `mode === "past"`.
+
+@tinsley has 7 logged shows, so every empty state is gone and the ONLY live
+entry is **Browse → Past Shows → "Or scan your camera roll for past shows"** — a
+tertiary "Or…" link, on a non-default tab, behind a mode toggle. Verified in the
+browser. If Act 1 opens on the reclaim flow, whoever drives has to remember that
+path, and a judge exploring alone will never find it.
+
+**FINDING 3 — duplicate venue in the catalog, differing only by apostrophe.**
+The venue filter lists both `Bimbo's 365 Club` (straight) and `Bimbo’s 365 Club`
+(curly) as separate entries. L1/L2's ground, not mine. Any dedupe that
+casefolds should also normalise `’ → '` — the same class of bug as L3's
+double-Beck, one character wide.
+
+**FINDING 4 — minor a11y.** Field labels render at **10px** (`USERNAME`,
+`PROFILE VISIBILITY`, `SEARCH CITY`) in `#8A8177`. Contrast passes (~5.2:1); the
+size does not fail any WCAG rule either, but 10px uppercase with wide tracking
+is the smallest text in the product and it sits on the first screen a new member
+types into. Bumping to 11–12px costs nothing.
+
+**NOT A BUG, but flag it for the demo laptop.** The Immersive Translate
+extension injects `data-immersive-translate-page-theme` onto `<html>`, which
+React reports as a hydration mismatch on every load. Harmless, but it fills the
+console with red on a machine someone may screen-share. Worth disabling
+extensions on the demo profile.
+
+⚠️ **Two things I could not do, both needing a human call rather than my
+judgement.**
+1. **I did not walk scan → confirm → card end-to-end, because it writes to the
+   shared demo backend.** `runScan` persists candidates via
+   `backfill.saveCandidates`, and confirming writes real `logs` rows — against
+   @tinsley, the demo account, whose diary and recap numbers are on stage in a
+   few hours. I am not adding rows to the demo account on a peer's say-so.
+   Give me a throwaway handle to run it under and I will walk the whole minute.
+2. **My browser session is degraded**: `window.innerHeight` reports **0**, so
+   `inset-0` overlays measure 0x0 and the extension's screenshot API has been
+   erroring all session. Everything above is from DOM/state inspection and code,
+   which is unaffected — but I cannot see the pixels, and I am not going to
+   claim I did.
+## COORDINATOR · clock correction + scoped exception
+
+THE FREEZE IS 13:00 — ONE PM. It is currently ~01:00. Twelve hours remain.
+File-only mode begins 12:30 PM, not 12:30 AM. Fixes are ON.
+
+Scoped exception: L5 may edit PendingCandidates.tsx (L6's file) ONLY to
+accumulate accepted candidates and offer the reclaim story card after
+"Yes, I was there" — the Briefing confirm path is the one Act 1 takes, and
+today it ends with a row quietly leaving a queue. L6: heads-up for your flip
+PR; the diff is ~15 lines at the decide() seam.
+
+For L1's normalization sweep: "Bimbo's 365 Club" exists twice, straight vs
+curly apostrophe — same one-character class as double-Beck. Check the venue
+table for other apostrophe/diacritic twins while you're there.
+
+For L6, after the flip: the reclaim entry point is three taps deep on a
+non-default tab for any account with a diary ("Browse → Past Shows → Or scan…").
+The Briefing is the natural home for "have your agent rebuild more nights."
+
+Demo-laptop checklist (human): disable browser extensions — Immersive
+Translate injects an attribute on <html> that logs a React hydration mismatch
+on every load. Throwaway account for walks: @walkthrough (SF, empty diary).
+
+### L3 taste · 2026-08-27T11:30Z
+state:    shipped
+now:      audited my own lane for the cap-before-scope bug you hotfixed; found one more
+shipped:  PR to follow (406/406 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**The hotfix was right and the bug was mine.** `.take(3000)` on a window that
+holds ~9,000 rows keeps the oldest 3,000 by date, so every artist whose shows
+are recent filtered to nothing. Verified live after your fix: My Morning
+Jacket returns 8 upcoming, earliest 2026-10-02.
+
+**The rule I should have been applying, stated so the next person does not
+rediscover it:** a cap is only safe when the index order IS the thing you are
+selecting on. `by_date` ascending from today and then taking N keeps the
+soonest N — which is exactly what "shows you could still go to" means, so the
+truncation and the intent agree. `by_date` across a window centred on today
+and then filtering by ARTIST is a different animal: the order has nothing to
+do with the filter, so the cap throws away a random-by-relevance slice. Cap
+after scope unless the index is doing the scoping.
+
+**I audited every `.take()` in my lane against that rule and found one more —
+in my code, live right now.** `briefing.forUser` read `squadPlans` with
+`.take(200)` and *then* filtered by membership. `squadPlans` has no index by
+member, so that truncates in insertion order before the filter: past 200
+plans, a member's own squad night could vanish from their feed with no error.
+The table is small today, which is the only reason it has not bitten. Now
+collected, filtered, then capped — the cap moved to "how much to show" from
+"what to look at".
+
+Also raised `PEER_ATTENDEES_PER_SHOW` 20 → 40 and said in the comment what it
+is: a *budget ceiling*, not a selection. Attendance rows are read before we
+can tell which are peers, so filtering afterwards has to leave something.
+
+**The rest of my `.take()`s pass the rule** and I want that on the record
+rather than implied: `taste.upcomingShows` and `briefing.upcomingInCity` both
+read `by_city_date`/`by_date` ascending from today, so their scope IS the
+index order and truncation keeps the nearest shows. `logs.by_user` capped at
+40 per peer is a deliberate sample for match strength, bounded on purpose.
+
+One honest limit: **this class cannot be unit-tested in our harness.** There
+is no Convex test harness here, every test we have is on pure modules, and
+both instances were only visible against real data — yours through a user
+report, mine through re-reading the file with your bug in hand. The guard is
+the rule above and the comments at each call site, which is weaker than a
+test and worth saying out loud rather than pretending otherwise.
+
+### L3 taste · 2026-08-27T12:10Z
+state:    shipped
+now:      built the cap-safety fence; tagging every call site found a live defect
+shipped:  PR to follow (410/410 tests, tsc clean, lint 0 errors)
+blocked:  needs merge — no deploy required unless you take the activity fix
+next:     idle in-lane
+
+**Took your fence idea. Tagging the sites is what earned it — it found a live
+defect in `convex/activity.ts` within ten minutes.**
+
+`test/capSafety.test.mjs` reads every `convex/*.ts`, finds each `.take(` call
+site, and fails unless the six lines above carry `// cap-safe: <why the index
+order IS the selection>` or `// cap-review: <the consequence, and why it is
+not fixed yet>`. It cannot check whether the reasoning is *true*. It can make
+the reasoning exist, at the moment the bug is cheap — which is more than we
+had, since this class has no Convex test harness to catch it.
+
+Three guards on the guard, because a fence that quietly stops fencing is
+worse than none: a justification under twenty characters fails ("that is not
+a reason, it is a shrug"), the site count must stay at or above eight so a
+refactor hiding every `.take()` behind a helper cannot make it vacuously
+green, and the unsafe sites are a **declared register** — adding one means
+editing a list in the test, which is a decision someone signs in a diff. I
+proved it bites by adding an untagged `.take()` and watching it fail, then
+reverted.
+
+⚠️ **`convex/activity.ts` — a live defect, not mine to fix.** Both feed reads
+take the newest 60 rows **globally** and the scope filter runs afterwards:
+
+```
+ctx.db.query("logs").order("desc").take(60),        // then .filter(inScope)
+ctx.db.query("attendance").order("desc").take(60),  // then .filter(inScope)
+```
+
+So a member whose own logs are not among the newest 60 rows in the entire
+database sees an **empty "You" tab**, and a member who wrote the newest 60
+sees an **empty "Friends" tab**. With the seeded demo data both tabs happen
+to look fine; one busy demo account changes that. The fix is small — `by_user`
+for the "you" scope, both tables have that index, and a larger budget for
+"friends" — but it is another lane's file and it is hours before the demo, so
+I have tagged it `cap-review` with the consequence written out and left the
+code alone. **Say the word and it is a ten-line PR.**
+
+Two of my own sites are on the register honestly rather than dressed up:
+`PEER_ATTENDEES_PER_SHOW` and the per-peer log sample are both bounded
+approximations that can *omit* a friend-going evidence row but cannot produce
+a wrong one. That asymmetry is why they are acceptable and it is written at
+the call site, not left as folklore.
+
+## L1 — DEDUP SWEEP (human-requested, coordinator-measured)
+
+Full snapshot export analyzed (backup exists at /tmp/showtonic-export.zip,
+taken 01:20). The catalog holds three layers of duplication:
+
+| layer   | scale                                   | example |
+|---------|------------------------------------------|---------|
+| shows   | 2,284 groups · 2,581 EXCESS ROWS (~22%)  | Ron Carter Quartet 2026-10-09 x4 |
+| artists | 1,311 twin groups                        | Strawberry Guy x3; "& " vs " and " |
+| venues  | 8 twin groups                            | Golden Gate Theater/Theatre; The Warfield/Warfield |
+
+Match keys used: NFKD-fold, lowercase, & → and, theatre → theater, strip
+punctuation and leading "The". Same date + normalized venue + normalized
+headliner for shows.
+
+Order of work — shows first (biggest visible payoff), then artists, then
+venues. Rules:
+1. PURE NORMALIZER FIRST, with tests — one module both the migration and
+   future ingest share, so the dupes do not come back on the next sync.
+2. DRY RUN that prints the merge plan (counts + 20 samples) before anything
+   writes. Post the numbers here before running live.
+3. Canonical row = most complete (support acts, image, ticketUrl, genres).
+   Repoint EVERY reference before deleting: logs, attendance, media,
+   watchlist, backfillCandidates (shows); shows.artistIds + artistFollows
+   (artists); shows.venueId (venues).
+4. Batched mutations — stay inside the write limits; the cap-safe rule
+   applies to your reads.
+5. Ingest fix in the same PR: syncs must look up by normalized key before
+   inserting, or this sweep is a one-day cure.
+
+Coordinator deploys on merge. The snapshot is the rollback.
+
+## L1, before the dedup migration: run L5's snapshot tool
+
+`node scripts/catalog-refs-snapshot.mjs before` immediately pre-migration,
+`after` + `diff` post. Moved counts print for human judgment; BROKEN
+references (dangling showId, orphaned candidate, evidence-less find) exit
+non-zero and block. L5 walks the app on top of the diff.
+
+Scoping fact from the baseline: SF 935 shows vs New York 8,014 — the 2,581
+excess rows are overwhelmingly a NEW YORK problem. Weight the dry-run samples
+accordingly.
+
+@tinsley's pending "Witch Whores of Satan" candidate is a DELIBERATE demo
+prop — no one clears it, and the migration must not orphan it.
 ### L6 surface · 2026-08-27T12:05Z
 state:    shipped
 now:      the flip + the correction verbs, both rendered against the live backend
@@ -2092,6 +2435,359 @@ headings — ② explains its own emptiness and ③ carries the row. That reads 
 **All three states rendered before and after** (empty · middle · live @tinsley).
 PR #28 now carries: the fixture flip, belief corrections, the doubled
 "While you were away", and this.
+
+### L5 share · 2026-08-27T02:40Z — post-migration walk
+state:    idle
+now:      after-snapshot, diff, and a walk over Briefing / diary / recap / catalog
+shipped:  - (report only)
+blocked:  one item needs eyes I can't provide (below)
+next:     re-walk on request; standing by.
+
+**The diff exits 0. No broken references.** 11 changes, every one a repoint or a
+legitimate count move. Both accounts: recap 7 shows, diary 7 entries, **0
+dangling**, 5 finds, all evidenced. MCP agrees with the screen (12 tools,
+`generate_recap` and `get_briefing` both answering, 7 shows either way). Cities:
+SF 935→806, NY 8014→7745.
+
+**FIRST, A CORRECTION OF MY OWN — I nearly filed a false alarm against L1.**
+My first residual-duplicate scan reported **43 pairs** and I was about to report
+that "residual excess zero" was wrong. It was my scan that was wrong: I grouped
+by date+venue and ignored **startTime**. Smoke Jazz runs 18:30 / 20:30 / 22:00
+sets, so three rows with an identical title and the same four artists are three
+real shows, not three copies. Rescanned with start time in the key: **1 pair in
+500 rows.** `showKey` is right, and the comment above it already said exactly
+why — I should have read it before scanning, not after. L1: residual excess is
+genuinely ~zero and your key's under-merge case is the correct trade.
+
+**FINDING A — the one real residual, and it is on the demo screen.**
+`The Midway · 2026-09-05 · 15:00`, two rows, three shared artists of three:
+- "Purple Disco Machine at The Midway" (headliner: Purple Disco Machine)
+- "Electroluxx Pride Party (21 and Over)" (headliner: Electroluxx Pride Party)
+
+One party ingested twice by sources that disagree about which name is the
+headliner. **Not fixable by widening the key** — the headliner has to stay in it
+or multi-room venues collapse — so this is a presenter-side problem, not a
+catalog one. It matters because both currently appear in @tinsley's "What your
+agent found" as two separate nights. A judge reading section ② sees the same
+party recommended twice. Cheapest fix is in the finds list, not the data: drop a
+find whose (venue, date, startTime) already appears above it with an overlapping
+bill. L3/L6's call, and only worth it if it is genuinely cheap.
+
+**FINDING B — venue name twins survived, in the denormalised field.**
+The venues TABLE merged (298→290), but `show.venueName` is a denormalised string
+and was not rewritten. Still present across a 110-venue sample:
+`Bimbo's 365 Club` / `Bimbo’s 365 Club`, `Lucinda's` / `Lucinda’s`, and a case
+twin `Cafe Du Nord` / `Cafe du Nord`. The Browse venue filter is built from these
+strings, so it should still show the twins I filed earlier — **I could not
+confirm that on screen** (see below). L1: if the sweep re-runs, rewriting
+`venueName` on show rows to the canonical venue's name closes this.
+
+**FINDING C — the repointed diary entry now leads to a festival, not a set.**
+@tinsley's 5★ night repointed from a Charli XCX row to the canonical
+`Outside Lands` row, which carries **94 artists**. The recap is unharmed and
+still says "Best night: Charli XCX" — `recap:build` reads the log's own stored
+fields, not the show row, which is exactly the decoupling that saved it. But
+"Open show" from that diary entry now lands on a festival page with a 94-name
+bill. Correct data, and possibly the intended shape post-L2 — flagging it only
+because it is Act 1's highest-rated night and someone should decide on purpose
+whether tapping it should show the festival.
+
+**FINDING D — taste, not correctness: section ② is a Midway monoculture.**
+Four of @tinsley's five finds are at The Midway, and the fits are 26 / 25 / 25 /
+25 / 25 — flat enough that the ranking is close to arbitrary and the visible
+result is one venue five times. Post-dedup this got worse (before: one Midway of
+five). A one-line venue diversity rule in the finds list would fix the optics.
+
+⚠️ **What I could not verify: the venue filter on screen.** My browser tab went
+`document.hidden` again mid-walk and stopped accepting clicks, so Finding B's UI
+consequence is inferred from the data, not seen. Coordinator, it is a ten-second
+look: Browse → Past Shows → venue dropdown → search "Bimbo". Everything else
+above is verified server-side or read from the rendered DOM before the tab froze.
+## L1 — DEDUP PASS 2: venue aliases (human is still seeing dupes on artist pages)
+
+Post-sweep residual, measured from a fresh export: 274 same-date+headliner
+groups where ONLY venueName differs — the same room named differently by TM
+vs JamBase. Dominated by a few rooms:
+  Blue Note Jazz Club | The Blue Note        (dozens of show pairs)
+  Irving Plaza | Irving Plaza Powered By Verizon 5G
+  United Palace | United Palace Theatre
+  Blue Note Jazz Club - NY (city suffix)
+Plus 9 groups where one row is missing startTime.
+
+DO NOT merge venues by coordinates — verified unsafe: several venue rows
+carry city-centroid geocodes (Golden Gate Theater / Miner Auditorium /
+Orpheum-SF / Warfield all share one rounded point), and same-address rooms
+are real (Carnegie's Stern vs Weill, Cafe du Nord vs Swedish American Hall).
+
+Safe key for the SHOW pass: same date + headliner + startTime, and normalized
+venueName A ⊆ B as a token subset (after your normalizer, minus stop-suffixes
+like "powered by …" / trailing "- NY"). Subset refuses Sofar NoLita vs NoMad.
+Same machinery: dry run with samples posted here, then apply. Fold the alias
+rule into the ingest chokepoint too, or the next TM sync reintroduces them.
+
+Separate find, your lane, not urgent tonight: those city-centroid geocodes
+are wrong venue coordinates — they also weaken photo-GPS matching. Post-hack.
+
+## COORDINATOR · pass-2 addendum + two L3 items from L5's walk
+
+L1, two additions to DEDUP PASS 2, both verified in the browser: the Browse
+venue dropdown still lists Bimbo's/Bimbo's (straight/curly), Cafe Du/du Nord,
+Feinstein's twins — the venues TABLE merged but the denormalised
+show.venueName strings did not get rewritten, and the dropdown is built from
+them. Pass 2 must rewrite show.venueName to the canonical spelling wherever
+it touches a row, and sweep the remaining string twins even where no show
+merge happens.
+
+L3, two presenter-side items in briefingLogic, both cheap and both on
+@tinsley's demo screen:
+1. One party, two headliners: The Midway 2026-09-05 15:00 appears TWICE in
+   section ② ("Purple Disco Machine at The Midway" and "Electroluxx Pride
+   Party"), same three artists — two sources disagreeing about the headliner.
+   Not fixable in the dedup key (headliner must stay in it). In the FINDS
+   list: skip a find whose venue+date+startTime already appears above it
+   with an overlapping bill.
+2. Midway monoculture: 4 of 5 finds are at The Midway, fits 26/25/25/25/25.
+   Cap finds at 2 per venue before filling remaining slots — a concierge that
+   recommends one bar five ways isn't scouting.
+
+DECIDED (coordinator): @tinsley's best night repointing to the Outside Lands
+row (94 artists, "Open show" lands on a festival page) STANDS for the demo —
+the night genuinely was a festival night and recap:build reads the log's own
+fields, so the stage line is unaffected. Post-hack: a per-set landing.
+
+### L5 share · 2026-08-27T03:05Z — screen-reader / keyboard pass
+state:    idle
+now:      a11y pass over Briefing and Diary; one real finding, three false alarms I caught
+shipped:  - (report only)
+blocked:  -
+next:     standing by; happy to take the image fallback if you want it.
+
+**The a11y pass is mostly good news.** Briefing: no dangling `aria-labelledby`
+(L6, your fix landed — my earlier finding is closed), no unnamed controls, one
+h1, no heading-level skips, every image has alt, nothing broken. Keyboard focus
+works: a real Tab press lands a solid 2px ember `:focus-visible` ring, from the
+global rule in `globals.css` — that rule is doing exactly what its comment says.
+
+**FINDING — the app hotlinks 100% of its artwork from jambase.com and has NO
+error fallback anywhere.** `grep onError app/views/*.tsx` returns nothing.
+`resolveShowImage` (`app/liveData.js:42`) passes any `http(s)` URL straight
+through, so a third-party URL that dies renders as broken alt text on a grey
+box. There is already a `DEFAULT_SHOW_IMAGE` constant sitting right there
+unused for this case.
+
+Live on the demo account right now: @tinsley's Diary shows **four broken images**,
+all the same dead URL (`.../2024/09/molly-santana-1480x832.jpg`, 404 in the
+browser), across the Favorite Shows tile, two artist chips and a memory tile.
+It is the first screen Act 1 lands on.
+
+The bigger risk is not that one URL. **Every image in the product is a hotlink to
+a host we do not control, requested in bursts of ~50 per screen.** If JamBase
+rate-limits or blips during the demo, the app fills with broken images and there
+is nothing to catch it. A five-line `onError` swapping to `DEFAULT_SHOW_IMAGE`
+makes any dead URL degrade to a neutral poster instead. It touches several of
+L6's view files, so I have not taken it — say the word and it is ten minutes.
+
+⚠️ **Three false alarms I caught before filing them, because the pattern is the
+point.** All three were my instrument, not the app:
+1. "40 of 40 controls have no focus indicator" — `.focus()` in script does not
+   trigger `:focus-visible`. A real Tab keypress showed the ring is fine.
+2. "Four unnamed buttons on Diary" — the poster tiles ARE named, by their
+   `img alt`, which my audit only counted as innerText.
+3. "The default placeholder is dead, so half the catalog is broken" — it loads
+   fine as a page sub-resource (1480x832); 49/49 images on Browse load. My
+   isolated `new Image()` probe failed on a URL the page renders happily, most
+   likely burst rate-limiting — which is itself the evidence for the finding
+   above.
+That is three instruments over-reporting in one pass, on top of the duplicate
+scan that ignored `startTime`. **The check that keeps working is: reproduce it
+the way a user would before writing it down.**
+
+**Minor, filed not fixed:** every page has two h1s — the `SHOWTONIC` wordmark and
+the page title. One of them should be a `p` or `div`. L6's call.
+
+**FYI on the ruled repoint:** it is visible on Diary, not just in data — the
+Favorite Shows tile for @tinsley's 5★ night now reads `Outside Lands`, where she
+pinned Charli XCX. Your ruling stands, just noting where it surfaces on screen.
+### L3 taste · 2026-08-27T13:10Z
+state:    shipped
+now:      both presenter items from L5's walk — one party once, two nights per room max
+shipped:  PR to follow (429/429 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**1. One party, two headliners.** Caught on the EVENT rather than the key, as
+specified: same room, same date, same start time, and at least one artist in
+common. All four conditions, because two of them alone would overreach — an
+early set and a late set share a room and a date and are genuinely two
+nights, and a support act playing two nights running is not a duplicate.
+Both of those are tests, next to the Midway one.
+
+This needed `startTime` plumbed from `shows` into the find shape. It is
+internal and **stripped before the card leaves**, next to `billArtists` — the
+contract does not gain a field, and the existing "the bill never leaks into
+the contract" test now guards both.
+
+**2. Two finds per venue.** Not zero-tolerance: two lets a residency someone
+clearly likes keep a foothold, five is the catalog talking about itself. The
+freed slots go to the next-best venue, which is asserted rather than assumed.
+
+**A note on why the fixtures needed changing to prove this**, since it is the
+same lesson again: my slate tests all used one default venue, so the venue
+ceiling would have cut them to two and I would have "discovered" a bug in my
+own new rule. Fixing them meant giving each act its own room — and then they
+all went to ZERO finds, because with every show carrying the same genre the
+rarity weighting correctly says that genre separates nobody, so nothing had
+evidence. The tests only became honest once the fixture catalog had a genre
+mix. A fixture that is uniform in the dimension your model reasons about
+cannot exercise the model.
+
+Sanity-checked against the New York fixture after the change: still five
+distinct acts, still led by Smoke Jazz at 0.91, no room appearing more than
+twice.
+
+### L3 taste · 2026-08-27T13:55Z
+state:    shipped
+now:      alias-proofed the venue ceiling ahead of L1's pass 2; NY assertion re-checked
+shipped:  PR to follow (431/431 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; re-read the NY assertion after L1's pass 2 lands
+
+**The two-per-venue ceiling could be evaded by a definite article.** I keyed
+it on the raw venue name, and the live SF catalog holds "Castro Theatre"
+alongside "The Castro Theatre", "Cafe Du Nord" alongside "Cafe du Nord",
+"Palace of Fine Arts" alongside "The Palace of Fine Arts" — so three nights in
+one room could still have taken three slots. Case and spacing already fell out
+of the normalizer; a leading article and L1's two suffix shapes ("Powered By
+…", trailing "- NY") are the rest.
+
+**I tried the token-subset rule L1 documented as safe for the SHOW pass and
+rejected it here, on evidence from the same catalog.** Subset merges "Bill
+Graham Civic Auditorium" with "The Theater at Bill Graham Civic Auditorium" —
+a 7,000-capacity arena and a small room inside it — and it merges "Miner
+Auditorium" with "Miner Auditorium @ SFJAZZ Center". For L1's pass the cost of
+a false merge is a duplicate that stays; for my ceiling the cost is
+**suppressing a real recommendation**, which is the wrong way round. So the
+rule stays conservative and lets a genuinely missed alias through rather than
+hiding a genuinely different room. Both cases are tests, using those exact
+names. **L1's data pass is still the right place to canonicalise** — this only
+stops the ceiling being cheated by an article in the meantime, and it will not
+fight their canonical spellings when they land.
+
+**NY assertion re-checked after the change**, as you asked to do post-pass-2:
+five distinct acts, Smoke Jazz still leading at 0.91, no room twice.
+"Birdland Theater" and "Birdland Jazz Club" stay separate, correctly — they
+are two different rooms and my rule does not touch them.
+
+**Live briefing for @tinsley, read just now:** 1 owed / 5 finds / 3 beliefs /
+4 activity, four distinct venues, and the belief correction round-trips —
+"Friday is your night · 3 of 7 logged shows fell on a Friday — and you
+confirmed it".
+
+## COORDINATOR · pass-2 spec correction (evidence from L3)
+
+L1: the token-subset venue rule I specified over-reaches on real rows — it
+merges "Bill Graham Civic Auditorium" ⊆ "The Theater at Bill Graham Civic
+Auditorium" (an arena and a room INSIDE it) and "Miner Auditorium" ⊆ "Miner
+Auditorium @ SFJAZZ Center". Your full show key (same date + headliner +
+startTime) makes most such merges harmless in practice — same act, same
+minute, nested rooms is almost certainly one event — but "almost certainly"
+is not the standard for deletes. Requirement: your dry-run samples MUST
+include every nested-room subset pair the rule would merge, printed
+separately, so a human signs off on that specific class before apply. If any
+look wrong, drop subset down to the safe shapes only (leading article,
+"powered by …" suffix, trailing "- NY"/city tag) and leave the rest for a
+curated alias list.
+
+## COORDINATOR · image-fallback exception for L5
+
+Scoped exception #2: L5 may touch L6's view files ONLY to add the image error
+fallback — one shared handler (shared.tsx is the home) swapping a failed
+artwork load to DEFAULT_SHOW_IMAGE, applied at the img sites. Every poster is
+a hotlink to a host we don't control, fetched ~50 per screen, with no onError
+anywhere; @tinsley's Diary — Act 1's first screen — has four broken images
+right now. L6: heads-up, keep your diffs clear of img tags until this lands.
+The two-h1 wordmark item is filed for L6, post-flip work, not urgent.
+## L3 → L1: the pass-2 signoff list, generated from live rows
+
+`scripts/venue-alias-audit.mjs` (run it from the linked worktree — it needs a
+`CONVEX_DEPLOYMENT`, so lanes cannot). It walks the catalog a season at a time,
+because `shows:listCatalog` caps at 250 rows and the cap is on the read rather
+than on the truth, and prints the two piles separately.
+
+**Both cities, run just now. 9 safe shapes, 17 subset pairs, and five of the
+seventeen are over-merges.**
+
+*A. Safe shapes — mergeable without a human (9).* Case, curly quotes, a
+leading article, a sponsor suffix, a city tag. None of those can name a
+different room.
+
+```
+SF   Cafe du Nord · Cafe Du Nord          Castro Theatre · The Castro Theatre
+     Bimbo’s 365 Club · Bimbo's 365 Club  The Warfield · Warfield
+     Feinstein’s at The Nikko · Feinstein's at The Nikko
+     The Palace of Fine Arts · Palace of Fine Arts
+NY   Irving Plaza · Irving Plaza Powered By Verizon 5G
+     The Gramercy Theatre · Gramercy Theatre     Lucinda’s · Lucinda's
+```
+
+*B. Token-subset pairs — every one needs an eye (17).* **These five are
+different rooms and merging them deletes a venue:**
+
+```
+City Winery            <->  The Loft at City Winery
+Madison Square Garden  <->  Infosys Theater at Madison Square Garden
+Lincoln Center         <->  Rose Theater at Lincoln Center
+Lincoln Center         <->  David Geffen Hall at Lincoln Center
+Bill Graham Civic Auditorium <-> The Theater at Bill Graham Civic Auditorium
+The Chapel             <->  The Chapel’s Outdoor Stage
+```
+
+**The direction of the containment is the whole signal**, and it is why this
+pile cannot be automated away. Compare two pairs that share a name:
+
+- `David Geffen Hall` ⊂ `David Geffen Hall at Lincoln Center` — one room
+  gaining its campus. **Same room.**
+- `Lincoln Center` ⊂ `David Geffen Hall at Lincoln Center` — a campus and one
+  hall inside it. **Different.**
+
+Identical subset relation, opposite answers. The script encodes that as a
+hint — *"X at <the shorter name>" reads as a nested room*, and so does an
+added `stage`/`loft`/`balcony`/`annex`/`room`/`lounge` — and it gets all six
+above right, but it is a **hint for a human**, not a rule to apply. The
+remainder ("Iridium / Iridium Jazz Club", "Racket / Racket NYC", "United
+Palace / United Palace Theatre", "Hill Country Live / Hill Country Live NY")
+look like true aliases to me, and "The Apollo's Victoria Theater **1**" has a
+trailing digit I cannot read from here — screen number, or a data artifact.
+
+Why I did this rather than wait: a missed alias leaves a duplicate someone can
+ignore, and a false merge destroys a show nobody can get back. **Thirty per
+cent of the pile is the dangerous kind**, which is more than I would have
+guessed and, I think, more than a spec written without the rows would assume.
+
+### L3 taste · 2026-08-27T14:30Z
+state:    shipped
+now:      generated L1's pass-2 signoff list from live rows; NY assertion holds
+shipped:  PR to follow — script + docs only, no deploy
+blocked:  -
+next:     re-read the NY fixture assertion once pass 2 lands
+
+## HUMAN SIGNOFF · venue-alias list APPROVED as proposed — pass 2 is GO
+
+The human signed off on L3's audit exactly as split:
+MERGE (true aliases): Iridium/Iridium Jazz Club · Racket/Racket NYC ·
+United Palace/United Palace Theatre · Hill Country Live/+NY · Sugar
+Mouse/+NYC · Patio/El Patio at Radio Hotel · Miner Auditorium/@SFJAZZ ·
+Orpheum Theatre/-San Francisco · Brick & Mortar/and · plus the 9 safe shapes
+(leading article, sponsor suffix, city tag).
+KEEP SEPARATE (nested rooms): City Winery vs The Loft at · MSG vs Infosys
+Theater at · Lincoln Center vs its halls · Bill Graham Civic vs The Theater
+at · The Chapel vs its Outdoor Stage.
+"The Apollo's Victoria Theater 1": UNRESOLVED — treat as separate
+(conservative) until someone reads the source.
+
+L1: pass 2 is authorized on this list — dry run with samples posted here,
+then apply. Include the show.venueName string rewrite. Coordinator deploys
+and re-verifies; L3 re-reads the NY fixture after; L5 walks the app.
 
 ### L6 surface · 2026-08-27T13:10Z
 state:    shipped

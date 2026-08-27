@@ -295,12 +295,18 @@ async function upcomingShows(ctx: QueryCtx, { city, today }: { city: string; tod
     const inCity = await ctx.db
       .query("shows")
       .withIndex("by_city_date", (q) => q.eq("city", city).gte("date", today))
+      // cap-safe: the index IS the scope — city equality and date ascending
+      // from today — so truncating keeps the soonest shows in that city, which
+      // is exactly what the picker means by "playing soon near you".
       .take(SHOW_READ_CAP);
     if (inCity.length > 0) return { shows: inCity, cityOnly: true };
   }
   const everywhere = await ctx.db
     .query("shows")
     .withIndex("by_date", (q) => q.gte("date", today))
+    // cap-safe: date ascending from today, no filter downstream that the order
+    // is blind to — the rows dropped are the furthest-future ones, which are
+    // the least useful to a member choosing what to go and see.
     .take(SHOW_READ_CAP);
   return { shows: everywhere, cityOnly: false };
 }

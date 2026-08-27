@@ -9,6 +9,7 @@ import {
   InlinePanel,
   SectionTitle,
   type LiveState,
+  posterFallback,
 } from "./shared";
 import { OverlapShareCard } from "./OverlapShareCard";
 
@@ -76,7 +77,7 @@ export function TasteMatchView({
           <div className="mt-4 divide-y divide-white/10 border-y border-white/10">
             {detail.bothThere.map((show) => (
               <button className="flex w-full items-center gap-3 py-3 text-left" key={String(show.showId)} onClick={() => onOpenShow(String(show.showId))} type="button">
-                <img alt="" className="h-11 w-11 rounded object-cover" src={show.image} />
+                <img onError={posterFallback} alt="" className="h-11 w-11 rounded object-cover" src={show.image} />
                 <span className="min-w-0 flex-1">
                   <b className="block truncate text-sm">{show.artistNames[0] ?? show.title}</b>
                   <small className="text-[#8A8177]">{show.venueName} · {monthYear(show.date)}</small>

@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { listShowSummaries } from "./discovery";
 import { summarizeRatings } from "./showtonicUtils.js";
+import { artistKey, venueKey, showKey } from "./dedupUtils.js";
 
 const upcomingEvent = v.object({
   jambaseId: v.string(),
@@ -104,6 +105,9 @@ export const listCatalog = query({
         return args.to ? cityRange.lte("date", args.to) : cityRange;
       })
       .order(args.direction ?? "asc")
+      // cap-safe: city and date range are both in the index and the caller
+      // chooses the direction, so the cap keeps exactly the end of the range
+      // the caller asked to start from.
       .take(limit);
   },
 });
@@ -291,6 +295,16 @@ export const importUpcoming = mutation({
             .unique();
           if (existingArtist) await ctx.db.patch(existingArtist._id, { jambaseId });
         }
+        // The id-based lookups above only ever recognise a row this same source
+        // wrote. The normalized name is what recognises the SAME ACT arriving
+        // from a different sync — which is how one artist became three rows.
+        const nameKey = artistKey({ name: artistName });
+        if (!existingArtist && nameKey) {
+          existingArtist = await ctx.db
+            .query("artists")
+            .withIndex("by_name_key", (q) => q.eq("nameKey", nameKey))
+            .first();
+        }
         const artistId =
           existingArtist?._id ??
           (await ctx.db.insert("artists", {
@@ -298,15 +312,29 @@ export const importUpcoming = mutation({
             name: artistName,
             image: event.image,
             genres: [],
+            nameKey,
           }));
+        // Key rows written before the sweep, so the next sync can find them.
+        if (existingArtist && existingArtist.nameKey !== nameKey) {
+          await ctx.db.patch(existingArtist._id, { nameKey });
+        }
         artistIds.push(artistId);
       }
 
       const venueJambaseId = `venue-${slug(`${event.venueName}-${event.city}`)}`;
-      const existingVenue = await ctx.db
+      const venueDedupKey = venueKey({ name: event.venueName, city: event.city });
+      let existingVenue = await ctx.db
         .query("venues")
         .withIndex("by_jambase", (q) => q.eq("jambaseId", venueJambaseId))
         .unique();
+      // "Golden Gate Theatre" and "Golden Gate Theater" slug differently and so
+      // miss each other by id. Normalized name + city does not.
+      if (!existingVenue && venueDedupKey) {
+        existingVenue = await ctx.db
+          .query("venues")
+          .withIndex("by_dedup_key", (q) => q.eq("dedupKey", venueDedupKey))
+          .first();
+      }
       const venueId =
         existingVenue?._id ??
         (await ctx.db.insert("venues", {
@@ -317,7 +345,11 @@ export const importUpcoming = mutation({
           image: event.image,
           latitude: event.latitude,
           longitude: event.longitude,
+          dedupKey: venueDedupKey,
         }));
+      if (existingVenue && existingVenue.dedupKey !== venueDedupKey) {
+        await ctx.db.patch(existingVenue._id, { dedupKey: venueDedupKey });
+      }
 
       // Backfill coordinates onto venues stored before geo was mapped. Never
       // overwrite a coordinate we already have — the geocoder may have filled it.
@@ -352,16 +384,41 @@ export const importUpcoming = mutation({
         artistJambaseIds: event.artistJambaseIds,
         jambaseUrl: event.jambaseUrl,
       };
-      const existingShow = await ctx.db
+      const dedupKey = showKey(payload);
+      let existingShow = await ctx.db
         .query("shows")
         .withIndex("by_jambase", (q) => q.eq("jambaseId", event.jambaseId))
         .unique();
+      // Same night, same room, same headliner, same start time — one show,
+      // however many sources announce it. Without this the next Ticketmaster
+      // sync re-inserts everything the sweep just merged.
+      if (!existingShow && dedupKey) {
+        existingShow = await ctx.db
+          .query("shows")
+          .withIndex("by_dedup_key", (q) => q.eq("dedupKey", dedupKey))
+          .first();
+      }
 
       if (existingShow) {
-        await ctx.db.patch(existingShow._id, payload);
+        // Patch WITHOUT the identity fields: the surviving row keeps the
+        // jambaseId it was found by, and a thinner bill from a second source
+        // must not overwrite a fuller one already stored.
+        const merged = {
+          ...payload,
+          dedupKey,
+          artistIds: payload.artistIds.length >= (existingShow.artistIds?.length ?? 0)
+            ? payload.artistIds
+            : existingShow.artistIds,
+          artistNames: payload.artistNames.length >= (existingShow.artistNames?.length ?? 0)
+            ? payload.artistNames
+            : existingShow.artistNames,
+          image: payload.image ?? existingShow.image,
+          ticketUrl: existingShow.ticketUrl,
+        };
+        await ctx.db.patch(existingShow._id, merged);
         updated += 1;
       } else {
-        await ctx.db.insert("shows", { jambaseId: event.jambaseId, ...payload });
+        await ctx.db.insert("shows", { jambaseId: event.jambaseId, ...payload, dedupKey });
         inserted += 1;
       }
     }

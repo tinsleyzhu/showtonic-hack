@@ -10,7 +10,7 @@ import { briefingIsEmpty, visibleFinds } from "../briefingSurface.js";
 import { PendingCandidates } from "./PendingCandidates";
 import { SquadPlanCard } from "./SquadPlan";
 import { AgentActivity } from "./AgentActivity";
-import { DetailSkeleton, formatDate, LiveMessage, SectionTitle, todayIso } from "./shared";
+import { DetailSkeleton, formatDate, LiveMessage, SectionTitle, todayIso, posterFallback } from "./shared";
 
 // The Briefing — the home surface.
 //
@@ -92,7 +92,7 @@ function FindCard({
     <article className="surface-settle border border-[#2A2521] bg-[#141210]">
       <div className="flex items-start gap-3 p-4">
         {find.image ? (
-          <img alt="" className="h-16 w-12 shrink-0 object-cover" src={find.image} />
+          <img onError={posterFallback} alt="" className="h-16 w-12 shrink-0 object-cover" src={find.image} />
         ) : (
           <span aria-hidden className="h-16 w-12 shrink-0 bg-[#1A1713]" />
         )}
@@ -370,7 +370,7 @@ export function BriefingView({
           <section aria-labelledby="briefing-finds" className="mt-10 border-t border-white/10 pt-8">
             <SectionTitle
               eyebrow={finds.length ? `${finds.length} worth your night` : "Nothing to recommend yet"}
-              title="What your agent found"
+              id="briefing-finds" title="What your agent found"
             />
             {finds.length ? (
               <>
@@ -402,16 +402,21 @@ export function BriefingView({
           </section>
 
           {activity.length > 0 && (
-            // L5's AgentActivity owns its own <section> and heading now, so
-            // wrapping it in a second one rendered "While you were away" TWICE
-            // with the same four rows under each. A merge seam: my wrapper and
-            // their rewrite both landed, and neither side could see the other.
-            <AgentActivity items={activity} />
+            // The double-heading seam was fixed from BOTH sides at once: L5
+            // stripped the component's chrome while this file stripped the
+            // wrapper, and the merge of the two fixes left section ③ with no
+            // heading at all. The contract is L5's: the component owns the
+            // rows, the composer owns the section and the title. So the
+            // wrapper is back, and it is the only one.
+            <section aria-labelledby="briefing-activity" className="mt-10 border-t border-white/10 pt-8">
+              <SectionTitle eyebrow="Since you last looked" id="briefing-activity" title="While you were away" />
+              <AgentActivity items={activity} />
+            </section>
           )}
 
           {beliefs.length > 0 && (
             <section aria-labelledby="briefing-beliefs" className="mt-10 border-t border-white/10 pt-8">
-              <SectionTitle eyebrow="Drawn from your diary" title="What it believes" />
+              <SectionTitle eyebrow="Drawn from your diary" id="briefing-beliefs" title="What it believes" />
               <div className="mt-5 space-y-3">
                 {beliefs.map((belief) => (
                   <BeliefCard belief={belief} key={belief.statement} onCorrect={correctBelief} />

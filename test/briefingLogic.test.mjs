@@ -35,6 +35,11 @@ function show(overrides = {}) {
   };
 }
 
+// A catalog where punk is rare, so the genre row carries weight at all. In an
+// all-punk catalog punk means nothing — that is the rarity model working, and
+// it is a different test.
+const RARE_PUNK = [["punk"], ...Array.from({ length: 19 }, () => ["jazz"])];
+
 function diary(count, overrides = {}) {
   return Array.from({ length: count }, (_, index) =>
     log({ showDate: `2026-0${(index % 8) + 1}-1${index % 9}`, ...overrides }),
@@ -98,10 +103,13 @@ test("a concierge recommends five things, it does not paginate", () => {
       showId: `show-${index}`,
       title: `Act ${index}`,
       artistNames: [`Act ${index}`],
+      // A venue each: with every act in one room the two-per-venue ceiling
+      // would (correctly) cut this to two, which is a different test.
+      venueName: index === 0 ? "Rickshaw Stop" : `Room ${index}`,
       date: `2026-09-${String(index + 1).padStart(2, "0")}`,
     }),
   );
-  const finds = scoreFinds(shows, { logs: diary(8), today: "2026-08-27", limit: 25 });
+  const finds = scoreFinds(shows, { logs: diary(8), today: "2026-08-27", limit: 25, catalogGenres: RARE_PUNK });
   assert.equal(finds.length, 5);
   const scores = finds.map((find) => find.score);
   assert.deepEqual(scores, [...scores].sort((left, right) => right - left));
@@ -420,8 +428,129 @@ test("a festival with no named artists still dedupes on its name", () => {
     show({ showId: "p2", title: "Portola", date: "2026-09-27", venueName: "Pier 80 Warehouse", artistNames: [] }),
   ];
 
-  const catalogGenres = [["punk"], ...Array.from({ length: 19 }, () => ["jazz"])];
-  const finds = scoreFinds(portola, { logs: diary(8), today: "2026-08-27", catalogGenres });
+  const finds = scoreFinds(portola, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
   assert.equal(finds.length, 1);
   assert.equal(finds[0].date, "2026-09-26");
+});
+
+
+test("a concierge does not recommend one bar five ways", () => {
+  // Live, four of five finds were The Midway at 25-26% fit. That is the
+  // catalog talking about itself, not scouting.
+  const midway = Array.from({ length: 5 }, (_, index) =>
+    show({
+      showId: `midway-${index}`,
+      title: `Midway Act ${index}`,
+      artistNames: [`Midway Act ${index}`],
+      venueName: "The Midway",
+      date: `2026-09-1${index}`,
+    }),
+  );
+  const elsewhere = show({
+    showId: "elsewhere",
+    title: "Somebody Else",
+    artistNames: ["Somebody Else"],
+    venueName: "Bottom of the Hill",
+    date: "2026-09-30",
+  });
+
+  const finds = scoreFinds([...midway, elsewhere], { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  const atMidway = finds.filter((find) => find.venueName === "The Midway");
+  assert.equal(atMidway.length, 2, "two nights in one room is a foothold; five is a monoculture");
+  assert.ok(finds.some((find) => find.venueName === "Bottom of the Hill"), "the freed slot goes elsewhere");
+});
+
+test("one party under two headliners is one card", () => {
+  // The Midway, 2026-09-05 at 15:00, reached the live briefing twice: "Purple
+  // Disco Machine at The Midway" and "Electroluxx Pride Party", the same three
+  // artists, because two sources disagree about who is top of the bill. The
+  // headliner has to stay in the dedup key, so this is caught on the event.
+  const party = [
+    show({
+      showId: "midway-a",
+      title: "Purple Disco Machine at The Midway",
+      venueName: "The Midway",
+      date: "2026-09-05",
+      startTime: "15:00",
+      artistNames: ["Purple Disco Machine", "Sofi Tukker", "Chromeo"],
+    }),
+    show({
+      showId: "midway-b",
+      title: "Electroluxx Pride Party",
+      venueName: "The Midway",
+      date: "2026-09-05",
+      startTime: "15:00",
+      artistNames: ["Electroluxx", "Chromeo", "Sofi Tukker"],
+    }),
+  ];
+
+  const finds = scoreFinds(party, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.length, 1);
+});
+
+test("two real bills in one room on one day are still two nights", () => {
+  // An early set and a late set share a room and a date and nothing else.
+  // Skipping the second would be the dedup overreaching.
+  const sameRoom = [
+    show({
+      showId: "early",
+      title: "The Early Set",
+      venueName: "The Chapel",
+      date: "2026-09-05",
+      startTime: "18:00",
+      artistNames: ["An Early Act"],
+    }),
+    show({
+      showId: "late",
+      title: "The Late Set",
+      venueName: "The Chapel",
+      date: "2026-09-05",
+      startTime: "22:00",
+      artistNames: ["A Late Act"],
+    }),
+  ];
+
+  const finds = scoreFinds(sameRoom, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.length, 2);
+});
+
+test("a shared support act across two nights is not a duplicate", () => {
+  const twoNights = [
+    show({ showId: "n1", title: "Headliner One", venueName: "The Chapel", date: "2026-09-05", startTime: "20:00", artistNames: ["Headliner One", "The Support"] }),
+    show({ showId: "n2", title: "Headliner Two", venueName: "The Chapel", date: "2026-09-06", startTime: "20:00", artistNames: ["Headliner Two", "The Support"] }),
+  ];
+
+  const finds = scoreFinds(twoNights, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.length, 2);
+});
+
+test("the two-per-venue ceiling cannot be evaded by an article", () => {
+  // Real spellings from the live San Francisco catalog: "Castro Theatre" and
+  // "The Castro Theatre" are one room, and the ceiling has to know that or a
+  // monoculture returns wearing a definite article.
+  const castro = [
+    show({ showId: "c1", title: "Act One", artistNames: ["Act One"], venueName: "Castro Theatre", date: "2026-09-01" }),
+    show({ showId: "c2", title: "Act Two", artistNames: ["Act Two"], venueName: "The Castro Theatre", date: "2026-09-02" }),
+    show({ showId: "c3", title: "Act Three", artistNames: ["Act Three"], venueName: "Castro Theatre", date: "2026-09-03" }),
+  ];
+  const other = show({ showId: "o", title: "Act Four", artistNames: ["Act Four"], venueName: "Bottom of the Hill", date: "2026-09-04" });
+
+  const finds = scoreFinds([...castro, other], { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.filter((find) => /Castro/.test(find.venueName)).length, 2);
+  assert.ok(finds.some((find) => find.venueName === "Bottom of the Hill"));
+});
+
+test("a small room inside a big one is still a different room", () => {
+  // "Bill Graham Civic Auditorium" and "The Theater at Bill Graham Civic
+  // Auditorium" are both in the live catalog and are an arena and a side room.
+  // Token-subset matching would merge them and suppress a real find; this is
+  // the counterexample that kept the venue rule conservative.
+  const both = [
+    show({ showId: "b1", title: "Arena Act", artistNames: ["Arena Act"], venueName: "Bill Graham Civic Auditorium", date: "2026-09-01" }),
+    show({ showId: "b2", title: "Side Room Act", artistNames: ["Side Room Act"], venueName: "The Theater at Bill Graham Civic Auditorium", date: "2026-09-02" }),
+    show({ showId: "b3", title: "Arena Act Two", artistNames: ["Arena Act Two"], venueName: "Bill Graham Civic Auditorium", date: "2026-09-03" }),
+  ];
+
+  const finds = scoreFinds(both, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.length, 3, "the side room keeps its slot");
 });

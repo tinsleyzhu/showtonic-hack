@@ -141,7 +141,20 @@ function drawReclaim(ctx, { story, format = "story" }) {
   // xx" is a life. Capped by what fits rather than by a magic number.
   const rows = story.names ?? [];
   if (rows.length) {
-    y += square ? 24 : 40;
+    // Centre this block in the space between the claim and the invitation.
+    //
+    // Top-flowing it left a large void on any card with only a night or two,
+    // which is the common case and the one a first-time member sees. The
+    // geometry probe cannot see that: nothing overlapped and nothing left the
+    // canvas, it was simply badly balanced, and it took a human looking at the
+    // exported PNG to notice.
+    const headerHeight = square ? 58 + 50 : 74 + 60;
+    const rowHeight = square ? 52 : 62;
+    const blockHeight = headerHeight + rows.length * rowHeight + (story.shows > 0 ? 40 : 0);
+    const gapTop = y + (square ? 24 : 40);
+    const gapBottom = height - (square ? 150 : 190) - (square ? 70 : 90);
+    y = gapTop + Math.max(0, (gapBottom - gapTop - blockHeight) / 2);
+
     ctx.fillStyle = "rgba(255,255,255,0.12)";
     ctx.fillRect(PAD, y, inner, 2);
     y += square ? 58 : 74;

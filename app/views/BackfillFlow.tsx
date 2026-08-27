@@ -27,7 +27,7 @@ import {
 } from "../backfill.js";
 import type { BackfillCandidate, BackfillPhoto, EvidenceKind } from "../backfill.d";
 import { readCameraRoll, summarizeRoll } from "../photoMeta.js";
-import { RatingStars, todayIso, type Show } from "./shared";
+import { RatingStars, todayIso, type Show, posterFallback } from "./shared";
 import { ReclaimShareCard } from "./ReclaimShareCard";
 
 const CARD_COLORS = ["#F97354", "#6FBCD3", "#9B7FB8", "#D9B44A", "#5F7A5E"];
@@ -320,8 +320,34 @@ export function BackfillFlow({
             </div>
             <div className="flex-1" />
             <label className="mt-8 block w-full cursor-pointer bg-[#FF7A50] px-5 py-4 text-center text-sm font-black text-black">
-              Choose photos to scan
-              <input accept="image/*" className="sr-only" multiple onChange={(event) => void scanFiles(event.target.files)} type="file" />
+              Choose photos or videos to scan
+              <input accept="image/*,video/*" className="sr-only" multiple onChange={(event) => void scanFiles(event.target.files)} type="file" />
+            </label>
+            <label className="mt-3 block w-full cursor-pointer border border-[#2A2521] px-5 py-4 text-center text-sm font-black">
+              Scan a whole folder
+              {/* webkitdirectory hands over EVERYTHING in the folder — .DS_Store,
+                  videos, sidecar files — so filter to images by extension here
+                  rather than trusting `accept`, which directory pickers ignore.
+                  This is the path for a camera roll exported from Photos.app or
+                  Image Capture: one click on the exported folder, no Cmd+A. */}
+              <input
+                className="sr-only"
+                multiple
+                onChange={(event) => {
+                  const all = Array.from(event.target.files ?? []);
+                  const images = all.filter((file) =>
+                    /\.(jpe?g|heic|heif|png|tiff?|webp|dng|avif|mov|mp4|m4v)$/i.test(file.name),
+                  );
+                  if (images.length) {
+                    const list = new DataTransfer();
+                    for (const file of images) list.items.add(file);
+                    void scanFiles(list.files);
+                  }
+                }}
+                type="file"
+                // @ts-expect-error non-standard but universal in the browsers we ship to
+                webkitdirectory=""
+              />
             </label>
             <button className="mt-3 w-full border border-[#2A2521] px-5 py-4 text-sm font-black" onClick={() => void runScan(buildDemoCameraRoll(shows, { today, limit: 6 }))} type="button">
               Use the demo camera roll
@@ -370,7 +396,7 @@ export function BackfillFlow({
             </p>
             <div className="mt-5 grid grid-cols-3 gap-2">
               {current.candidate.image ? (
-                <img alt="" className="aspect-[3/4] w-full rounded object-cover" src={current.candidate.image} />
+                <img onError={posterFallback} alt="" className="aspect-[3/4] w-full rounded object-cover" src={current.candidate.image} />
               ) : (
                 <span className="aspect-[3/4] w-full rounded" style={{ backgroundColor: CARD_COLORS[0] }} />
               )}
@@ -414,7 +440,7 @@ export function BackfillFlow({
               <div className="mt-3 divide-y divide-white/10 border-y border-white/10">
                 {sameNightAlternatives.slice(0, 4).map((show) => (
                   <button className="flex w-full items-center gap-3 py-3 text-left disabled:opacity-60" disabled={busy} key={show.id} onClick={() => void resolveCurrent("accept", show.id as Id<"shows">)} type="button">
-                    <img alt="" className="h-10 w-10 rounded object-cover" src={show.image} />
+                    <img onError={posterFallback} alt="" className="h-10 w-10 rounded object-cover" src={show.image} />
                     <span className="min-w-0 flex-1">
                       <b className="block truncate text-sm">{show.artistNames?.join(" + ") || show.title}</b>
                       <small className="text-[#8A8177]">{show.venueName}</small>
@@ -436,7 +462,7 @@ export function BackfillFlow({
             <div className="mt-6 border border-[#2A2521] bg-[#141210] p-4">
               <div className="grid grid-cols-4 gap-2">
                 {activeLog.row.candidate.image ? (
-                  <img alt="" className="aspect-square w-full rounded object-cover" src={activeLog.row.candidate.image} />
+                  <img onError={posterFallback} alt="" className="aspect-square w-full rounded object-cover" src={activeLog.row.candidate.image} />
                 ) : (
                   <span className="aspect-square w-full rounded" style={{ backgroundColor: CARD_COLORS[0] }} />
                 )}

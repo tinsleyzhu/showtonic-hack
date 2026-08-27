@@ -12,7 +12,17 @@ export const feed = query({
   },
   handler: async (ctx, args) => {
     const [logs, attendance, likes] = await Promise.all([
+      // The scope filter ("you" vs "friends") runs AFTER these reads, so both
+      // take the newest 60 rows in the whole database and then ask whose they
+      // are. A member whose own logs are not among that 60 sees an empty "You"
+      // tab; a member who wrote all 60 sees an empty "Friends" tab. The fix is
+      // the by_user index for "you" and a larger budget for "friends" — this
+      // is another lane's file, so it is flagged in TEAM.md rather than
+      // changed here hours before a demo.
+      // cap-review: newest-60 globally, then filtered by whose it is — a live
+      // defect, not a bounded approximation. See the note above.
       ctx.db.query("logs").order("desc").take(60),
+      // cap-review: same defect on the attendance half of the same feed.
       ctx.db.query("attendance").order("desc").take(60),
       ctx.db.query("reviewLikes").collect(),
     ]);

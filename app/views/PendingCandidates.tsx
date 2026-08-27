@@ -7,7 +7,9 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { describeConfidence } from "../backfill.js";
 import type { EvidenceKind } from "../backfill.d";
-import { formatDate, SectionTitle } from "./shared";
+import { formatDate, SectionTitle, posterFallback } from "./shared";
+import { ReclaimShareCard } from "./ReclaimShareCard";
+import type { ReclaimNight } from "../reclaimCanvas.d";
 
 // Nights an AGENT reconstructed, waiting on a human.
 //
@@ -55,8 +57,24 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Nights confirmed in THIS sitting, kept client-side so the session has an
+  // ending. `pending` drops each row the moment it resolves, so without this
+  // the Briefing's confirm path finishes with a row quietly leaving a queue —
+  // the same minute that, taken through the scan flow, ends with a share card.
+  const [accepted, setAccepted] = useState<ReclaimNight[]>([]);
+  const [handle] = useState(() => {
+    try {
+      return window.localStorage.getItem("showtonic.handle") ?? "";
+    } catch {
+      return "";
+    }
+  });
 
-  if (!pending || pending.length === 0) return null;
+  // The empty-room rule now has to survive its own success: accepting the LAST
+  // pending night empties `pending`, and returning null there would unmount the
+  // card in the same tick it was earned.
+  if (!pending) return null;
+  if (pending.length === 0 && accepted.length === 0) return null;
 
   async function decide(candidateId: Id<"backfillCandidates">, action: "accept" | "reject") {
     if (busyId) return;
@@ -64,6 +82,21 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
     setError("");
     try {
       await resolveCandidate({ candidateId, userId, action });
+      if (action === "accept") {
+        const confirmed = pending?.find((row) => String(row._id) === String(candidateId));
+        // Recorded only after the mutation resolves, so the card never counts a
+        // night the server refused.
+        if (confirmed) {
+          setAccepted((current) => [
+            ...current,
+            {
+              clusterDate: confirmed.clusterDate,
+              artistNames: confirmed.show?.artistNames ? [...confirmed.show.artistNames] : [],
+              showTitle: confirmed.show?.title ?? "",
+            },
+          ]);
+        }
+      }
     } catch (resolveError) {
       // Name the night that failed, not just the verb. With several rows on
       // screen "Could not update this night" tells you nothing about which.
@@ -78,13 +111,27 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
       <div className="flex items-center gap-2">
         <Bot aria-hidden className="h-5 w-5 text-[#FF7A50]" />
         <SectionTitle
-          eyebrow={`${pending.length} ${pending.length === 1 ? "night" : "nights"} waiting on you`}
-          title="Your agent rebuilt these"
+          eyebrow={
+            pending.length === 0
+              ? `${accepted.length} ${accepted.length === 1 ? "night" : "nights"} back in your diary`
+              : `${pending.length} ${pending.length === 1 ? "night" : "nights"} waiting on you`
+          }
+          title={pending.length === 0 ? "That was the last one" : "Your agent rebuilt these"}
         />
       </div>
       <p className="mt-3 max-w-xl text-sm leading-6 text-[#8A8177]">
-        Nothing here is in your diary yet. Each one shows the evidence it was matched on,
-        so you are confirming a case rather than trusting a number.
+        {/* Both halves of this sentence go false the moment the queue drains:
+            the nights ARE in the diary by then, and there are no cases left to
+            show evidence for. The header was fixed and this was not, which left
+            the paragraph contradicting the line directly above it. */}
+        {pending.length === 0
+          ? accepted.length === 1
+            ? "That night is in your diary now. Nothing was added that you did not confirm."
+            : accepted.length === 2
+              // "All 2" is not a sentence anyone says out loud.
+              ? "Both are in your diary now. Nothing was added that you did not confirm."
+              : `All ${accepted.length} are in your diary now. Nothing was added that you did not confirm.`
+          : "Nothing here is in your diary yet. Each one shows the evidence it was matched on, so you are confirming a case rather than trusting a number."}
       </p>
 
       {error && (
@@ -111,7 +158,7 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
             <article className="border border-[#2A2521] bg-[#141210]" key={id}>
               <div className="flex items-start gap-3 p-4">
                 {candidate.show?.image ? (
-                  <img alt="" className="h-16 w-12 shrink-0 object-cover" src={candidate.show.image} />
+                  <img onError={posterFallback} alt="" className="h-16 w-12 shrink-0 object-cover" src={candidate.show.image} />
                 ) : (
                   <span aria-hidden className="h-16 w-12 shrink-0 bg-[#1A1713]" />
                 )}
@@ -203,6 +250,10 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
           );
         })}
       </div>
+
+      {/* The ending this path did not have. Same card the scan flow offers, so
+          both routes to a reclaimed night finish in the same place. */}
+      <ReclaimShareCard handle={handle} nights={accepted} />
     </section>
   );
 }
