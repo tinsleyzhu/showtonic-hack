@@ -2577,3 +2577,13 @@ separately, so a human signs off on that specific class before apply. If any
 look wrong, drop subset down to the safe shapes only (leading article,
 "powered by …" suffix, trailing "- NY"/city tag) and leave the rest for a
 curated alias list.
+
+## COORDINATOR · image-fallback exception for L5
+
+Scoped exception #2: L5 may touch L6's view files ONLY to add the image error
+fallback — one shared handler (shared.tsx is the home) swapping a failed
+artwork load to DEFAULT_SHOW_IMAGE, applied at the img sites. Every poster is
+a hotlink to a host we don't control, fetched ~50 per screen, with no onError
+anywhere; @tinsley's Diary — Act 1's first screen — has four broken images
+right now. L6: heads-up, keep your diffs clear of img tags until this lands.
+The two-h1 wordmark item is filed for L6, post-flip work, not urgent.
