@@ -419,20 +419,27 @@ const LINEUP_BY_DAY = {
   url: "https://www.sfstation.com/outside-lands-2026-lineup",
   content:
     "Outside Lands returns to Golden Gate Park August 7-9, 2026. " +
-    "Friday, August 7: Tame Impala | Kaytranada | Overmono. " +
+    "Friday, August 7: Tame Impala | Kaytranada | Overmono | Sudan Archives | Jessie Ware. " +
     "Saturday, August 8: Doja Cat | Peggy Gou. Sunday, August 9: Chappell Roan.",
 };
 
 const SET_TIMES = {
   title: "Outside Lands Friday August 7 2026 set times",
   url: "https://www.sfgate.com/music/outside-lands-friday-set-times",
-  content: "FRIDAY\nTame Impala\nKaytranada\nOvermono\nMk.gee\nSATURDAY\nDoja Cat",
+  content:
+    "FRIDAY\nTame Impala\nKaytranada\nOvermono\nJessie Ware\nSudan Archives\nMk.gee\nSATURDAY\nDoja Cat",
 };
 
 test("a festival day proposal carries that day's bill and nobody else's", () => {
   const { proposal } = proposeFestivalDay(OSL, [LINEUP_BY_DAY, SET_TIMES]);
   assert.notEqual(proposal, null);
-  assert.deepEqual(proposal.artistNames.sort(), ["Kaytranada", "Overmono", "Tame Impala"]);
+  assert.deepEqual(proposal.artistNames.sort(), [
+    "Jessie Ware",
+    "Kaytranada",
+    "Overmono",
+    "Sudan Archives",
+    "Tame Impala",
+  ]);
   assert.equal(proposal.title, "Outside Lands 2026 — Friday");
   assert.equal(proposal.festivalId, "outside-lands-2026");
   assert.equal(proposal.confidence >= MIN_PROPOSAL_CONFIDENCE, true);
@@ -451,11 +458,17 @@ test("a ticketing page can carry the bill on its own", () => {
     {
       title: "Outside Lands 2026 - Friday Tickets",
       url: "https://www.axs.com/events/outside-lands-friday",
-      content: "Friday, August 7, 2026\nTame Impala\nKaytranada",
+      content:
+        "Friday, August 7, 2026\nTame Impala\nKaytranada\nOvermono\nSudan Archives",
     },
   ]);
   assert.notEqual(proposal, null);
-  assert.deepEqual(proposal.artistNames.sort(), ["Kaytranada", "Tame Impala"]);
+  assert.deepEqual(proposal.artistNames.sort(), [
+    "Kaytranada",
+    "Overmono",
+    "Sudan Archives",
+    "Tame Impala",
+  ]);
 });
 
 test("a social caption may corroborate a festival day but never carry one", () => {
@@ -487,4 +500,20 @@ test("a festival day search asks about the day, not the weekend", () => {
   assert.match(first.query, /"Outside Lands 2026"/);
   assert.match(first.query, /August 7, 2026/);
   assert.match(second.query, /Friday/);
+});
+
+test("a day that yields two or three names is a page we failed to read", () => {
+  // Lollapalooza 2025: JamBase's day sections came back empty and setlist.fm's
+  // came back as one run-on line, so what survived the filters was the venue,
+  // a stage programme, and two acts merged into one name. Three real-looking
+  // claims about who played, and not one of them a bill.
+  const { proposal, declineReason } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands 2026 At-a-Glance",
+      url: "https://www.jambase.com/festival/outside-lands-2026",
+      content: "Friday, August 7, 2026\nTame Impala\nKaytranada",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.match(declineReason, /failed to read/);
 });

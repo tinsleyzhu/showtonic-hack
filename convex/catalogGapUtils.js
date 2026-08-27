@@ -650,6 +650,17 @@ const DELTA_FESTIVAL_CONFIRMED = 0.3;
 // A bill longer than this is a page listing the whole weekend, not one day.
 const MAX_BILL_NAMES = 40;
 
+// And a bill SHORTER than this is a parse failure wearing a source URL.
+//
+// Lollapalooza 2025 is where this came from: JamBase's day sections came back
+// empty and setlist.fm's came back as one run-on line, so the day cut landed on
+// an at-a-glance table and a set-times blob. What survived was "Grant Park"
+// (the venue), "Summerdance", and "Sofia Camara Silly Goose" (two acts merged
+// into one name) — three real-looking claims about who played, none of them a
+// bill. A festival day that yields two or three names has not been read; a
+// festival day genuinely has more acts than that. Declining says so.
+const MIN_BILL_NAMES = 4;
+
 const FESTIVAL_CORE_MIN_LENGTH = 5;
 
 // Words that are festival furniture rather than acts. Distinct from
@@ -702,6 +713,28 @@ const FESTIVAL_FURNITURE = new Set([
   "search",
   "setlists",
   "setlist",
+  // Listings-page table and nav labels. JamBase's "At-a-Glance" block sits in
+  // the same extracted text as the lineup, and on a festival whose day sections
+  // come back empty it is the only thing left to parse.
+  "dates",
+  "headliners",
+  "website",
+  "links",
+  "venue",
+  "map",
+  "directions",
+  "advertisement",
+  "playlist",
+  "hotels",
+  "lodging",
+  "company",
+  "follow",
+  "facebook",
+  "twitter",
+  "instagram",
+  "tiktok",
+  "youtube",
+  "threads",
 ]);
 
 const MONTH_PATTERN = MONTHS.map((month) =>
@@ -885,7 +918,15 @@ function countPlausibleNames(segment) {
     .filter(looksLikeArtistName).length;
 }
 
-const BILL_SEPARATORS = /[,;|•·:\n\r\t]+|\s+\/\s+|\s+[-–—]+\s+|\s+and\s+|\s{3,}/i;
+// Everything a publisher uses to separate one act from the next — except the
+// colon. A colon does separate a day label from its bill ("Friday, August 7:
+// Tame Impala"), but the day cut has already removed those labels, and acts
+// bill themselves with colons too: "John Prine: Songs & Souvenirs w/ Jason
+// Wilber & Dave Jacques" is a tribute set, and splitting it on the colon claims
+// John Prine, who died in 2020, played a 2025 Sunday. Kept whole it is too long
+// to be a name and is dropped, which is the right answer for a billing we
+// cannot parse. "・" is setlist.fm's separator on festival pages.
+const BILL_SEPARATORS = /[,;|•·・\n\r\t]+|\s+\/\s+|\s+[-–—]+\s+|\s+and\s+|\s{3,}/i;
 
 function trimBillFragment(value) {
   return stripTrailingNoise(
@@ -898,6 +939,12 @@ function trimBillFragment(value) {
       // setlist.fm writes "Albert Lee. 14 setlists"; the count survives the
       // noise filter because it is attached to a real name.
       .replace(/\.\s*\d{1,3}$/, "")
+      // A set time riding on the act it belongs to: "Sofia Camara 12:00 pm",
+      // "7:45 pm 2hollis". Stripping the clock keeps the name; rejecting the
+      // whole fragment threw away the best day-attributed source there is.
+      .replace(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim()
       // Prose lists leave the sentence's joints on the fragment: "…Dijon on
       // Saturday" splits to "Dijon on". No act name ends in a bare preposition.
       .replace(/\s+(?:on|at|in|for|with|plus|feat|ft|featuring|presents)$/i, "")
@@ -954,15 +1001,17 @@ function dropCommaSplitNames(fragments) {
     const current = normalizeText(fragments[index]);
     const previous = fragments[index - 1];
     if (!/^the\s+\S+/.test(current)) continue;
-    if (current.split(" ").length > 3) continue;
     // Only a ONE-word neighbour is ambiguous: "Tyler, The Creator" splits that
     // way, and so does "Sly and the Family Stone". "The Strokes, The xx" does
     // not — a two-word neighbour is its own act, and dropping it was throwing
     // away real headliners to guard against a collision that cannot happen.
     const previousWords = String(previous).trim().split(/\s+/);
     if (previousWords.length !== 1 || /^the$/i.test(previousWords[0])) continue;
+    // The one-word half is always the ambiguous one: "Tyler" next to "the
+    // Creator" may be an act or half of one. A longer neighbour can only be a
+    // bill fragment, and its own filters will judge it.
     dropped.add(index - 1);
-    dropped.add(index);
+    if (current.split(" ").length <= 3) dropped.add(index);
   }
   return fragments.filter((_, index) => !dropped.has(index));
 }
@@ -1106,12 +1155,14 @@ function proposeFestivalDay(festival, results, options = {}) {
     .slice(0, MAX_BILL_NAMES);
   const uncorroborated = tally.size - bill.length;
 
-  if (!bill.length) {
+  if (bill.length < MIN_BILL_NAMES) {
     return {
       proposal: null,
       considered: [],
       rejected,
-      declineReason: "no act on this day was named by an authoritative or a second source",
+      declineReason: bill.length
+        ? `only ${bill.length} name${bill.length === 1 ? "" : "s"} survived on this day, which is a page we failed to read rather than a bill`
+        : "no act on this day was named by an authoritative or a second source",
     };
   }
 
@@ -1202,6 +1253,7 @@ export {
   CREDITS_PER_ADVANCED_SEARCH,
   DELTA_FESTIVAL_CONFIRMED,
   MAX_BILL_NAMES,
+  MIN_BILL_NAMES,
   DELTA_CORROBORATED,
   DELTA_DATE_CONFIRMED,
   DELTA_NO_VENUE_ANCHOR,

@@ -137,6 +137,7 @@ export type FestivalOutcome = {
 
 export const DELTA_FESTIVAL_CONFIRMED: number;
 export const MAX_BILL_NAMES: number;
+export const MIN_BILL_NAMES: number;
 
 export function buildFestivalQueries(festival: {
   festivalName: string;
