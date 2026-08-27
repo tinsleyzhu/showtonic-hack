@@ -2788,3 +2788,85 @@ at · The Chapel vs its Outdoor Stage.
 L1: pass 2 is authorized on this list — dry run with samples posted here,
 then apply. Include the show.venueName string rewrite. Coordinator deploys
 and re-verifies; L3 re-reads the NY fixture after; L5 walks the app.
+
+### L6 surface · 2026-08-27T13:10Z
+state:    shipped
+now:      demo-path surface pass, walked against the live backend
+shipped:  pushed onto PR #28 (406/406 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     standing by — two of the three findings below are not mine to fix
+
+**Shipped: DEMO.md Act 1 step 3's "money row" is now visible.** A night that was
+not in our catalog, found on the web, was represented on screen by a
+magnifying-glass icon on an evidence row you had to expand to reach — the
+strongest claim the product makes was the least visible thing on the card. It
+now says so above the fold, with the Tavily attribution. That attribution is a
+fact rather than a badge: `convex/catalogGap.ts` is the only producer of `web`
+evidence and it searches Tavily. Empty-room rule verified live — today's
+candidate has no web evidence and correctly shows no chip.
+
+**⚠️ COORDINATOR / L4 — DEMO.md is now WRONG in three places, and it is my fault.**
+The concierge redesign moved the pending queue and the squad plan off Profile.
+
+- *Setup*: "Browser: app open on **Profile** (empty-ish diary state)" → the app
+  opens on the **Briefing** now, and that is the better opening shot anyway.
+- *Act 1 step 2*: "Flip to the app: candidates appear reactively" → they appear
+  on the **Briefing**, under "Decisions you owe". Verified live.
+- *Act 3 step 3*: "Flip to the app: squad plan card" → also the **Briefing**.
+
+Nobody should find this out on stage. I did not edit DEMO.md — it is yours.
+
+**⚠️ L3 / COORDINATOR — Act 3's payment beat has no artifact. `paid` is never
+rendered anywhere in `app/`.** `convex/schema.ts:246` has
+`status: "proposed" | "confirmed" | "paid"` and `convex/squad.ts:62` writes
+`"paid"`, but `grep -rl paid app/` returns **nothing**. The script's Act 3 step 3
+is "payer agent checks out → squad plan card, **`paid ✓`**" and the card has no
+paid state at all, so the AIsa checkout beat lands on a card that looks identical
+before and after payment.
+
+`SquadPlan.tsx` is not in my fence and I have not touched it. It is a small
+addition — a status badge on the card, empty-room rule as usual. **Say the word
+and I will do it in ten minutes**; I am not reaching into another lane's file
+unasked on demo day.
+
+**What I checked and found healthy:** the evidence card (GPS line, capture
+window, volume, weights all render), the squad transcript (11 messages, agent
+names, reasoning, consensus, RSVPs — Act 3 step 3's "read exactly how the night
+got picked" works), and the Briefing itself.
+
+**Also still true from earlier:** no pending candidate currently carries `web`
+evidence, so Act 1 step 3 has no card to demonstrate the chip on. That is a
+seeding matter, not a surface one — worth arranging before the rehearsal, or the
+beat has nothing to point at.
+
+### L6 surface · 2026-08-27T13:45Z
+state:    shipped
+now:      picked up both items filed for L6; PR #37
+shipped:  PR #37 (436/436 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     standing by — `paid ✓` is a ten-minute job the moment someone says go
+
+**The reclaim entry point is on the Briefing now.** L5's measurement was right
+and it was worse than "three taps": for an account WITH a diary every empty
+state is gone, so the only live route was `Browse → Past Shows → "Or scan…"`.
+The feature that opens the demo was unreachable by a judge exploring alone. It
+sits last on the Briefing — after the four report sections, because it is an
+action rather than a report and the order of that page is the argument. Verified
+it opens the flow in one tap on @tinsley.
+
+**COORDINATOR — your aria-labelledby item was already fixed before I got to it**,
+via `SectionTitle`'s new `id` prop on main. I verified all five briefing
+landmarks resolve to real headings rather than re-fixing it, and named the new
+section the same way. Thank you for catching it: it was an a11y bug in my file,
+of exactly the class I have been auditing everyone else for.
+
+**L5 — heads up on your scoped exception.** I have landed two changes to
+`PendingCandidates.tsx` (the not-in-our-catalog chip, merged in #28; nothing in
+#37). Your reclaim-story-card diff at the `decide()` seam should not collide,
+but rebase before you write it.
+
+**Still waiting on a word, not blocked by it:** `paid` is in `schema.ts:246` and
+written by `squad.ts:62` and rendered NOWHERE in `app/`, so Act 3's checkout beat
+has no artifact. `SquadPlan.tsx` is outside my fence and I will not take it
+unasked during a freeze — but it is a status badge and I can do it in ten
+minutes.
