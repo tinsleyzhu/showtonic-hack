@@ -622,3 +622,76 @@ test("the venue is not said twice when the title already carries it", () => {
   // And the alias spellings count as the same room, like everywhere else.
   assert.ok(!/Warfield at The Warfield/.test(items[2].summary), items[2].summary);
 });
+
+test("a refusal's reason is the reason, not the photo count", () => {
+  // The exact rows convex/agents.ts writes for an unplaced night: the count
+  // first, the explanation second. Taking row one produced "Declined to name
+  // the night of 2026-07-04 — 3 photos on this night", which is a fact about
+  // the night on a line whose whole job is to say why we would not guess.
+  const [item] = deriveActivity(
+    [
+      {
+        clusterDate: "2026-07-04",
+        photoCount: 3,
+        confidence: 0,
+        status: "pending",
+        createdAt: 9,
+        evidence: [
+          { kind: "date", detail: "3 photos on this night", delta: 0 },
+          { kind: "volume", detail: "No location on these photos, and no show in the catalog that night", delta: 0 },
+        ],
+      },
+    ],
+    [],
+    [],
+  );
+
+  assert.equal(item.kind, "refused");
+  assert.equal(item.summary, "Declined to name the night of 2026-07-04 (3 photos)");
+  assert.equal(item.detail, "No location on these photos, and no show in the catalog that night");
+});
+
+test("the GPS variant of the same refusal reads the same way", () => {
+  const [item] = deriveActivity(
+    [
+      {
+        clusterDate: "2026-07-04",
+        photoCount: 12,
+        confidence: 0,
+        status: "pending",
+        createdAt: 9,
+        evidence: [
+          { kind: "date", detail: "12 photos on this night", delta: 0 },
+          { kind: "gps", detail: "No show in the catalog near where these were taken", delta: 0 },
+        ],
+      },
+    ],
+    [],
+    [],
+  );
+
+  assert.match(item.summary, /\(12 photos\)$/);
+  assert.equal(item.detail, "No show in the catalog near where these were taken");
+});
+
+test("a refusal that only ever counted photos still says that much", () => {
+  // If a future writer emits nothing but the count, we show it rather than
+  // dropping the night — the guard is about saying NOTHING, not about saying
+  // something thin.
+  const [item] = deriveActivity(
+    [
+      {
+        clusterDate: "2026-07-04",
+        photoCount: 3,
+        confidence: 0,
+        status: "pending",
+        createdAt: 9,
+        evidence: [{ kind: "date", detail: "3 photos on this night", delta: 0 }],
+      },
+    ],
+    [],
+    [],
+  );
+
+  assert.equal(item.detail, "3 photos on this night");
+});

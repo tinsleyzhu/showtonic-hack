@@ -663,12 +663,14 @@ export function deriveActivity(candidates = [], squadPlans = [], logs = [], opti
 
     // No show attached: the matcher found a night it could not name. That is a
     // refusal, and it only ships if the evidence says why.
-    const why = firstDetail(candidate.evidence);
+    const why = reasonDetail(candidate.evidence);
     if (!where && why) {
       items.push({
         at: candidate.createdAt ?? 0,
         kind: "refused",
-        summary: `Declined to name the night of ${night}`,
+        summary: photos
+          ? `Declined to name the night of ${night} (${plural(photos, "photo")})`
+          : `Declined to name the night of ${night}`,
         detail: why,
       });
     }
@@ -728,8 +730,23 @@ function describeShow(title, venueName) {
   return `${name} at ${venue}`;
 }
 
-function firstDetail(evidence) {
+// The reason a night was refused, which is NOT the first evidence row.
+//
+// `reclaimCameraRoll` writes the photo count first and the explanation second,
+// so taking row one produced "Declined to name the night of 2026-07-04 — 3
+// photos on this night" — a fact about the night rather than a reason for the
+// refusal, on a line whose entire job is to give the reason. This is on the
+// demo path now: Act 1's scan produces a live refusal in front of the room.
+//
+// So the count goes in the summary where it belongs as context, and the detail
+// is the first row that is not a count. Structural, not a keyword list: a row
+// that opens "3 photos" is describing what we had, not why it was not enough.
+const COUNT_ROW = /^\d+\s+photos?\b/i;
+
+function reasonDetail(evidence) {
   if (!Array.isArray(evidence)) return null;
-  const row = evidence.find((entry) => entry && String(entry.detail ?? "").trim().length > 0);
-  return row ? String(row.detail).trim() : null;
+  const rows = evidence
+    .map((entry) => String(entry?.detail ?? "").trim())
+    .filter((detail) => detail.length > 0);
+  return rows.find((detail) => !COUNT_ROW.test(detail)) ?? rows[0] ?? null;
 }

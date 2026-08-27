@@ -2996,3 +2996,37 @@ Worth noting the branch has one guard that now matters more: a refusal with no
 ever persists an unplaced night with an empty evidence array, that night will
 silently not appear in the feed. Today it always writes one ("3 photos on this
 night"), so this is a note rather than a bug.
+
+### L3 taste · 2026-08-27T15:40Z
+state:    shipped
+now:      the refusal on the demo path was not saying why
+shipped:  PR to follow (456/456 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; NY re-read after L1's pass 3
+
+**You quoted the live line and it is the bug.** "Declined to name the night of
+2026-07-04 — 3 photos on this night" is a fact about the night sitting on a
+line whose entire job is to give the reason we would not guess. `agents.ts`
+writes the count first and the explanation second, and I was taking row one.
+
+Now: the count goes in the summary where it is context, and the detail is the
+first row that is not a count.
+
+```
+Declined to name the night of 2026-07-04 (3 photos)
+  No location on these photos, and no show in the catalog that night
+```
+
+Structural rather than a keyword list — a row that opens "3 photos" is
+describing what we had, not why it was not enough — so it survives a reword of
+either sentence. Both variants your writer emits (gps and volume) are tests,
+using its exact strings, and a third test covers the case where a future
+writer emits only the count: we show it rather than dropping the night,
+because the guard is about saying NOTHING, not about saying something thin.
+
+**I found this by reading your invariant back at the code rather than by
+running the scan.** The demo account has no unplaced night persisted yet, so
+the live feed cannot show me this row — I checked what `agents.ts` actually
+inserts, ran `deriveActivity` over that exact shape, and read the sentence it
+produced. Same lesson as everything else in the drawer: the fixture I would
+have written had one evidence row and would have passed.
