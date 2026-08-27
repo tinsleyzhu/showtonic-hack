@@ -879,6 +879,68 @@ next:     `npx convex run dedup:runVenueAliasDedup '{"samples":20}'` (dry, free)
 noted:    the city-centroid geocodes are real and I have left them alone as you
           asked — post-hack, and they weaken photo-GPS matching, not just maps.
 
+
+### L1 enrich+catalog · 2026-08-27T (iteration 10)
+state:    building — code ready, dry run posted, apply is the coordinator's
+now:      **THE SIGNOFF CONTAINED A LANDMINE FOR MY RULE AND I NEARLY SHIPPED
+          IT.** Four of the five pairs the human said KEEP SEPARATE are token
+          subsets, so pass 2 as I wrote it would have merged them against an
+          explicit human decision: City Winery / The Loft at, MSG / Infosys
+          Theater at, Lincoln Center / David Geffen Hall at, Bill Graham Civic
+          / The Theater at. Only the Chapel pair refused, and by luck
+          (apostrophe folding), not by rule.
+          What separates a nested room from an alias is WHERE the containment
+          sits: if everything the shorter name says appears AFTER an "at", the
+          longer name is a room inside it. Same rule gets both halves of the
+          Geffen case right — it is a room within Lincoln Center AND an alias
+          of "David Geffen Hall", for the same structural reason.
+          The Apollo pair you left unresolved is an explicit override next to
+          the five nested pairs, so the decision is auditable in code rather
+          than remembered. All 17 signoff cases are now tests.
+
+          **DRY RUN — pass 2 after the guards, against the post-pass-1 export:**
+          308 clusters · 311 excess rows · 10,436 -> 10,125 · 9 untimed attached
+          | x166 | Blue Note Jazz Club <- The Blue Note |
+          |---|---|
+          | x60 | Irving Plaza <- Irving Plaza Powered By Verizon 5G |
+          | x24 | Racket <- Racket NYC |
+          | x17 | Iridium <- Iridium Jazz Club |
+          | x10 | United Palace <- United Palace Theatre |
+          | x6 | Hammerstein Ballroom <- Manhattan Center Hammerstein Ballroom |
+          | x3 | David Geffen Hall <- David Geffen Hall at Lincoln Center |
+          | x3 | Hill Country Live <- Hill Country Live NY |
+          | x2 | Blue Note Jazz Club <- … - NY <- The Blue Note (transitive) |
+          | x2 | El Patio at Radio Hotel <- Patio at Radio Hotel |
+          | x1 | Audible's Minetta Lane Theatre <- Minetta Theater |
+          The five clusters showing ONE name are the untimed-row attachments.
+
+          **NAME REWRITE — 11 rooms carry two spellings:**
+          The Warfield <- Warfield · The Cutting Room <- Cutting Room ·
+          The Gramercy Theatre <- Gramercy Theatre · Bimbo's 365 Club <-
+          Bimbo’s 365 Club · Golden Gate Theatre <- Golden Gate Theater ·
+          Cafe du Nord <- Cafe Du Nord · Castro Theatre <- The Castro Theatre ·
+          Brick and Mortar Music Hall <- Brick & Mortar · The Palace of Fine
+          Arts <- Palace of Fine Arts · Lucinda's <- Lucinda’s ·
+          Feinstein's at The Nikko <- Feinstein’s at The Nikko
+          Worth knowing why: letting the VENUES TABLE decide produced
+          "Warfield" and "Golden Gate Theater" — a visible downgrade for the
+          person who reported the twins. The majority spelling among shows is
+          the natural public name every time (The Warfield 36:2, The Cutting
+          Room 206:6, The Gramercy Theatre 175:23), so the venue record is a
+          tie-break holding one spelling, not a vote that outweighs 200 rows.
+          The rewrite changes no row's identity but DOES change showKey, so
+          dedupKey and aliasKey are rebuilt in the same patch.
+shipped:  PR #32 on lane/enrich (439 tests green, tsc + eslint clean)
+blocked:  needs merge + deploy. Both actions default to apply:false.
+next:     coordinator, in this order:
+          1. `dedup:runVenueAliasDedup '{"samples":20}'`   (free, confirms the
+             deployed numbers match the 308/311 above)
+          2. same with `"apply":true,"maxGroups":25`, read it, then widen
+          3. `dedup:canonicalizeVenueNames '{}'` then `'{"apply":true}'`
+          4. `dedup:planTable '{"table":"shows"}'` afterwards — the rewrite can
+             make two previously-distinct rows identical, and pass 1 is what
+             collects those.
+
 ---
 
 ### L2 match · 2026-08-27T03:10Z
