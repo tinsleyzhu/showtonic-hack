@@ -10,6 +10,7 @@ import {
   SectionTitle,
   type LiveState,
 } from "./shared";
+import { OverlapShareCard } from "./OverlapShareCard";
 
 function monthYear(date: string) {
   return new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(
@@ -61,6 +62,12 @@ export function TasteMatchView({
             ))}
           </div>
         )}
+        <OverlapShareCard
+          matchPercent={detail.matchPercent}
+          sharedArtists={detail.sharedArtists}
+          sharedShowCount={detail.bothThereCount}
+          theirHandle={detail.user.handle}
+        />
       </section>
 
       {detail.bothThere.length > 0 && (

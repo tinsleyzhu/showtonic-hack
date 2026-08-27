@@ -103,10 +103,16 @@ function drawReclaim(ctx, { story, format = "story" }) {
   // --- The number -----------------------------------------------------------
   // The count is the whole poster. It is set at a size that reads at thumbnail
   // scale in a story tray, which is the only size most people will ever see.
-  y += square ? 150 : 210;
+  // Measured, not guessed: a baseline is not a top edge, and a 260px numeral
+  // ascends most of its own size above the y it is painted at. The overlap
+  // card shipped a collision here that a recording context could not see, so
+  // both cards now ask the font. The fallback covers the test double, whose
+  // measureText reports width only.
+  const numeralSize = square ? 200 : 260;
   const numeral = String(story.nights);
-  ctx.font = `600 ${square ? 200 : 260}px ${DISPLAY}`;
+  ctx.font = `600 ${numeralSize}px ${DISPLAY}`;
   ctx.fillStyle = GREEN;
+  y += (square ? 28 : 38) + (ctx.measureText(numeral).actualBoundingBoxAscent || numeralSize * 0.78);
   ctx.fillText(numeral, PAD, y);
 
   const numeralWidth = measure(numeral);
