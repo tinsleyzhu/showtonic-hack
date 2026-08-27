@@ -1,5 +1,6 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { genreWeights, LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
 import { rankOnboardingGenres } from "./onboardingGenres.js";
 
@@ -309,5 +310,58 @@ export const genresForOnboarding = query({
         limit: args.limit ?? 12,
       },
     );
+  },
+});
+
+// The other half of genre-first onboarding: you tap "house", you get house
+// artists you could actually go and see. Ranked by upcoming appearances rather
+// than catalog totals, for the same reason the genre list is.
+export const artistsForGenre = query({
+  args: {
+    genre: v.string(),
+    today: v.string(),
+    homeCity: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const genre = args.genre.trim().toLowerCase();
+    if (!genre) return [];
+
+    const upcoming = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", args.today))
+      .take(4000);
+
+    const city = (args.homeCity ?? "").trim().toLowerCase();
+    const weightByArtist = new Map<Id<"artists">, number>();
+    for (const show of upcoming) {
+      const weight = city && show.city.toLowerCase() === city ? 4 : 1;
+      for (const artistId of show.artistIds) {
+        weightByArtist.set(artistId, (weightByArtist.get(artistId) ?? 0) + weight);
+      }
+    }
+
+    const artists = await Promise.all(
+      [...weightByArtist.keys()].map((artistId) => ctx.db.get(artistId)),
+    );
+
+    return artists
+      .filter(
+        (artist): artist is NonNullable<typeof artist> =>
+          artist !== null &&
+          (artist.genres ?? []).some((value) => value.trim().toLowerCase() === genre),
+      )
+      .map((artist) => ({
+        _id: artist._id,
+        name: artist.name,
+        image: artist.image,
+        genres: artist.genres ?? [],
+        upcomingWeight: weightByArtist.get(artist._id) ?? 0,
+      }))
+      .sort(
+        (left, right) =>
+          right.upcomingWeight - left.upcomingWeight || left.name.localeCompare(right.name),
+      )
+      .slice(0, Math.min(args.limit ?? 18, 48));
   },
 });
