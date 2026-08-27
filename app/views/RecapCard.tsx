@@ -6,7 +6,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { resolveShowImage } from "../liveData.js";
 import { RecapExport } from "./RecapExport";
-import { EmptyLine, formatDate, SectionTitle } from "./shared";
+import { EmptyLine, formatDate, SectionTitle, posterFallback } from "./shared";
 
 // The recap card. The generating happens in `convex/recap.ts` and is reachable
 // by the member's own agent through `generate_recap` — this screen is the same
@@ -39,7 +39,7 @@ export function RecapCard({ userId }: { userId: Id<"users"> }) {
 
       <div className="mt-4 grid gap-0 border border-[#2A2521] bg-[#1A1713] sm:grid-cols-[minmax(0,240px)_1fr]">
         <div className="relative aspect-square sm:aspect-auto">
-          <img alt="" className="h-full w-full object-cover" src={hero} />
+          <img onError={posterFallback} alt="" className="h-full w-full object-cover" src={hero} />
           <span className="absolute inset-0 bg-gradient-to-t from-[#1A1713] via-transparent to-transparent sm:bg-gradient-to-r" />
         </div>
 
@@ -96,6 +96,7 @@ export function RecapCard({ userId }: { userId: Id<"users"> }) {
               alt=""
               className="h-20 w-20 shrink-0 object-cover"
               key={photo.url}
+              onError={posterFallback}
               src={photo.url ?? undefined}
             />
           ))}

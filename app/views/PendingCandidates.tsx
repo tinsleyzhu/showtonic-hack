@@ -7,7 +7,7 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { describeConfidence } from "../backfill.js";
 import type { EvidenceKind } from "../backfill.d";
-import { formatDate, SectionTitle } from "./shared";
+import { formatDate, SectionTitle, posterFallback } from "./shared";
 import { ReclaimShareCard } from "./ReclaimShareCard";
 import type { ReclaimNight } from "../reclaimCanvas.d";
 
@@ -150,7 +150,7 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
             <article className="border border-[#2A2521] bg-[#141210]" key={id}>
               <div className="flex items-start gap-3 p-4">
                 {candidate.show?.image ? (
-                  <img alt="" className="h-16 w-12 shrink-0 object-cover" src={candidate.show.image} />
+                  <img onError={posterFallback} alt="" className="h-16 w-12 shrink-0 object-cover" src={candidate.show.image} />
                 ) : (
                   <span aria-hidden className="h-16 w-12 shrink-0 bg-[#1A1713]" />
                 )}

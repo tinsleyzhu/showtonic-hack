@@ -10,7 +10,7 @@ import { briefingIsEmpty, visibleFinds } from "../briefingSurface.js";
 import { PendingCandidates } from "./PendingCandidates";
 import { SquadPlanCard } from "./SquadPlan";
 import { AgentActivity } from "./AgentActivity";
-import { DetailSkeleton, formatDate, LiveMessage, SectionTitle, todayIso } from "./shared";
+import { DetailSkeleton, formatDate, LiveMessage, SectionTitle, todayIso, posterFallback } from "./shared";
 
 // The Briefing — the home surface.
 //
@@ -92,7 +92,7 @@ function FindCard({
     <article className="surface-settle border border-[#2A2521] bg-[#141210]">
       <div className="flex items-start gap-3 p-4">
         {find.image ? (
-          <img alt="" className="h-16 w-12 shrink-0 object-cover" src={find.image} />
+          <img onError={posterFallback} alt="" className="h-16 w-12 shrink-0 object-cover" src={find.image} />
         ) : (
           <span aria-hidden className="h-16 w-12 shrink-0 bg-[#1A1713]" />
         )}

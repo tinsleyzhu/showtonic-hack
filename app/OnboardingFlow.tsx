@@ -16,7 +16,7 @@ import {
   previousOnboardingStep,
   validateOnboardingHandle,
 } from "./onboarding.js";
-import { cityCoordinates, nearestHomeCity } from "./views/shared";
+import { cityCoordinates, nearestHomeCity, posterFallback } from "./views/shared";
 
 // Card palette from the design exports' stacked show cards (01, 04, 09).
 const CARD_COLORS = ["#F97354", "#6FBCD3", "#9B7FB8", "#5F7A5E", "#D9B44A"];
@@ -399,7 +399,7 @@ export function Onboarding({
                   <button aria-pressed={selected} className="flex flex-col items-center gap-2 text-center" key={artist.name} onClick={() => toggleFavorite(artist.name)} type="button">
                     <span className={`relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-full border-2 ${selected ? "border-[#4EC98F]" : "border-transparent"}`} style={{ backgroundColor: colorFor(artist.name) }}>
                       {artist.image ? (
-                        <img alt={artist.name} className="h-full w-full object-cover" src={artist.image} />
+                        <img onError={posterFallback} alt={artist.name} className="h-full w-full object-cover" src={artist.image} />
                       ) : (
                         <span className="font-display text-3xl text-[#F5F1E8]">{artist.name.slice(0, 1)}</span>
                       )}

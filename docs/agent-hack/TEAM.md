@@ -2436,6 +2436,73 @@ headings — ② explains its own emptiness and ③ carries the row. That reads 
 PR #28 now carries: the fixture flip, belief corrections, the doubled
 "While you were away", and this.
 
+### L5 share · 2026-08-27T02:40Z — post-migration walk
+state:    idle
+now:      after-snapshot, diff, and a walk over Briefing / diary / recap / catalog
+shipped:  - (report only)
+blocked:  one item needs eyes I can't provide (below)
+next:     re-walk on request; standing by.
+
+**The diff exits 0. No broken references.** 11 changes, every one a repoint or a
+legitimate count move. Both accounts: recap 7 shows, diary 7 entries, **0
+dangling**, 5 finds, all evidenced. MCP agrees with the screen (12 tools,
+`generate_recap` and `get_briefing` both answering, 7 shows either way). Cities:
+SF 935→806, NY 8014→7745.
+
+**FIRST, A CORRECTION OF MY OWN — I nearly filed a false alarm against L1.**
+My first residual-duplicate scan reported **43 pairs** and I was about to report
+that "residual excess zero" was wrong. It was my scan that was wrong: I grouped
+by date+venue and ignored **startTime**. Smoke Jazz runs 18:30 / 20:30 / 22:00
+sets, so three rows with an identical title and the same four artists are three
+real shows, not three copies. Rescanned with start time in the key: **1 pair in
+500 rows.** `showKey` is right, and the comment above it already said exactly
+why — I should have read it before scanning, not after. L1: residual excess is
+genuinely ~zero and your key's under-merge case is the correct trade.
+
+**FINDING A — the one real residual, and it is on the demo screen.**
+`The Midway · 2026-09-05 · 15:00`, two rows, three shared artists of three:
+- "Purple Disco Machine at The Midway" (headliner: Purple Disco Machine)
+- "Electroluxx Pride Party (21 and Over)" (headliner: Electroluxx Pride Party)
+
+One party ingested twice by sources that disagree about which name is the
+headliner. **Not fixable by widening the key** — the headliner has to stay in it
+or multi-room venues collapse — so this is a presenter-side problem, not a
+catalog one. It matters because both currently appear in @tinsley's "What your
+agent found" as two separate nights. A judge reading section ② sees the same
+party recommended twice. Cheapest fix is in the finds list, not the data: drop a
+find whose (venue, date, startTime) already appears above it with an overlapping
+bill. L3/L6's call, and only worth it if it is genuinely cheap.
+
+**FINDING B — venue name twins survived, in the denormalised field.**
+The venues TABLE merged (298→290), but `show.venueName` is a denormalised string
+and was not rewritten. Still present across a 110-venue sample:
+`Bimbo's 365 Club` / `Bimbo’s 365 Club`, `Lucinda's` / `Lucinda’s`, and a case
+twin `Cafe Du Nord` / `Cafe du Nord`. The Browse venue filter is built from these
+strings, so it should still show the twins I filed earlier — **I could not
+confirm that on screen** (see below). L1: if the sweep re-runs, rewriting
+`venueName` on show rows to the canonical venue's name closes this.
+
+**FINDING C — the repointed diary entry now leads to a festival, not a set.**
+@tinsley's 5★ night repointed from a Charli XCX row to the canonical
+`Outside Lands` row, which carries **94 artists**. The recap is unharmed and
+still says "Best night: Charli XCX" — `recap:build` reads the log's own stored
+fields, not the show row, which is exactly the decoupling that saved it. But
+"Open show" from that diary entry now lands on a festival page with a 94-name
+bill. Correct data, and possibly the intended shape post-L2 — flagging it only
+because it is Act 1's highest-rated night and someone should decide on purpose
+whether tapping it should show the festival.
+
+**FINDING D — taste, not correctness: section ② is a Midway monoculture.**
+Four of @tinsley's five finds are at The Midway, and the fits are 26 / 25 / 25 /
+25 / 25 — flat enough that the ranking is close to arbitrary and the visible
+result is one venue five times. Post-dedup this got worse (before: one Midway of
+five). A one-line venue diversity rule in the finds list would fix the optics.
+
+⚠️ **What I could not verify: the venue filter on screen.** My browser tab went
+`document.hidden` again mid-walk and stopped accepting clicks, so Finding B's UI
+consequence is inferred from the data, not seen. Coordinator, it is a ten-second
+look: Browse → Past Shows → venue dropdown → search "Bimbo". Everything else
+above is verified server-side or read from the rendered DOM before the tab froze.
 ## L1 — DEDUP PASS 2: venue aliases (human is still seeing dupes on artist pages)
 
 Post-sweep residual, measured from a fresh export: 274 same-date+headliner
@@ -2488,6 +2555,59 @@ row (94 artists, "Open show" lands on a festival page) STANDS for the demo —
 the night genuinely was a festival night and recap:build reads the log's own
 fields, so the stage line is unaffected. Post-hack: a per-set landing.
 
+### L5 share · 2026-08-27T03:05Z — screen-reader / keyboard pass
+state:    idle
+now:      a11y pass over Briefing and Diary; one real finding, three false alarms I caught
+shipped:  - (report only)
+blocked:  -
+next:     standing by; happy to take the image fallback if you want it.
+
+**The a11y pass is mostly good news.** Briefing: no dangling `aria-labelledby`
+(L6, your fix landed — my earlier finding is closed), no unnamed controls, one
+h1, no heading-level skips, every image has alt, nothing broken. Keyboard focus
+works: a real Tab press lands a solid 2px ember `:focus-visible` ring, from the
+global rule in `globals.css` — that rule is doing exactly what its comment says.
+
+**FINDING — the app hotlinks 100% of its artwork from jambase.com and has NO
+error fallback anywhere.** `grep onError app/views/*.tsx` returns nothing.
+`resolveShowImage` (`app/liveData.js:42`) passes any `http(s)` URL straight
+through, so a third-party URL that dies renders as broken alt text on a grey
+box. There is already a `DEFAULT_SHOW_IMAGE` constant sitting right there
+unused for this case.
+
+Live on the demo account right now: @tinsley's Diary shows **four broken images**,
+all the same dead URL (`.../2024/09/molly-santana-1480x832.jpg`, 404 in the
+browser), across the Favorite Shows tile, two artist chips and a memory tile.
+It is the first screen Act 1 lands on.
+
+The bigger risk is not that one URL. **Every image in the product is a hotlink to
+a host we do not control, requested in bursts of ~50 per screen.** If JamBase
+rate-limits or blips during the demo, the app fills with broken images and there
+is nothing to catch it. A five-line `onError` swapping to `DEFAULT_SHOW_IMAGE`
+makes any dead URL degrade to a neutral poster instead. It touches several of
+L6's view files, so I have not taken it — say the word and it is ten minutes.
+
+⚠️ **Three false alarms I caught before filing them, because the pattern is the
+point.** All three were my instrument, not the app:
+1. "40 of 40 controls have no focus indicator" — `.focus()` in script does not
+   trigger `:focus-visible`. A real Tab keypress showed the ring is fine.
+2. "Four unnamed buttons on Diary" — the poster tiles ARE named, by their
+   `img alt`, which my audit only counted as innerText.
+3. "The default placeholder is dead, so half the catalog is broken" — it loads
+   fine as a page sub-resource (1480x832); 49/49 images on Browse load. My
+   isolated `new Image()` probe failed on a URL the page renders happily, most
+   likely burst rate-limiting — which is itself the evidence for the finding
+   above.
+That is three instruments over-reporting in one pass, on top of the duplicate
+scan that ignored `startTime`. **The check that keeps working is: reproduce it
+the way a user would before writing it down.**
+
+**Minor, filed not fixed:** every page has two h1s — the `SHOWTONIC` wordmark and
+the page title. One of them should be a `p` or `div`. L6's call.
+
+**FYI on the ruled repoint:** it is visible on Diary, not just in data — the
+Favorite Shows tile for @tinsley's 5★ night now reads `Outside Lands`, where she
+pinned Charli XCX. Your ruling stands, just noting where it surfaces on screen.
 ### L3 taste · 2026-08-27T13:10Z
 state:    shipped
 now:      both presenter items from L5's walk — one party once, two nights per room max

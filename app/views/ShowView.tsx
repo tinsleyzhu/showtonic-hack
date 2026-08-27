@@ -23,6 +23,7 @@ import {
   type Attendance,
   type LiveState,
   type Show,
+  posterFallback,
 } from "./shared";
 
 export function ShowView({
@@ -124,7 +125,7 @@ export function ShowView({
   return (
     <div>
       <section className="relative min-h-[54vh] overflow-hidden">
-        <img alt={show.title} className="absolute inset-0 h-full w-full object-cover" src={show.image} />
+        <img onError={posterFallback} alt={show.title} className="absolute inset-0 h-full w-full object-cover" src={show.image} />
         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-[#0A0908]/65 to-[#0A0908]" />
         <button className="absolute left-4 top-4 z-10 flex items-center gap-2 border border-white/30 bg-[#0A0908]/85 px-4 py-3 text-sm font-black sm:left-6" onClick={onBack} type="button"><ArrowLeft className="h-4 w-4" /> Back</button>
         <div className="relative mx-auto flex min-h-[54vh] max-w-6xl flex-col justify-end px-4 pb-8 sm:px-6">
@@ -166,7 +167,7 @@ export function ShowView({
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {detail.artists.map((lineupArtist) => <article className="border border-[#2A2521] bg-[#141210] p-4" key={lineupArtist._id}>
                 <button className="flex w-full items-center gap-3 text-left" onClick={() => openArtist(lineupArtist._id)} type="button">
-                  <img alt={lineupArtist.name} className="h-14 w-14 object-cover" src={resolveShowImage(lineupArtist.image, [lineupArtist.name])} />
+                  <img onError={posterFallback} alt={lineupArtist.name} className="h-14 w-14 object-cover" src={resolveShowImage(lineupArtist.image, [lineupArtist.name])} />
                   <span className="min-w-0"><b className="block truncate">{lineupArtist.name}</b><small className="text-[#8A8177]">{lineupArtist.genres.slice(0, 2).join(" · ") || "Live artist"}</small></span>
                 </button>
                 <div className="mt-3 space-y-2">{tracksFor(lineupArtist.name).slice(0, 2).map((track) => <button className={`flex w-full items-center gap-2 border px-3 py-2 text-left text-xs ${selectedSong === track ? "border-[#FF7A50] text-[#FF7A50]" : "border-[#2A2521] text-[#C9C1B4]"}`} key={track} onClick={() => setSelectedSong(track)} type="button"><Music2 className="h-3 w-3" /> Preview {track}</button>)}</div>
@@ -201,7 +202,7 @@ export function ShowView({
             )}
             <section className="mt-9">
               <SectionTitle eyebrow="Convex Storage" title="Poster moments" />
-              {detail.media.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">{detail.media.map((item) => item.url ? <img alt={item.caption ?? show.title} className="aspect-square w-full object-cover" key={item._id} src={item.url} /> : null)}</div> : <EmptyLine text="No uploaded posters yet." />}
+              {detail.media.length ? <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">{detail.media.map((item) => item.url ? <img onError={posterFallback} alt={item.caption ?? show.title} className="aspect-square w-full object-cover" key={item._id} src={item.url} /> : null)}</div> : <EmptyLine text="No uploaded posters yet." />}
             </section>
             <ShowRail eyebrow="Based on this show" openShow={openShow} shows={collapseFestivalShows(detail.recommendedShows.map((item) => adaptShow(item)))} title="What to see next" />
           </> : <section className="mt-9">
@@ -342,7 +343,7 @@ export function LogSheet({ show, rating, setRating, selectedVibes, toggleVibe, r
                   onClick={() => onPosterIndex(index)}
                   type="button"
                 >
-                  <img alt="" className="h-full w-full object-cover" src={moment.url} />
+                  <img onError={posterFallback} alt="" className="h-full w-full object-cover" src={moment.url} />
                   {index === posterIndex && <span className="absolute bottom-0 inset-x-0 bg-[#4EC98F] py-0.5 text-center text-[9px] font-black uppercase text-black">Poster</span>}
                 </button>
               ))}
