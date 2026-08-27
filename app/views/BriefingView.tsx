@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { Bot, Clock, MapPin, Sparkles, UserCheck, Users, X } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
-import { BRIEFING_FIXTURE, type AgentFind, type Briefing, type BriefingEvidence } from "../briefing";
+import type { AgentFind, Briefing, BriefingEvidence, TasteBelief } from "../briefing";
 import { briefingIsEmpty, visibleFinds } from "../briefingSurface.js";
 import { PendingCandidates } from "./PendingCandidates";
 import { SquadPlanCard } from "./SquadPlan";
 import { AgentActivity } from "./AgentActivity";
-import { EmptyLine, formatDate, LiveMessage, SectionTitle } from "./shared";
+import { DetailSkeleton, EmptyLine, formatDate, LiveMessage, SectionTitle, todayIso } from "./shared";
 
 // The Briefing — the home surface.
 //
@@ -163,12 +165,11 @@ function FindCard({
 export function BriefingView({
   userId,
   handle,
-  // Fixtures are the DEFAULT, not a hardcoding: when convex/briefing.ts lands,
-  // page.tsx passes `briefing={useQuery(api.briefing.forUser, { userId })}` and
-  // nothing else in this file changes. The contract's shapes are identical by
-  // construction, which is the whole point of building against it.
-  briefing = BRIEFING_FIXTURE,
-  now,
+  // Live. `briefing` survives only as a test/story override — every sibling
+  // agent card (PendingCandidates, SquadPlanCard, RecapCard) self-queries, and
+  // the Briefing being the one that took its data by prop was an artifact of
+  // being built before the query existed.
+  briefing: briefingOverride,
   openShow,
   onYes,
   onBrowse,
@@ -177,13 +178,19 @@ export function BriefingView({
   userId: Id<"users">;
   handle: string;
   briefing?: Briefing;
-  now: number;
   openShow: (showId: string) => void;
   onYes: (find: AgentFind) => Promise<void>;
   onBrowse: () => void;
   onOpenBackfill: () => void;
 }) {
+  const liveBriefing = useQuery(api.briefing.forUser, { userId, today: todayIso() });
+  const briefing = briefingOverride ?? liveBriefing;
   const [dismissed, setDismissed] = useState<string[]>([]);
+
+  // The home screen now waits on a real round trip, which it never did on
+  // fixtures. Same rule as every other detail view: hold the silhouette rather
+  // than popping in, and say so to a screen reader.
+  if (!briefing) return <DetailSkeleton label="Reading your briefing" />;
 
   // Both rules live in app/briefingSurface.js, where they are tested. See the
   // header there for why they are not inlined: "no evidence, no card" and the
@@ -255,10 +262,11 @@ export function BriefingView({
           </section>
 
           {activity.length > 0 && (
-            <section aria-labelledby="briefing-activity" className="mt-10 border-t border-white/10 pt-8">
-              <SectionTitle eyebrow="Since you last looked" title="While you were away" />
-              <AgentActivity items={activity} />
-            </section>
+            // L5's AgentActivity owns its own <section> and heading now, so
+            // wrapping it in a second one rendered "While you were away" TWICE
+            // with the same four rows under each. A merge seam: my wrapper and
+            // their rewrite both landed, and neither side could see the other.
+            <AgentActivity items={activity} />
           )}
 
           {beliefs.length > 0 && (
@@ -266,10 +274,7 @@ export function BriefingView({
               <SectionTitle eyebrow="Drawn from your diary" title="What it believes" />
               <div className="mt-5 space-y-3">
                 {beliefs.map((belief) => (
-                  <article
-                    className="border border-[#2A2521] bg-[#141210] p-4"
-                    key={belief.statement}
-                  >
+                  <article className="border border-[#2A2521] bg-[#141210] p-4" key={belief.statement}>
                     <div className="flex items-start justify-between gap-3">
                       <p className="font-display min-w-0 flex-1 text-lg leading-7">{belief.statement}</p>
                       <span
