@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Bot, Calendar, Check, Eye, Images, MapPin, Search, Sparkles, X } from "lucide-react";
+import { Bot, Calendar, Check, Eye, Globe, Images, MapPin, Search, Sparkles, X } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { describeConfidence } from "../backfill.js";
@@ -99,6 +99,14 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
           const busy = busyId === id;
           const open = expanded === id;
           const title = candidate.show?.artistNames?.[0] ?? candidate.show?.title ?? "An unmatched night";
+          // A night that was NOT in our catalog until an agent went and found
+          // it. It is the strongest claim on this screen — the catalog grows as
+          // a side effect of someone reclaiming their own history — and until
+          // now the only trace of it was a magnifying-glass icon on an evidence
+          // row you had to expand to see. `web` evidence is produced by exactly
+          // one path (convex/catalogGap.ts, which searches Tavily), so the
+          // attribution is a fact about provenance rather than a sponsor badge.
+          const fromWeb = candidate.evidence.some((row) => row.kind === "web");
           return (
             <article className="border border-[#2A2521] bg-[#141210]" key={id}>
               <div className="flex items-start gap-3 p-4">
@@ -121,6 +129,16 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
                   {describeConfidence(candidate.confidence)}
                 </span>
               </div>
+
+              {fromWeb && (
+                <p className="flex items-start gap-2 border-t border-white/10 bg-[#1A1713] px-4 py-2 text-xs text-[#6FBCD3]">
+                  <Globe aria-hidden className="mt-px h-4 w-4 shrink-0" />
+                  <span>
+                    <b className="font-black">This night was not in our catalog.</b> Your agent
+                    went and found it on the web — searched with Tavily, evidence below.
+                  </span>
+                </p>
+              )}
 
               {candidate.draft?.caption && (
                 <p className="font-display border-t border-white/10 px-4 py-3 text-sm leading-6 text-[#C9C1B4]">
