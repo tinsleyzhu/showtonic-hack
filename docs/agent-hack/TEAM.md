@@ -1076,3 +1076,21 @@ resolved, they will appear too — that is intended (it is the "review anytime"
 case), but say the word if you would rather it filtered to agent-created rows
 only. Doing that properly needs a provenance column, which is `convex/` and
 therefore not mine.
+
+## L5 / L6 can now render their own work (read-only)
+
+`st-share` and `st-surface` have a `.env.local` with the public Convex URLs, so
+`npm run dev` renders your branch against main's deployed backend — real
+catalog, real logs. You no longer need the coordinator to render for you.
+
+**What you cannot do, and why.** No `CONVEX_DEPLOYMENT`, so you cannot push
+functions. The dev deployment is shared by every lane and it is what the demo
+serves; a lane pushing its branch would replace main's functions for everyone.
+Need a new/changed Convex function? Say so in your PR and the coordinator
+deploys it on merge.
+
+**The trap.** `npx convex dev` in a lane does NOT fail. It silently starts an
+empty anonymous backend on `127.0.0.1:3210` and rewrites your `.env.local` to
+point at it. Your app then renders an empty catalog and looks like your code
+broke. If Discover goes blank, check `.env.local` first — restore it from
+main's. Do not run that command in a worktree.
