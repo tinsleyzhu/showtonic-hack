@@ -230,13 +230,32 @@ test("does not persist or complete onboarding for an invalid handle", () => {
 });
 
 test("wizard steps advance and retreat with clamping", () => {
-  assert.deepEqual(ONBOARDING_STEPS, ["welcome", "identity", "taste", "homebase", "handoff"]);
+  assert.deepEqual(ONBOARDING_STEPS, ["welcome", "identity", "homebase", "taste", "handoff"]);
   assert.equal(nextOnboardingStep("welcome"), "identity");
-  assert.equal(nextOnboardingStep("homebase"), "handoff");
+  assert.equal(nextOnboardingStep("taste"), "handoff");
   assert.equal(nextOnboardingStep("handoff"), "handoff");
   assert.equal(previousOnboardingStep("identity"), "welcome");
   assert.equal(previousOnboardingStep("welcome"), "welcome");
   assert.equal(nextOnboardingStep("bogus"), "identity");
+});
+
+test("home base is asked before taste, because taste ranks by what is near you", () => {
+  // Not cosmetic. The taste picker ranks genres by upcoming shows in the
+  // member's city; asking it first ranked by the whole catalog, and New York's
+  // larger listing offered a first-run San Francisco member the New York
+  // Philharmonic. If this ever flips back, that bug comes back with it.
+  assert.ok(
+    ONBOARDING_STEPS.indexOf("homebase") < ONBOARDING_STEPS.indexOf("taste"),
+    "homebase must precede taste",
+  );
+  assert.equal(nextOnboardingStep("homebase"), "taste");
+  assert.equal(previousOnboardingStep("taste"), "homebase");
+});
+
+test("home base stays skippable even though taste now depends on it", () => {
+  // Skipping is not a broken state — it returns the picker to a citywide
+  // ranking, which is the honest fallback, not an error.
+  assert.equal(canLeaveOnboardingStep("homebase", {}).ok, true);
 });
 
 test("identity step requires a valid handle to advance", () => {
