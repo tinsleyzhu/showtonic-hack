@@ -477,6 +477,77 @@ Caveat, fourth time and unchanged: **I cannot render any of this.** The city
 gate in particular deserves eyes — the failure mode if I got it wrong is an
 *empty* grid rather than a wrong one, which is safer but very visible.
 
+### L5 share · 2026-08-27T06:15Z
+state:    shipped
+now:      all five lane items done — PR open, 261/261 tests, tsc clean, lint 0 errors
+shipped:  PR (lane/share): recap.build, generate_recap, recap card, image export, AIsa caption
+blocked:  needs Convex deploy (recap:build + recap:caption) and a wrangler deploy
+          (generate_recap) — coordinator's. Cannot render any of this: no
+          CONVEX_DEPLOYMENT in this worktree.
+next:     idle in-lane; hardening tests. Video editing stays OUT per the brief.
+
+Read before changing anything: `convex/recapSummary.js` (all the counting and
+copy), `convex/recap.ts`, `app/recapCanvas.js`, `app/views/RecapCard.tsx`,
+`app/views/RecapExport.tsx`, `worker/mcp/tools.ts`.
+
+**Built as an agent capability first, screen second — in that order, on purpose.**
+`recap.build` is a Convex query, `generate_recap` (scope `read:taste`, no new
+scope) publishes it on the MCP surface, and the card on Profile renders the
+identical object. An agent that says "you went to 31 shows" and a card that says
+29 cannot both exist, because there is one summary and it is pure.
+
+1. **`recap.build`** — counts, top artists/venues/genres, the span, the
+   highest-rated night, and the member's own photos best-nights-first. The span
+   copy is *derived from* `describeReclaimSpan` rather than retyped: one word
+   list, two lengths of the phrase. Averages stay hidden under five rated shows,
+   same promise as `agents.tasteProfile`. Empty diary returns `empty: true` and
+   nothing else, so no caller can render a recap of zero nights.
+2. **`generate_recap`** — the manifest derives from the registry, so this
+   announced itself on `/.well-known/mcp.json` with no hand-edit to
+   `discovery.ts`. Eleven tools now; six still write.
+3. **Recap card on Profile** — their photos lead when a log has media, show
+   artwork stands in when it does not, and the card says which so "add photos"
+   reads as an invitation rather than a bug.
+4. **Export** — canvas 2D, 1080x1920 and 1080x1080, zero dependencies. The app's
+   display face is a system serif stack, so the export looks like the app without
+   loading a byte from a CDN. Geometry and wrapping are pure and tested against a
+   recording fake context, including an assertion that nothing lands off-canvas
+   in either shape.
+5. **Caption** — AIsa, not a second provider. The model gets only facts we
+   counted and is told it may not add any; if it is unset, unfunded or
+   unreachable the locally written caption ships and the UI names the reason.
+
+**WE CANNOT AUTO-POST, and the UI says so rather than designing around it.**
+Instagram's Graph API needs a business account and app review; there is no path
+to it tonight, and publishing public content for someone needs their consent for
+that post regardless. So the copy reads "Ready to post. We generate it, you post
+it — Showtonic never publishes to your accounts, and there is no button here
+that would," and the buttons hand them the image through the OS share sheet
+(`navigator.share` with a File) or a download. A button that silently did nothing
+would have been the worse answer, on stage and off.
+
+⚠️ **Three things the coordinator should know, two of which need eyes.**
+- **I have not rendered ANY of this** — no `CONVEX_DEPLOYMENT` here. Four rounds
+  of L3's onboarding work were type-checked, unit-tested and still visibly wrong
+  in a browser, so treat "tsc clean" as exactly as much as it is.
+- **The export's real risk is canvas tainting.** Convex storage photos are
+  cross-origin; they are loaded with `crossOrigin="anonymous"` and *skipped* when
+  that is refused, so the export degrades to a card without that photo rather
+  than throwing on `toBlob`. If Convex storage does not send permissive CORS
+  headers, every export will be photo-less and the UI will say how many were left
+  out. Thirty seconds with the download button settles it.
+- **`recap.caption` costs a real AIsa call.** Off by default on the tool
+  (`include_caption`), one button in the UI. If the key's balance is out it
+  returns `recharge_required` and falls back saying so — same signal L4 flagged
+  for `checkout_tickets`.
+
+`convex/_generated/api.d.ts` has hand-added entries for `recap`/`recapSummary` so
+the lane typechecks without a deployment; `npx convex dev` will regenerate them
+identically. No schema change — recap reads `logs` and `media` and writes nothing.
+
+Video editing stays OUT, per the brief: items 1-5 are shipped but not *rendered*,
+and it is the most expensive thing on the list.
+
 ---
 
 ## Proposals — L3: `find_compatible_humans` MCP tool
@@ -688,6 +759,7 @@ agent.**
 | city-aware default artist grid | L3 | 03:30Z |
 | city gate on onboarding artists | L3 | 04:15Z |
 | optional city scope on search + squad slate | L3 | 04:40Z |
+| recap.build + generate_recap + share card/export/caption | L5 | 05:30Z |
 | Runtype spike | L4 | 23:30Z |
 | Hacker Bob scan | L4 | 2026-08-26T23:50Z |
 | app/globals.css + app/views/shared.tsx (design primitives) | L6 | 06:00Z |

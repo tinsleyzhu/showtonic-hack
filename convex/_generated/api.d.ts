@@ -30,6 +30,8 @@ import type * as media from "../media.js";
 import type * as mediaUtils from "../mediaUtils.js";
 import type * as onboardingArtists from "../onboardingArtists.js";
 import type * as onboardingGenres from "../onboardingGenres.js";
+import type * as recap from "../recap.js";
+import type * as recapSummary from "../recapSummary.js";
 import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
 import type * as shows from "../shows.js";
@@ -70,6 +72,8 @@ declare const fullApi: ApiFromModules<{
   mediaUtils: typeof mediaUtils;
   onboardingArtists: typeof onboardingArtists;
   onboardingGenres: typeof onboardingGenres;
+  recap: typeof recap;
+  recapSummary: typeof recapSummary;
   seed: typeof seed;
   seedData: typeof seedData;
   shows: typeof shows;

@@ -2,7 +2,7 @@
 // the dispatcher refuses before doing any work if the caller lacks it.
 //
 // The External track's failure mode is "an MCP server that only reads, because
-// reading is not using". Six of these ten write.
+// reading is not using". Six of these eleven write.
 
 import { ConvexHttpClient } from "convex/browser";
 import type { AgentIdentity } from "./auth";
@@ -249,6 +249,34 @@ export const TOOLS: ToolDef[] = [
           at: now + index,
         })),
       });
+    },
+  },
+  {
+    name: "generate_recap",
+    scope: "read:taste",
+    description:
+      "Turn the owner's diary into a recap they could post — counts, top artists and venues, the span of years, and their highest-rated night, with the copy already written. Read-only and idempotent: it generates, the human approves and posts. We deliberately cannot publish on anyone's behalf, so there is no auto-post here and there will not be one.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "How many top artists/venues/genres, default 5, max 10." },
+        include_caption: {
+          type: "boolean",
+          description:
+            "Also write a caption for it. Costs a model call, so it is off by default; the recap always carries a locally written `shareText` regardless.",
+        },
+      },
+    },
+    run: async (client, me, args) => {
+      const recap: any = await client.query("recap:build" as any, {
+        userId: me.userId,
+        ...(args.limit !== undefined ? { limit: Number(args.limit) } : {}),
+      });
+      if (!args.include_caption || !recap || recap.empty) return recap;
+      // The caption is a separate call because it costs a model round trip; the
+      // note it returns says who wrote it, and that travels to the agent too.
+      const written = await client.action("recap:caption" as any, { userId: me.userId });
+      return { ...recap, caption: written };
     },
   },
 ];
