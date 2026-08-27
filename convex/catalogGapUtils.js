@@ -57,6 +57,10 @@ const TICKETING_DOMAINS = [
   "tixr.com",
   "setlist.fm",
   "shotgun.live",
+  // The app's own catalog is JamBase rows — every show carries a `jambaseId`.
+  // A publisher we already trust to BE the catalog is not a weaker source when
+  // it is the one filling a hole in it.
+  "jambase.com",
 ];
 
 // Words that are never an artist name. A fragment built only out of these is
@@ -721,6 +725,41 @@ function mentionsFestival(text, festivalName) {
   return festivalNeedles(festivalName).some((needle) => haystack.includes(needle));
 }
 
+// "Aug 7 - 9, 2026" is how most pages state a festival, and requiring one of
+// the single-day forms threw away every one of them — including the pages that
+// then list each day under its own header further down.
+//
+// A run confirms the FESTIVAL, never the day, so it is only half a gate: a
+// result admitted this way must also carry a real day header, or it cannot say
+// anything about which day an act played. The year is still required, so the
+// wrong-year hole this replaces stays shut.
+function runOfDatesIncludes(text, isoDate) {
+  const parts = splitIsoDate(isoDate);
+  if (!parts) return false;
+  const haystack = normalizeText(text);
+  const pattern = new RegExp(
+    `\\b(${MONTH_PATTERN})\\b\\.?\\s*(\\d{1,2})\\s*(?:[-\u2013\u2014]|to|through|thru)\\s*(?:(${MONTH_PATTERN})\\b\\.?\\s*)?(\\d{1,2})(?:th|st|nd|rd)?\\s*,?\\s*((?:19|20)\\d{2})`,
+    "gi",
+  );
+  const ours = Date.UTC(Number(parts.year), parts.monthIndex, parts.dayNumber);
+  for (const match of haystack.matchAll(pattern)) {
+    const year = Number(match[5]);
+    if (year !== Number(parts.year)) continue;
+    const firstMonth = monthIndexOf(match[1]);
+    const secondMonth = match[3] ? monthIndexOf(match[3]) : firstMonth;
+    if (firstMonth < 0 || secondMonth < 0) continue;
+    const start = Date.UTC(year, firstMonth, Number(match[2]));
+    const end = Date.UTC(year, secondMonth, Number(match[4]));
+    if (start <= ours && ours <= end) return true;
+  }
+  return false;
+}
+
+function monthIndexOf(token) {
+  const value = normalizeText(token).replace(/\./g, "");
+  return MONTHS.findIndex((month) => month.startsWith(value.slice(0, 3)) && value.length >= 3);
+}
+
 function festivalSlug(festivalName, isoDate) {
   const year = splitIsoDate(isoDate)?.year ?? "";
   const base = normalizeText(festivalName)
@@ -795,28 +834,59 @@ function dayLineupSegment(content, isoDate) {
   const headers = dayHeaderPositions(text);
   if (!headers.length) return { segment: text, headed: false };
 
-  const ours = headers.find((header) => headerNamesDate(header.text, isoDate));
-  if (!ours) return null;
+  const ours = headers.filter((header) => headerNamesDate(header.text, isoDate));
+  if (!ours.length) return null;
 
-  const start = ours.index + ours.length;
-  const next = headers.find(
-    (header) => header.index >= start && !headerNamesDate(header.text, isoDate),
-  );
-  return { segment: text.slice(start, next ? next.index : text.length), headed: true };
+  // A page names its day more than once — in the title, in the run of dates,
+  // in a nav teaser, and finally at the head of the day's own section. Only one
+  // of those is followed by the bill, and which one varies by publisher, so
+  // each candidate is cut and the one that actually lists acts wins.
+  let best = null;
+  for (const header of ours) {
+    const start = header.index + header.length;
+    const nextDay = headers.find(
+      (row) => row.index >= start && !headerNamesDate(row.text, isoDate),
+    );
+    // A day's list also ends at the next heading of any kind: that is where the
+    // page stops printing acts and starts printing footers, ads and menus.
+    const heading = nextHeadingIndex(text, start);
+    const end = Math.min(nextDay ? nextDay.index : text.length, heading ?? text.length);
+    const segment = text.slice(start, end);
+    const score = countPlausibleNames(segment);
+    if (!best || score > best.score) best = { segment, score };
+  }
+  return { segment: best.segment, headed: true };
 }
 
-// A colon separates a label from its bill ("Friday, August 7: Tame Impala"), so
-// it splits like any other. No act name carries one.
-const BILL_SEPARATORS = /[,;|•·:\n\r\t]+|\s+\/\s+|\s{3,}/;
+// Markdown-ish headings are how the extracted page marks the end of a list.
+function nextHeadingIndex(text, from) {
+  const pattern = /\n\s*#{1,6}\s+\S/g;
+  pattern.lastIndex = from;
+  const match = pattern.exec(text);
+  return match ? match.index : null;
+}
+
+function countPlausibleNames(segment) {
+  return String(segment ?? "")
+    .split(BILL_SEPARATORS)
+    .map(trimBillFragment)
+    .filter(looksLikeArtistName).length;
+}
+
+const BILL_SEPARATORS = /[,;|•·:\n\r\t]+|\s+\/\s+|\s+[-–—]+\s+|\s+and\s+|\s{3,}/i;
 
 function trimBillFragment(value) {
   return stripTrailingNoise(
     String(value ?? "")
-      .replace(/^[\s\-–—|·:•*+]+/, "")
-      .replace(/[\s\-–—|·:•*+]+$/, "")
+      .replace(/^[\s\-–—|·:•*+#>]+/, "")
+      .replace(/[\s\-–—|·:•*+#]+$/, "")
       // A sentence's full stop, but never the one inside "Fred again..", which
       // is part of the name and drops the act if we take it.
-      .replace(/(?<!\.)\.$/, ""),
+      .replace(/(?<!\.)\.$/, "")
+      // Prose lists leave the sentence's joints on the fragment: "…Dijon on
+      // Saturday" splits to "Dijon on". No act name ends in a bare preposition.
+      .replace(/\s+(?:on|at|in|for|with|plus|feat|ft|featuring|presents)$/i, "")
+      .replace(/^(?:on|at|in|for|with|plus|feat|ft|featuring|presented by)\s+/i, ""),
   );
 }
 
@@ -841,6 +911,8 @@ function looksLikeArtistName(value) {
   if (/\b\d{1,2}\s*(?::\s*\d{2})?\s*(?:am|pm)\b/i.test(name)) return false;
   if (new RegExp(`^(?:${DAY_HEADER_SOURCE})$`, "i").test(normalizeText(name))) return false;
   if (/^\$/.test(name)) return false;
+  // A fragment that opens with a year is the tail of a date, not an act.
+  if (/^(?:19|20)\d{2}\b/.test(name.trim())) return false;
   // "Lands End Stage", "Panhandle Tent" — a festival page names its rooms in
   // the same lists as its acts, and a stage that becomes an artist is a row
   // every later match can land on.
@@ -864,7 +936,12 @@ function dropCommaSplitNames(fragments) {
     const previous = fragments[index - 1];
     if (!/^the\s+\S+/.test(current)) continue;
     if (current.split(" ").length > 3) continue;
-    if (String(previous).trim().split(/\s+/).length > 2) continue;
+    // Only a ONE-word neighbour is ambiguous: "Tyler, The Creator" splits that
+    // way, and so does "Sly and the Family Stone". "The Strokes, The xx" does
+    // not — a two-word neighbour is its own act, and dropping it was throwing
+    // away real headliners to guard against a collision that cannot happen.
+    const previousWords = String(previous).trim().split(/\s+/);
+    if (previousWords.length !== 1 || /^the$/i.test(previousWords[0])) continue;
     dropped.add(index - 1);
     dropped.add(index);
   }
@@ -928,13 +1005,22 @@ function proposeFestivalDay(festival, results, options = {}) {
       rejected.push({ url, reason: `page does not name ${festivalName}` });
       continue;
     }
-    if (!mentionsDate(date, title, content, url)) {
+    const namesThisDate = mentionsDate(date, title, content, url);
+    const namesTheRun = !namesThisDate && runOfDatesIncludes(`${title} ${content}`, date);
+    if (!namesThisDate && !namesTheRun) {
       rejected.push({ url, reason: "date not confirmed in the page" });
       continue;
     }
     const slice = dayLineupSegment(`${title}\n${content}`, date);
     if (!slice) {
       rejected.push({ url, reason: "page covers the festival but never names this day" });
+      continue;
+    }
+    // The run of dates says the festival happened that week. Only a day header
+    // says an act played THIS day, so a page admitted on the run alone may not
+    // hand its whole bill to one day.
+    if (namesTheRun && !slice.headed) {
+      rejected.push({ url, reason: "page names the festival's run but never this day on its own" });
       continue;
     }
     const names = harvestBillNames(slice.segment, {
@@ -1122,6 +1208,7 @@ export {
   nightsMissingFromCatalog,
   proposeFestivalDay,
   proposeFromResults,
+  runOfDatesIncludes,
   splitLineup,
   weekdayName,
 };
