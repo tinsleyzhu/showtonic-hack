@@ -100,3 +100,67 @@ export function proposeFromResults(
   results: readonly SearchResult[] | null | undefined,
   options?: { minConfidence?: number },
 ): ProposalOutcome;
+
+// --- Festivals --------------------------------------------------------------
+
+export type FestivalDay = {
+  festivalName: string;
+  date: string;
+  city?: string | null;
+  venueName?: string | null;
+};
+
+export type FestivalProposal = {
+  clusterDate: string;
+  festivalId: string;
+  festivalName: string;
+  title: string;
+  venueName: string | null;
+  city: string | null;
+  artistNames: string[];
+  sourceUrl: string;
+  sourceTitle: string;
+  corroboratingUrls: string[];
+  confidence: number;
+  evidence: Evidence[];
+};
+
+export type FestivalOutcome = {
+  proposal: FestivalProposal | null;
+  considered: { name: string; hosts: string[]; authoritative: boolean }[];
+  rejected: { url: string; reason: string }[];
+  // Names seen once, on a source with no authority — held back rather than
+  // billed, and reported so a thin bill is distinguishable from a strict gate.
+  uncorroborated?: number;
+  declineReason: string | null;
+};
+
+export const DELTA_FESTIVAL_CONFIRMED: number;
+export const MAX_BILL_NAMES: number;
+
+export function buildFestivalQueries(festival: {
+  festivalName: string;
+  date?: string;
+  clusterDate?: string;
+  city?: string | null;
+}): { query: string }[];
+export function festivalSlug(festivalName: string, isoDate: string): string;
+export function festivalDayTitle(festivalName: string, isoDate: string): string;
+export function weekdayName(isoDate: string): string;
+export function mentionsFestival(text: string, festivalName: string): boolean;
+export function runOfDatesIncludes(text: string, isoDate: string): boolean;
+export function dayLineupSegment(
+  content: string,
+  isoDate: string,
+): { segment: string; headed: boolean } | null;
+export function harvestBillNames(
+  segment: string,
+  context?: { festivalName?: string; venueName?: string | null; city?: string | null },
+): string[];
+export function looksLikeArtistName(value: string): boolean;
+export function isAuthoritativeFestivalSource(url: string, festivalName: string): boolean;
+export function proposeFestivalDay(
+  festival: FestivalDay,
+  results: readonly SearchResult[] | null | undefined,
+  options?: { minConfidence?: number },
+): FestivalOutcome;

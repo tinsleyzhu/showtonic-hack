@@ -192,6 +192,12 @@ export default defineSchema({
   catalogProposals: defineTable({
     clusterDate: v.string(), // ISO date of the night that had no match
     venueName: v.optional(v.string()), // absent when the night carried no GPS
+    // Set only on festival-day proposals: one row per DAY, whose artistNames is
+    // that day's bill. SPEC.md "a festival is one thing, not sixty" asks the
+    // catalog for exactly this row, so recovering a lineup now does not have to
+    // be undone when the data model lands.
+    festivalId: v.optional(v.string()),
+    title: v.optional(v.string()), // "Outside Lands — Saturday"; artists otherwise
     city: v.optional(v.string()),
     artistNames: v.array(v.string()),
     sourceUrl: v.string(), // the receipt — always shown next to the claim
