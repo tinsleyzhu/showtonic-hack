@@ -89,7 +89,12 @@ test("evidence rows are checkable sentences, not scores in disguise", () => {
 
 test("a concierge recommends five things, it does not paginate", () => {
   const shows = Array.from({ length: 12 }, (_, index) =>
-    show({ showId: `show-${index}`, date: `2026-09-${String(index + 1).padStart(2, "0")}` }),
+    show({
+      showId: `show-${index}`,
+      title: `Act ${index}`,
+      artistNames: [`Act ${index}`],
+      date: `2026-09-${String(index + 1).padStart(2, "0")}`,
+    }),
   );
   const finds = scoreFinds(shows, { logs: diary(8), today: "2026-08-27", limit: 25 });
   assert.equal(finds.length, 5);
@@ -277,4 +282,35 @@ test("logs the agent rebuilt are activity; logs you wrote yourself are not", () 
 
   assert.equal(items.length, 1);
   assert.match(items[0].summary, /Added Osees/);
+});
+
+test("five cards for one artist is one recommendation, not five", () => {
+  // Live catalog, San Francisco: Blood Orange plays the Warfield three nights
+  // and the catalog holds each night twice — "Blood Orange at The Warfield"
+  // and "Blood Orange (6 and Over)". The first run of this function against
+  // real data filled the whole slate with that one act.
+  const run = ["2026-09-09", "2026-09-10", "2026-09-11"].flatMap((date, index) => [
+    show({ showId: `warfield-${index}-a`, title: "Blood Orange at The Warfield", date, venueName: "The Warfield", artistNames: ["Blood Orange"], genres: ["punk"] }),
+    show({ showId: `warfield-${index}-b`, title: "Blood Orange (6 and Over)", date, venueName: "Warfield", artistNames: ["Blood Orange"], genres: ["punk"] }),
+  ]);
+  const other = show({ showId: "other", title: "Someone Else", date: "2026-09-20", venueName: "Rickshaw Stop", artistNames: ["Someone Else"], genres: ["punk"] });
+
+  // A catalog where punk is rare, so the genre row carries weight at all —
+  // in an all-punk catalog punk means nothing, which is the rarity model
+  // working and a different test.
+  const catalogGenres = [["punk"], ...Array.from({ length: 19 }, () => ["jazz"])];
+  const finds = scoreFinds([...run, other], { logs: diary(8), today: "2026-08-27", catalogGenres });
+
+  assert.equal(finds.filter((find) => /Blood Orange/.test(find.title)).length, 1);
+  assert.ok(finds.some((find) => find.title === "Someone Else"));
+  // The first night of a run is the one worth offering.
+  assert.equal(finds.find((find) => /Blood Orange/.test(find.title)).date, "2026-09-09");
+});
+
+test("the bill never leaks into the contract", () => {
+  const [find] = scoreFinds([show()], { logs: diary(8), today: "2026-08-27" });
+  assert.deepEqual(
+    Object.keys(find).sort(),
+    ["city", "date", "evidence", "score", "showId", "title", "venueName"],
+  );
 });

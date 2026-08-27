@@ -259,6 +259,9 @@ export function scoreFinds(shows, taste = {}) {
       .sort((left, right) => right.weight - left.weight);
 
     finds.push({
+      // Internal, stripped below: the bill is what decides whether two rows
+      // are the same recommendation, and it is not part of the contract.
+      billArtists: artistNames,
       showId: String(show.showId),
       title: show.title,
       date: show.date,
@@ -270,9 +273,36 @@ export function scoreFinds(shows, taste = {}) {
     });
   }
 
-  return finds
-    .sort((left, right) => right.score - left.score || left.date.localeCompare(right.date))
-    .slice(0, Math.max(1, Math.min(limit, 5)));
+  // One card per act.
+  //
+  // Run against the live catalog this returned five cards for ONE artist:
+  // Blood Orange plays the Warfield three nights, and the catalog holds each
+  // night twice ("Blood Orange at The Warfield" and "Blood Orange (6 and
+  // Over)"). Five slots, one recommendation. A concierge offering the same
+  // name five times has recommended nothing, so the first night of a run wins
+  // and the rest of the slate goes to other acts.
+  const seen = new Set();
+  const slate = [];
+  for (const find of finds.sort(
+    (left, right) => right.score - left.score || left.date.localeCompare(right.date),
+  )) {
+    const key = billKey(find);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const { billArtists, ...card } = find;
+    void billArtists;
+    slate.push(card);
+    if (slate.length >= Math.max(1, Math.min(limit, 5))) break;
+  }
+  return slate;
+}
+
+// What makes two cards the same recommendation: the act, not the row. The
+// title is the fallback for a bill the catalog never named an artist for.
+function billKey(find) {
+  const artists = (find.evidence ?? []).length > 0 ? find.billArtists ?? [] : [];
+  if (artists.length > 0) return artists.map(normalize).sort().join("|");
+  return normalize(find.title).replace(/\s*\(.*\)$/, "").replace(/ at .*$/, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -349,9 +379,11 @@ export function narrateBeliefs(logs = [], shows = []) {
   const drift = describeDrift(logs);
   if (drift) candidates.push(drift);
 
-  // 5. An artist you follow with your feet rather than a button.
+  // 5. An artist you follow with your feet rather than a button. Three nights
+  //    is the clear case; two is worth saying when two is a third of the
+  //    diary, which is how a real six-night diary actually reads.
   const repeat = [...diary.artistNights.entries()]
-    .filter(([, nights]) => nights >= 3)
+    .filter(([, nights]) => nights >= 3 || (nights >= 2 && nights / total >= 0.3))
     .sort((left, right) => right[1] - left[1])[0];
   if (repeat) {
     const name = diary.lastSeenByArtist.get(repeat[0])?.name ?? repeat[0];
@@ -361,6 +393,30 @@ export function narrateBeliefs(logs = [], shows = []) {
       basis: `${plural(repeat[1], "night")} with them in a diary of ${total}`,
       strength: repeat[1] >= 4 ? "strong" : "forming",
     });
+  }
+
+  // 6. How you rate, which is the one belief every diary long enough to have
+  //    an average can support. The app hides averages under LOW_SIGNAL_SHOWS
+  //    and so does this — the gate at the top of the function is the same one.
+  const rated = logs.filter((entry) => typeof entry.rating === "number" && entry.rating > 0);
+  if (rated.length >= LOW_SIGNAL_SHOWS) {
+    const average = rated.reduce((sum, entry) => sum + entry.rating, 0) / rated.length;
+    const rounded = Math.round(average * 10) / 10;
+    if (rounded >= 4.2) {
+      candidates.push({
+        rank: 0.3,
+        statement: "You only log the nights that were worth it",
+        basis: `Your ${rated.length} rated nights average ${rounded}★`,
+        strength: rounded >= 4.5 ? "strong" : "forming",
+      });
+    } else if (rounded <= 3.2) {
+      candidates.push({
+        rank: 0.3,
+        statement: "You are a hard marker",
+        basis: `Your ${rated.length} rated nights average ${rounded}★`,
+        strength: rounded <= 2.8 ? "strong" : "forming",
+      });
+    }
   }
 
   return candidates
