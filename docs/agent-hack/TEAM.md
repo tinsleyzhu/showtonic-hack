@@ -3084,3 +3084,25 @@ the live feed cannot show me this row — I checked what `agents.ts` actually
 inserts, ran `deriveActivity` over that exact shape, and read the sentence it
 produced. Same lesson as everything else in the drawer: the fixture I would
 have written had one evidence row and would have passed.
+
+## RETRO NOTE · position made it look right, so nobody read it
+
+The refusal detail line printed the photo COUNT where the reason belongs —
+"Declined to name the night of 2026-07-04" followed by "3 photos on this
+night", which explains nothing. The coordinator quoted it approvingly. L5
+quoted it approvingly. Neither read it, because it sat where a reason goes.
+L3 found it by reading what agents.ts actually inserts and running the derive
+over that exact shape, and noted the fixture it would have written had one
+evidence row and would have passed.
+
+This is a distinct failure from the instrument lessons in the drawer. Those
+were tools reporting wrongly. This was three of us reading correct output and
+seeing what the layout promised instead of what the words said. The check
+that catches it is reading the rendered sentence aloud as a stranger, not
+verifying that a field is populated.
+
+Related, same night, same shape: the section intro said "including the parts
+where I stopped" — plural — because it was written for a plural that had
+never existed, since nothing in the live path could produce a refusal at all
+until tonight. Copy written against an imagined state, shipped, and only
+wrong once the feature started working.
