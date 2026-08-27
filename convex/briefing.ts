@@ -41,6 +41,9 @@ async function upcomingInCity(ctx: QueryCtx, city: string, today: string) {
     const inCity = await ctx.db
       .query("shows")
       .withIndex("by_city_date", (q) => q.eq("city", city).gte("date", today))
+      // cap-safe: city equality and date ascending are both in the index, so
+      // the cap drops the furthest-future shows in the member's own city and
+      // nothing that a later filter would have wanted.
       .take(SHOW_READ_CAP);
     if (inCity.length > 0) return inCity;
   }
@@ -50,6 +53,8 @@ async function upcomingInCity(ctx: QueryCtx, city: string, today: string) {
   return ctx.db
     .query("shows")
     .withIndex("by_date", (q) => q.gte("date", today))
+    // cap-safe: soonest-first across the catalog, and the fallback exists
+    // precisely because no city scope was available to put in the index.
     .take(SHOW_READ_CAP);
 }
 
@@ -259,6 +264,11 @@ async function peersGoingTo(
       ctx.db
         .query("attendance")
         .withIndex("by_show", (q) => q.eq("showId", showId))
+        // cap-review: NOT order-safe — attendance rows are read before we can
+        // tell which are peers rather than the member's own, so a show whose
+        // first 40 rows are all "logged" yields no friend-going evidence. The
+        // consequence is a missing evidence row, never a wrong one, and the
+        // alternative is an unbounded read on the home surface.
         .take(PEER_ATTENDEES_PER_SHOW),
     ),
   );
@@ -280,6 +290,11 @@ async function peersGoingTo(
     peerIds.map(async (peerId) => {
       const [peer, peerLogs] = await Promise.all([
         ctx.db.get(peerId),
+        // cap-review: NOT order-safe — a peer's diary is sampled in insertion
+        // order to bound the read, so match strength is computed from at most
+        // forty of their nights. It can understate an overlap; it cannot
+        // invent one, and the percentage is only ever shown as evidence
+        // alongside the artists it names.
         ctx.db.query("logs").withIndex("by_user", (q) => q.eq("userId", peerId)).take(PEER_LOG_CAP),
       ]);
       if (!peer || peer.visibility === "private") return null;

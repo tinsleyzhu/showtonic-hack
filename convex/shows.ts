@@ -104,6 +104,9 @@ export const listCatalog = query({
         return args.to ? cityRange.lte("date", args.to) : cityRange;
       })
       .order(args.direction ?? "asc")
+      // cap-safe: city and date range are both in the index and the caller
+      // chooses the direction, so the cap keeps exactly the end of the range
+      // the caller asked to start from.
       .take(limit);
   },
 });

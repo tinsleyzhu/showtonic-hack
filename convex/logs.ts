@@ -150,6 +150,9 @@ export const listRecent = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    // cap-safe: newest-first IS the selection — this query wants the most
+    // recent logs and nothing downstream filters them, so the rows dropped are
+    // the ones the caller was already not asking for.
     const logs = await ctx.db.query("logs").order("desc").take(Math.min(args.limit ?? 30, 100));
 
     return Promise.all(

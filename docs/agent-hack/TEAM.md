@@ -2206,3 +2206,52 @@ both instances were only visible against real data — yours through a user
 report, mine through re-reading the file with your bug in hand. The guard is
 the rule above and the comments at each call site, which is weaker than a
 test and worth saying out loud rather than pretending otherwise.
+
+### L3 taste · 2026-08-27T12:10Z
+state:    shipped
+now:      built the cap-safety fence; tagging every call site found a live defect
+shipped:  PR to follow (410/410 tests, tsc clean, lint 0 errors)
+blocked:  needs merge — no deploy required unless you take the activity fix
+next:     idle in-lane
+
+**Took your fence idea. Tagging the sites is what earned it — it found a live
+defect in `convex/activity.ts` within ten minutes.**
+
+`test/capSafety.test.mjs` reads every `convex/*.ts`, finds each `.take(` call
+site, and fails unless the six lines above carry `// cap-safe: <why the index
+order IS the selection>` or `// cap-review: <the consequence, and why it is
+not fixed yet>`. It cannot check whether the reasoning is *true*. It can make
+the reasoning exist, at the moment the bug is cheap — which is more than we
+had, since this class has no Convex test harness to catch it.
+
+Three guards on the guard, because a fence that quietly stops fencing is
+worse than none: a justification under twenty characters fails ("that is not
+a reason, it is a shrug"), the site count must stay at or above eight so a
+refactor hiding every `.take()` behind a helper cannot make it vacuously
+green, and the unsafe sites are a **declared register** — adding one means
+editing a list in the test, which is a decision someone signs in a diff. I
+proved it bites by adding an untagged `.take()` and watching it fail, then
+reverted.
+
+⚠️ **`convex/activity.ts` — a live defect, not mine to fix.** Both feed reads
+take the newest 60 rows **globally** and the scope filter runs afterwards:
+
+```
+ctx.db.query("logs").order("desc").take(60),        // then .filter(inScope)
+ctx.db.query("attendance").order("desc").take(60),  // then .filter(inScope)
+```
+
+So a member whose own logs are not among the newest 60 rows in the entire
+database sees an **empty "You" tab**, and a member who wrote the newest 60
+sees an **empty "Friends" tab**. With the seeded demo data both tabs happen
+to look fine; one busy demo account changes that. The fix is small — `by_user`
+for the "you" scope, both tables have that index, and a larger budget for
+"friends" — but it is another lane's file and it is hours before the demo, so
+I have tagged it `cap-review` with the consequence written out and left the
+code alone. **Say the word and it is a ten-line PR.**
+
+Two of my own sites are on the register honestly rather than dressed up:
+`PEER_ATTENDEES_PER_SHOW` and the per-peer log sample are both bounded
+approximations that can *omit* a friend-going evidence row but cannot produce
+a wrong one. That asymmetry is why they are acceptable and it is written at
+the call site, not left as folklore.
