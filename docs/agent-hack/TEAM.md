@@ -334,6 +334,56 @@ as high as a genuine overlap — on a catalog where jazz sits on 154 of the firs
   returning users. Reordering the wizard would fix that but changes a flow I do
   not own — say the word if you want it.
 
+### L3 taste + p2p · 2026-08-27T03:05Z
+state:    shipped
+now:      both bugs the coordinator found by rendering the taste step are fixed
+shipped:  PR #8 (206/206 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane, hardening tests; say the word if you want me elsewhere
+
+Rendering it found two things no amount of reading my own lane would have.
+Both fixed:
+
+**1. Home base now comes before taste.** Worse than the inert weighting I
+predicted: with `homeCity` empty the ranking spanned the whole catalog, and
+NYC's 1,567 upcoming shows outvoted SF's 746 — a first-run San Franciscan was
+offered the New York Philharmonic. Swapped in `ONBOARDING_STEPS`; home base
+stays skippable, and skipping just returns the picker to a citywide ranking,
+which is the honest fallback rather than an error. The wizard's `Step N of 4`
+labels were hardcoded and would have gone wrong here, so they now derive from
+the array and cannot drift again. The ordering is pinned by a test that states
+*why*, so a future reshuffle has to argue with the bug rather than quietly
+bring it back.
+
+**2. Genre families are learned from co-occurrence, not just substrings.**
+`post-bop` and `hard bop` ARE jazz and share no word with it, so no substring
+test could ever reach them. Families now also come from how genres co-occur
+**on an artist**: if nearly every artist carrying post-bop also carries jazz,
+post-bop is jazz. It is directional on purpose — jazz sits on plenty of artists
+with nothing to do with post-bop, so jazz never becomes post-bop's child. The
+name test is kept as the other half of a hybrid, since it still catches
+`jazz fusion` where co-occurrence data is thin.
+
+Counted per **artist**, never per show: a show's genres are the union across the
+bill, so two unrelated acts sharing a night would otherwise look like evidence
+their genres belong together. That is pinned by a test too.
+
+On your live shape (jazz 561, rock 223, post-bop 195, pop 163, jazz fusion 156,
+classical 141, plus the soul pair) this goes from **6 of 11 jazz chips to 2 of
+8** — `jazz fusion` and `hard bop` fold away and rock, pop, classical and hip
+hop take the freed slots. Still no hardcoded taxonomy: a house-heavy city gets
+its own families.
+
+You were right that this and the rarity weighting are the same problem wearing
+different hats. Both are now measured from the corpus instead of assumed.
+
+Caveat unchanged and worth repeating: **I still cannot render this.** No
+`CONVEX_DEPLOYMENT` in this worktree, so the reorder and the new chip list are
+type-checked and unit-tested but unseen by me. The same thirty seconds would be
+well spent again — especially that home base now renders with no artists picked
+yet (its "including N artists you selected" line already guarded on a non-zero
+count, so it should simply be absent).
+
 ---
 
 ## Proposals — L3: `find_compatible_humans` MCP tool
@@ -456,4 +506,6 @@ next:     waiting on the deployed `upcoming` coverage number to decide where
 | squad plan + transcript in app UI | L3 | 00:50Z |
 | genre rarity weighting (jazz skew) | L3 | 01:20Z |
 | genre-first onboarding picker | L3 | 01:45Z |
+| onboarding step reorder (homebase→taste) | L3 | 02:30Z |
+| co-occurrence genre families | L3 | 02:45Z |
 | Runtype spike | L4 | 23:30Z |
