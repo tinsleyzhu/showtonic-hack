@@ -81,7 +81,7 @@ export const applyEventGenres = mutation({
         skipped += 1;
         continue;
       }
-      await ctx.db.patch(artist._id, { genres: update.genres });
+      await ctx.db.patch(artist._id, { genres: update.genres, genreSource: "ticketmaster" });
       patched += 1;
     }
     return { patched, skipped };
@@ -157,13 +157,19 @@ export const enrich = mutation({
     hometown: v.optional(v.string()),
     bio: v.optional(v.string()),
     topTrack: v.optional(v.string()),
+    // "spotify" | "musicbrainz" | "context" — recorded alongside genres so a
+    // weak tag can be told from a strong one later.
+    genreSource: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const artist = await ctx.db.get(args.artistId);
     if (!artist) return { patched: false };
     const patch: Record<string, unknown> = {};
     if (args.image && !artist.image) patch.image = args.image;
-    if (args.genres && args.genres.length && artist.genres.length === 0) patch.genres = args.genres;
+    if (args.genres && args.genres.length && artist.genres.length === 0) {
+      patch.genres = args.genres;
+      if (args.genreSource) patch.genreSource = args.genreSource;
+    }
     if (args.hometown && !artist.hometown) patch.hometown = args.hometown;
     if (args.bio && !artist.bio) patch.bio = args.bio;
     if (args.topTrack && !artist.topTrack) patch.topTrack = args.topTrack;

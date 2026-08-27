@@ -694,6 +694,7 @@ export const enrichArtists = action({
         genres?: string[];
         hometown?: string;
         topTrack?: string;
+        genreSource?: string;
       } = {};
 
       if (token) {
@@ -704,7 +705,10 @@ export const enrichArtists = action({
         if (payload) {
           const fields = spotifyArtistFields(payload);
           if (fields.image) patch.image = fields.image;
-          if (fields.genres && fields.genres.length) patch.genres = fields.genres;
+          if (fields.genres && fields.genres.length) {
+            patch.genres = fields.genres;
+            patch.genreSource = "spotify";
+          }
           if (fields.spotifyUrl) patch.topTrack = fields.spotifyUrl;
         }
         await sleep(120);
@@ -726,6 +730,7 @@ export const enrichArtists = action({
           if (!patch.hometown && fields.hometown) patch.hometown = fields.hometown;
           if ((!patch.genres || !patch.genres.length) && fields.genres?.length) {
             patch.genres = fields.genres;
+            patch.genreSource = "musicbrainz";
           }
         }
       }
@@ -741,6 +746,7 @@ export const enrichArtists = action({
         });
         if (inferred.length) {
           patch.genres = inferred;
+          patch.genreSource = "context";
           fromContext += 1;
         }
       }

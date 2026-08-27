@@ -10,6 +10,8 @@
 
 import type * as activity from "../activity.js";
 import type * as agents from "../agents.js";
+import type * as artistSearch from "../artistSearch.js";
+import type * as artistSearchUtils from "../artistSearchUtils.js";
 import type * as artists from "../artists.js";
 import type * as attendance from "../attendance.js";
 import type * as backfill from "../backfill.js";
@@ -52,6 +54,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   activity: typeof activity;
   agents: typeof agents;
+  artistSearch: typeof artistSearch;
+  artistSearchUtils: typeof artistSearchUtils;
   artists: typeof artists;
   attendance: typeof attendance;
   backfill: typeof backfill;
