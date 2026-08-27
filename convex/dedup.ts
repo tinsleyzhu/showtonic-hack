@@ -332,12 +332,15 @@ export const applyVenueMerges = internalMutation({
 export const repointShowsToCanonicalPage = internalMutation({
   args: {
     cursor: v.union(v.string(), v.null()),
-    artistMap: v.optional(v.any()),
-    venueMap: v.optional(v.any()),
+    // Pairs, not a map: Convex caps any object argument at 1,024 fields, and
+    // the artist sweep alone carries 1,321 duplicate ids. Arrays cap at 8,192
+    // items, which is room to spare.
+    artistPairs: v.optional(v.array(v.array(v.string()))),
+    venuePairs: v.optional(v.array(v.array(v.string()))),
   },
   handler: async (ctx, args) => {
-    const artistMap: Record<string, string> = args.artistMap ?? {};
-    const venueMap: Record<string, string> = args.venueMap ?? {};
+    const artistMap: Record<string, string> = Object.fromEntries(args.artistPairs ?? []);
+    const venueMap: Record<string, string> = Object.fromEntries(args.venuePairs ?? []);
     const page = await ctx.db.query("shows").paginate({ cursor: args.cursor, numItems: 200 });
 
     let patched = 0;
@@ -463,9 +466,9 @@ export const runDedup = action({
     // Repoint the big table FIRST for artists and venues: a show must never
     // point at an id that has already been deleted, not even between batches.
     if (args.table !== "shows") {
-      const map: Record<string, string> = {};
+      const pairs: string[][] = [];
       for (const merge of merges) {
-        for (const duplicateId of merge.duplicateIds) map[duplicateId] = merge.canonicalId;
+        for (const duplicateId of merge.duplicateIds) pairs.push([duplicateId, merge.canonicalId]);
       }
       let cursor: string | null = null;
       for (;;) {
@@ -473,8 +476,8 @@ export const runDedup = action({
           internal.dedup.repointShowsToCanonicalPage,
           {
             cursor,
-            artistMap: args.table === "artists" ? map : undefined,
-            venueMap: args.table === "venues" ? map : undefined,
+            artistPairs: args.table === "artists" ? pairs : undefined,
+            venuePairs: args.table === "venues" ? pairs : undefined,
           },
         );
         summary.showsRepointed += page.patched;
