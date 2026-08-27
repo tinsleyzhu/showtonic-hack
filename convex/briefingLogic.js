@@ -259,9 +259,10 @@ export function scoreFinds(shows, taste = {}) {
       .sort((left, right) => right.weight - left.weight);
 
     finds.push({
-      // Internal, stripped below: the bill is what decides whether two rows
-      // are the same recommendation, and it is not part of the contract.
+      // Internal, stripped below: the bill and the start time decide whether
+      // two rows are the same recommendation. Neither is part of the contract.
       billArtists: artistNames,
+      startTime: show.startTime,
       showId: String(show.showId),
       title: show.title,
       date: show.date,
@@ -273,7 +274,8 @@ export function scoreFinds(shows, taste = {}) {
     });
   }
 
-  // One card per act.
+  // One card per act, one party once, and no more than two nights in the same
+  // room.
   //
   // Run against the live catalog this returned five cards for ONE artist:
   // Blood Orange plays the Warfield three nights, and the catalog holds each
@@ -282,19 +284,57 @@ export function scoreFinds(shows, taste = {}) {
   // name five times has recommended nothing, so the first night of a run wins
   // and the rest of the slate goes to other acts.
   const seen = new Set();
+  const kept = [];
   const slate = [];
+  const perVenue = new Map();
   for (const find of finds.sort(
     (left, right) => right.score - left.score || left.date.localeCompare(right.date),
   )) {
     const key = billKey(find);
     if (seen.has(key)) continue;
+
+    // One party, two headliners. The Midway, 2026-09-05 at 15:00, reached the
+    // live briefing twice — "Purple Disco Machine at The Midway" and
+    // "Electroluxx Pride Party", the same three artists, because two sources
+    // disagree about who is top of the bill. The headliner has to stay in the
+    // dedup key, so the same event is caught here instead: same room, same
+    // date, same start, and a bill that overlaps.
+    if (kept.some((earlier) => isSameEvent(earlier, find))) continue;
+
+    // A concierge that recommends one bar five ways is not scouting. Four of
+    // five live finds were The Midway at 25-26% fit; the ceiling hands those
+    // slots to somewhere else.
+    const venue = normalize(find.venueName);
+    if ((perVenue.get(venue) ?? 0) >= MAX_FINDS_PER_VENUE) continue;
+    perVenue.set(venue, (perVenue.get(venue) ?? 0) + 1);
+
     seen.add(key);
-    const { billArtists, ...card } = find;
+    kept.push(find);
+    const { billArtists, startTime, ...card } = find;
     void billArtists;
+    void startTime;
     slate.push(card);
     if (slate.length >= Math.max(1, Math.min(limit, 5))) break;
   }
   return slate;
+}
+
+// At most this many nights in one room before the remaining slots go
+// elsewhere. Two lets a residency you clearly like keep a foothold; five is
+// the catalog talking about itself.
+const MAX_FINDS_PER_VENUE = 2;
+
+// The same event arriving twice under different headliners: same room, same
+// date, same start time, and at least one artist in common. All four, because
+// two genuinely different bills can share a room and a date (two stages, an
+// early and a late set), and a shared support act across two nights is not a
+// duplicate either.
+function isSameEvent(left, right) {
+  if (normalize(left.venueName) !== normalize(right.venueName)) return false;
+  if (left.date !== right.date) return false;
+  if (normalize(left.startTime ?? "") !== normalize(right.startTime ?? "")) return false;
+  const bill = new Set((left.billArtists ?? []).map(normalize));
+  return (right.billArtists ?? []).some((artist) => bill.has(normalize(artist)));
 }
 
 // What makes two cards the same recommendation: the HEADLINER, not the row.

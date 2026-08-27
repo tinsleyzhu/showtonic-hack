@@ -19,6 +19,8 @@ export type BriefingShow = {
   venueName: string;
   city: string;
   image?: string;
+  /** Local start time, used to tell one event from two in the same room. */
+  startTime?: string;
   artistNames?: readonly string[];
   genres?: readonly string[];
 };
