@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { coverRect, drawRecap, RECAP_FORMATS, recapFilename, wrapLines } from "../app/recapCanvas.js";
+import {
+  coverRect,
+  describeShareFailure,
+  drawRecap,
+  RECAP_FORMATS,
+  recapFilename,
+  wrapLines,
+} from "../app/recapCanvas.js";
 import { buildRecap } from "../convex/recapSummary.js";
 
 // A 2D context that records instead of painting. Every character is ~18px wide,
@@ -138,4 +145,87 @@ test("the filename is safe to write to a disk", () => {
   assert.equal(recapFilename("tinsley", "story"), "showtonic-recap-tinsley-story.png");
   assert.equal(recapFilename("../../etc/passwd", "square"), "showtonic-recap-etcpasswd-square.png");
   assert.equal(recapFilename("", "story"), "showtonic-recap-recap-story.png");
+});
+
+// The share sheet rejects for two reasons that must not read the same.
+test("canceling the share sheet is not a failure and does not download", () => {
+  const outcome = describeShareFailure(new DOMExceptionLike("AbortError"));
+  assert.equal(outcome.fallback, false);
+  assert.equal(outcome.failed, false);
+  assert.match(outcome.message, /canceled/i);
+});
+
+test("a browser that refuses the sheet falls through to the download", () => {
+  const outcome = describeShareFailure(new DOMExceptionLike("NotAllowedError"));
+  assert.equal(outcome.fallback, true);
+  // The likeliest refusal is an expired user activation, and the copy says so
+  // rather than blaming the member.
+  assert.match(outcome.message, /took too long to draw/);
+  assert.match(outcome.message, /saved the file instead/);
+});
+
+test("an unnamed share rejection still reaches the download", () => {
+  for (const error of [new Error("boom"), undefined, null, "nope"]) {
+    assert.equal(describeShareFailure(error).fallback, true);
+  }
+});
+
+test("a share failure never reports itself as a failed export", () => {
+  // The image exists by the time share is called; the member always ends up
+  // with it, so the red failure treatment would be a lie.
+  for (const name of ["AbortError", "NotAllowedError", "DataError"]) {
+    assert.equal(describeShareFailure(new DOMExceptionLike(name)).failed, false);
+  }
+});
+
+class DOMExceptionLike extends Error {
+  constructor(name) {
+    super(name);
+    this.name = name;
+  }
+}
+
+// The bug a recording context cannot see: the headline block used to be
+// top-anchored, so a span line spilled out of the hero and the 76px stat
+// numerals were painted straight through it. Both formats, and both headline
+// lengths, must keep the whole block inside the hero.
+for (const format of ["story", "square"]) {
+  test(`${format}: the headline block stays inside the hero, above the stats`, () => {
+    const ctx = fakeContext();
+    const recap = sampleRecap();
+    assert.ok(recap.spanLine, "the sample must have a span line or this proves nothing");
+    const shape = drawRecap(ctx, { recap, format });
+
+    const text = ctx.calls.filter((call) => call[0] === "fillText");
+    const headline = text.find((call) => call[1] === recap.headline.split(" ").slice(0, 2).join(" ") || call[1] === recap.headline);
+    assert.ok(headline, "the headline should be painted");
+
+    const span = text.find((call) => recap.spanLine.startsWith(String(call[1]).slice(0, 12)) && call !== headline);
+    assert.ok(span, "the span line should be painted");
+
+    // Baselines, so the descenders of the last line still clear the hero edge.
+    assert.ok(
+      span[3] <= shape.heroHeight,
+      `span baseline ${span[3]} spilled past the hero at ${shape.heroHeight}`,
+    );
+    // And it must clear the stats numerals, whose baseline is heroHeight + 96
+    // and which ascend ~76px above it.
+    assert.ok(
+      span[3] < shape.heroHeight + 96 - 76,
+      `span baseline ${span[3]} collides with the stat numerals`,
+    );
+    assert.ok(headline[3] < span[3], "the headline should sit above the span line");
+  });
+}
+
+test("a recap with no span line still bottom-anchors its headline", () => {
+  const ctx = fakeContext();
+  const recap = { ...sampleRecap(), spanLine: "" };
+  const shape = drawRecap(ctx, { recap, format: "story" });
+  const painted = ctx.calls
+    .filter((call) => call[0] === "fillText" && String(call[1]).length > 4)
+    .map((call) => call[3]);
+  const inHero = painted.filter((y) => y <= shape.heroHeight);
+  assert.ok(inHero.length, "the headline should be painted inside the hero");
+  assert.equal(Math.max(...inHero), shape.heroHeight - 40);
 });

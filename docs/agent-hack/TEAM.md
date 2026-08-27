@@ -1240,6 +1240,56 @@ is the right call. What I changed:
 
 Say the word if you disagree with any of them and I will revert that one.
 
+### L5 share · 2026-08-27T07:20Z
+state:    shipped
+now:      merged main, then rendered the recap export for the first time — two real bugs
+shipped:  PR (lane/share): headline/stats collision + share-sheet fallback, 288/288 green
+blocked:  -
+next:     idle in-lane. Nothing here needs a Convex deploy; it is all client-side.
+
+**Rendering it took under a minute to break it, twice.** Thank you for the
+read-only `.env.local` — the caveat I repeated four times ("I have not rendered
+ANY of this") was load-bearing, and both bugs were invisible to `tsc`, to lint,
+and to five passing render tests.
+
+1. **The stats numerals were painted through the span line.** The headline block
+   was top-anchored at `heroHeight - 40`, so as soon as a recap had a `spanLine`
+   the block grew *downward* out of the hero and landed in the stats band: the
+   76px "7 / 5 / 3" sat directly on top of "Two years of nights, back in one
+   place." Every export with a span line — which is every non-empty recap —
+   shipped with that collision. The recording context the render tests use has
+   no pixels, so nothing could collide in a test. The block is one bottom-
+   anchored unit now, and the new tests assert baselines against the hero edge
+   and the numerals' ascent. They fail on the old code; I checked, because a
+   regression test that never fails is decoration.
+2. **A rejected `navigator.share` handed back a raw DOM error and no image** —
+   the exact silent dead end the "no post button" copy exists to avoid. It
+   rejects for two unlike reasons: cancelling the sheet is a *decision* and now
+   says so quietly, and any other refusal falls through to the download. The
+   likeliest refusal is mundane: share requires transient user activation, and
+   awaiting cross-origin photo fetches plus a PNG encode can outlive it.
+
+**Both open questions from 06:15Z are now answered.**
+- **Canvas tainting: not a risk.** Convex storage reflects `Origin` and sends
+  `access-control-allow-credentials`, so a `crossOrigin="anonymous"` photo loads
+  clean and the canvas is never tainted. Note the design was already safe either
+  way — a refused CORS read fires `onerror`, the photo is skipped, and the UI
+  says how many were left out. Not exercised with a real photo, because **no
+  member in the deployment has any media at all** (`media:listByUser` is empty
+  for @tinsley). Worth knowing before anyone demos "your photos lead."
+- **The export itself works.** 1080x1920, 1.4MB PNG, real data from main's
+  deployed `recap:build`. Screenshots in the PR.
+
+⚠️ **Two things I am leaving alone, both outside this lane.**
+- **A broken artwork image on Diary.** "Molly Santana at The Midway" renders as
+  alt text in the Favorite shows row — the artwork URL 404s. Catalog data, so
+  L1/L2's call, but it is on the demo path and it is the first screen after sign-in.
+- **`BEST NIGHT` never fits the story export.** `y < height - 260` gates it and
+  five artist rows always overrun, so the card silently drops the block while
+  the caption still says "Best night: Charli XCX." The honest fix is a taste
+  call I would rather the coordinator make: three artist rows and the best
+  night, or five artists and no best night. It is guarded, not broken, so I did
+  not guess.
 ## CONCIERGE REDESIGN — all lanes read docs/agent-hack/CONCIERGE.md
 
 Contract on main: `app/briefing.ts` (coordinator-owned, do not edit — shape
@@ -1544,3 +1594,60 @@ the same and now has no callers. Tapping an artist is on the demo path; this
 is the same class of problem as the 3,798-read onboarding warning, one order
 of magnitude worse. `convex/artists.ts` is not mine to change — say the word
 and I will take it, or hand it to L1.
+
+### L5 share · 2026-08-27T09:40Z
+state:    shipped
+now:      wave 1 — the employment contract and the activity feed, both rendered
+shipped:  PR (lane/share): AgentAccess rewrite + AgentActivity wholesale, 319/319 green
+blocked:  -
+next:     wave 2 — reclaim story card first, then taste-overlap. Voice pass stays optional.
+
+Coordinator: I did not have `CONCIERGE.md`, `briefing.ts` or the stub — the
+kickoff commit was on `lane/taste` and `lane/match-festivals` but never on
+`main`, and `origin` was timing out. I cherry-picked `f127d7b` to unblock, then
+merged main properly when it landed. The add/add conflicts that caused are
+resolved by ownership: your `briefing.ts` and `CONCIERGE.md`, my
+`AgentActivity.tsx`. **Nothing in `convex/` or `worker/` was touched.**
+
+**1. The mint screen is now the employment contract.** "Hire your concierge",
+plain-language duties instead of scope ids, `pay` fenced in its own bordered
+block under *Never on by default* rather than sitting in a row with "can look
+up a show" and inheriting the same glance, "Sign and hire" instead of "Create
+token". The technical truths stay fully visible because they *are* the trust
+story — told as promises: made on this device and hashed before it leaves,
+frozen at signing, dismissed in one move and it stops mid-sentence.
+
+⚠️ **Two lines are less comfortable than the brief's phrasing, and both are
+deliberate — I checked the copy against `worker/mcp/tools.ts` rather than
+against the vibe.**
+- The suggested "Can write your diary — only after you confirm" **is not true
+  of `write:logs`**. `log_show` writes a rated entry straight to the diary with
+  no stop at the human's desk. The contract now says that plainly.
+- **`write:candidates` covers proposing AND resolving**, so an agent holding it
+  can accept its own proposal — `resolve_candidate` with `action: "accept"`
+  writes a real diary entry. The contract says that too.
+  **This is the one thing here I would change in code if it were mine:** those
+  are two different levels of trust wearing one name, and the honest split is
+  `write:candidates` (propose) and `write:candidates:resolve` (file it). That is
+  `convex/` + `worker/` and therefore not mine. Say the word and I will write
+  the copy the moment someone splits it.
+A screen whose entire job is trust cannot be the screen that shades the truth.
+
+**2. The activity feed replaces the stub wholesale.** Props unchanged. The
+deciding rows are the refusals: they get the raised surface, the blue rule this
+app already uses for reasoning, and their reason is **always visible** — never
+behind a disclosure, because restraint nobody reads is not restraint. Work rows
+keep their detail behind "What happened". Nothing is red; nothing broke.
+
+Decisions live in `app/activityFeed.js`, pure and tested: ordering enforced here
+rather than trusted (the feed is assembled from three tables and a fixture),
+elapsed-time voice, and an unknown-kind fallback — a new `kind` will reach this
+component before it reaches that file and must not vanish or throw. One test
+asserts the *fixture itself* still satisfies the contract, including L3's rule
+that a refusal without a reason is dropped rather than shown bare; it survived
+your fixture edit, which is the point of it.
+
+**Rendered both, against main's deployed backend.** Screenshots in the PR.
+Note for whoever hits it next: **L6's dev server owns :3000**. Mine runs on
+:3100 — two lanes on one port renders the other lane's branch and looks exactly
+like your own code failing to compile. I lost ten minutes to it.
