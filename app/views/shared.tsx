@@ -7,6 +7,7 @@ import { toShow } from "../liveData.js";
 import type { useShowtonic } from "../useShowtonic";
 
 export type View =
+  | "briefing"
   | "discover"
   | "artists"
   | "venues"

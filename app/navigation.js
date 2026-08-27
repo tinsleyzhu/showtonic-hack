@@ -1,5 +1,11 @@
-// Bottom tab bar model (design exports 12–24 footer): Discover · Diary · Log ·
-// Activity · Profile. Pure logic so it stays testable under node:test.
+// Bottom tab bar model: Briefing · Discover · Diary · Log · Activity. Pure
+// logic so it stays testable under node:test.
+//
+// Briefing is home. The app used to open on the catalog, which framed it as a
+// listings site that happened to own an agent; it now opens on the agent's work
+// and the catalog is one tap away. Discover is DEMOTED, NOT DELETED — browsing
+// is still how you find a specific night, and the concierge redesign does not
+// get to take that away.
 //
 // Web mapping notes:
 // - "Diary" opens the combined diary+profile view (exports 12/19 embed the
@@ -13,7 +19,8 @@
 /** @typedef {{ tab: string; label: string; view: string; requiresSocial?: boolean }} TabItem */
 
 const TABS = [
-  { tab: "discover", label: "Discover", view: "discover" },
+  { tab: "briefing", label: "Briefing", view: "briefing" },
+  { tab: "discover", label: "Browse", view: "discover" },
   { tab: "diary", label: "Diary", view: "profile" },
   { tab: "log", label: "Log", view: "discover" },
   { tab: "activity", label: "Activity", view: "leaderboard", requiresSocial: true },
@@ -38,15 +45,16 @@ export function visibleTabs(flags = {}) {
  * @returns {string}
  */
 export function activeTab(view, context = {}) {
+  if (view === "briefing") return "briefing";
   if (view === "discover") return context.catalogMode === "past" ? "log" : "discover";
   if (view === "profile") return "diary";
   if (view === "leaderboard" || view === "tasteMatch") return "activity";
   if (view === "show" || view === "artist" || view === "venue") {
-    return context.cameFrom && ["discover", "diary", "log", "activity"].includes(context.cameFrom)
+    return context.cameFrom && ["briefing", "discover", "diary", "log", "activity"].includes(context.cameFrom)
       ? context.cameFrom
       : "discover";
   }
-  return "discover";
+  return "briefing";
 }
 
 /**
