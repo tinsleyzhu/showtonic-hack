@@ -6,6 +6,7 @@ import {
   CREDITS_PER_ADVANCED_SEARCH,
   buildFestivalQueries,
   buildGapQueries,
+  canonicalVenue,
   estimateSweepCredits,
   nearestVenues,
   eachNightInRange,
@@ -103,6 +104,23 @@ export const locatedVenues = query({
         latitude: venue.latitude,
         longitude: venue.longitude,
       }));
+  },
+});
+
+// Every venue's name and city, with coordinates where they exist. Wider than
+// `locatedVenues`, which filters to rows the anchoring can use: approval needs
+// the rooms that have no coordinates too, or it mints a twin for each of them.
+export const namedVenues = query({
+  args: {},
+  handler: async (ctx) => {
+    const venues = await ctx.db.query("venues").collect();
+    return venues.map((venue) => ({
+      id: venue._id,
+      name: venue.name,
+      city: venue.city,
+      latitude: venue.latitude,
+      longitude: venue.longitude,
+    }));
   },
 });
 
@@ -238,6 +256,17 @@ export const approve = action({
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/(^-|-$)/g, "")}`;
 
+    // The proposal carries the venue name its SOURCE used. Writing that name
+    // straight through is how an agent that fills the catalog starts polluting
+    // it: "Midway San Francisco" beside "The Midway" is one room and two rows,
+    // and every later match has to pick. Resolve to the catalog's own name
+    // first; when nothing matches, insert what the source said rather than
+    // guessing, because a wrong merge moves a show into a room it was not in.
+    const venues = await ctx.runQuery(api.catalogGap.namedVenues, {});
+    const existingVenue = proposal.venueName
+      ? canonicalVenue(proposal.venueName, proposal.city, venues)
+      : null;
+
     await ctx.runMutation(api.shows.importUpcoming, {
       events: [
         {
@@ -247,8 +276,10 @@ export const approve = action({
           title: proposal.title ?? proposal.artistNames.join(" + "),
           festivalId: proposal.festivalId,
           date: proposal.clusterDate,
-          venueName: proposal.venueName ?? "Unknown venue",
-          city: proposal.city ?? "San Francisco",
+          venueName: existingVenue?.name ?? proposal.venueName ?? "Unknown venue",
+          city: existingVenue?.city ?? proposal.city ?? "San Francisco",
+          latitude: existingVenue?.latitude,
+          longitude: existingVenue?.longitude,
           isHeadliner: true,
           artistNames: proposal.artistNames,
           // The source URL rides along as the show's outbound link: a show that

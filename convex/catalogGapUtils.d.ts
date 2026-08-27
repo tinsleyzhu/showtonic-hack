@@ -93,6 +93,11 @@ export function hostOf(url: string): string;
 export function isTicketingDomain(url: string): boolean;
 export function isSocialDomain(url: string): boolean;
 export function mentionsVenue(text: string, venueName: string): boolean;
+export function canonicalVenue<T extends { name: string; city?: string | null }>(
+  candidateName: string,
+  candidateCity: string | null | undefined,
+  venues: readonly T[] | null | undefined,
+): T | null;
 export function weekdayDateNeedles(isoDate: string): string[];
 export function describeProposal(proposal: CatalogProposal | null): string;
 export function proposeFromResults(
