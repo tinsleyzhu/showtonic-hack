@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, SyntheticEvent } from "react";
 import { ArrowLeft, Star } from "lucide-react";
 import type { Show } from "../data";
 import { toShow } from "../liveData.js";
@@ -113,7 +113,7 @@ export function ShowCard({ show, openShow, reason, dimUnattended = false }: { sh
   // Every recommendation carries a reason string (FEATURES §4); raw activity
   // counts are the fallback, never a black box.
   const footnote = ghost ? "I was there →" : reason || `${show.loggedCount ?? 0} logged · ${show.goingCount ?? 0} going`;
-  return <button className="w-44 shrink-0 overflow-hidden border border-[#2A2521] bg-[#141210] text-left sm:w-52" onClick={() => openShow(show.id)} type="button"><div className="relative aspect-[2/3]"><img alt={show.title} className={`h-full w-full object-cover ${ghost ? "opacity-40 saturate-50" : ""}`} src={show.image} /><span className="absolute right-2 top-2 bg-[#0A0908]/90 px-2 py-1 text-xs font-black text-[#4EC98F]">{badge}</span>{attended && <span className="absolute left-2 top-2 bg-[#4EC98F] px-2 py-1 text-[9px] font-black uppercase text-black">In your diary</span>}</div><div className="p-3"><b className="block truncate">{show.artistNames?.join(" + ") || show.title}</b><p className="mt-1 truncate text-xs text-[#8A8177]">{formatDate(show.date)} · {show.venueName}</p><p className={`mt-2 truncate text-[10px] font-black ${ghost || reason ? "text-[#4EC98F]" : "uppercase text-[#FF7A50]"}`}>{footnote}</p></div></button>;
+  return <button className="w-44 shrink-0 overflow-hidden border border-[#2A2521] bg-[#141210] text-left sm:w-52" onClick={() => openShow(show.id)} type="button"><div className="relative aspect-[2/3]"><img onError={posterFallback} alt={show.title} className={`h-full w-full object-cover ${ghost ? "opacity-40 saturate-50" : ""}`} src={show.image} /><span className="absolute right-2 top-2 bg-[#0A0908]/90 px-2 py-1 text-xs font-black text-[#4EC98F]">{badge}</span>{attended && <span className="absolute left-2 top-2 bg-[#4EC98F] px-2 py-1 text-[9px] font-black uppercase text-black">In your diary</span>}</div><div className="p-3"><b className="block truncate">{show.artistNames?.join(" + ") || show.title}</b><p className="mt-1 truncate text-xs text-[#8A8177]">{formatDate(show.date)} · {show.venueName}</p><p className={`mt-2 truncate text-[10px] font-black ${ghost || reason ? "text-[#4EC98F]" : "uppercase text-[#FF7A50]"}`}>{footnote}</p></div></button>;
 }
 
 export function ReviewRow({ log }: { log: ShowDetailPayload["logs"][number] | ArtistDetailPayload["reviews"][number] | VenueDetailPayload["reviews"][number] }) {
@@ -157,6 +157,42 @@ export function PageTitle({ title, eyebrow }: { title: string; eyebrow: string }
 
 export function Stat({ label, value }: { label: string; value: string }) {
   return <div className="border-r border-white/10 px-2 last:border-r-0"><strong className="font-display block text-2xl sm:text-3xl">{value}</strong><span className="mt-1 block text-[10px] uppercase text-[#8A8177]">{label}</span></div>;
+}
+
+// Every poster in this product is a hotlink to a host we do not control, and
+// roughly fifty of them load per screen. Until now nothing caught a dead one:
+// there was no `onError` anywhere in the app, so a URL that 404s renders as alt
+// text on a grey box. Four are broken on the demo account's diary right now,
+// and one upstream blip during a demo would fill the app with them.
+//
+// The fallback is an inline SVG data URI ON PURPOSE. `DEFAULT_SHOW_IMAGE` is
+// itself an unsplash.com hotlink, so falling back to it fails in exactly the
+// case this exists for — the network or a third-party host being the problem.
+// A data URI cannot 404, cannot be rate-limited, and costs no request. Same
+// rule the recap export already follows: nothing loaded from anywhere.
+export const POSTER_FALLBACK =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 180" preserveAspectRatio="xMidYMid slice">' +
+      '<rect width="120" height="180" fill="#141210"/>' +
+      '<rect x="0.5" y="0.5" width="119" height="179" fill="none" stroke="#2A2521"/>' +
+      '<path d="M52 116V70l26-7v45" fill="none" stroke="#FF7A50" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<circle cx="47" cy="118" r="7" fill="#FF7A50"/><circle cx="73" cy="111" r="7" fill="#FF7A50"/>' +
+      "</svg>",
+  );
+
+// Swaps a poster that failed to load for the local one. The guard is not
+// decoration: without it, a fallback that itself somehow failed would fire
+// `onError` again and spin forever.
+//
+// It guards on the CURRENT src rather than a sticky flag on purpose. A flag
+// would latch: the first dead URL would set it, and a different dead URL
+// rendered into the same <img> later — which React does constantly as lists
+// re-render — would find the guard already tripped and stay broken.
+export function posterFallback(event: SyntheticEvent<HTMLImageElement>) {
+  const image = event.currentTarget;
+  if (image.src === POSTER_FALLBACK) return;
+  image.src = POSTER_FALLBACK;
 }
 
 export function Avatar({ name, color }: { name: string; color?: string }) {

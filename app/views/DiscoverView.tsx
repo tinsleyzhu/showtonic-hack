@@ -14,6 +14,7 @@ import {
   type CatalogMode,
   type LiveState,
   type Show,
+  posterFallback,
 } from "./shared";
 
 type DiscoverScope = "shows" | "artists" | "venues";
@@ -159,7 +160,7 @@ export function DiscoverView({
   return (
     <div>
       {scope === "shows" && mode === "upcoming" && hero && <section className="relative min-h-[56vh] overflow-hidden">
-        <img alt={hero.title} className="absolute inset-0 h-full w-full object-cover" src={hero.image} />
+        <img onError={posterFallback} alt={hero.title} className="absolute inset-0 h-full w-full object-cover" src={hero.image} />
         <div className="absolute inset-0 bg-gradient-to-b from-[#0A0908]/10 via-[#0A0908]/55 to-[#0A0908]" />
         <div className="relative mx-auto flex min-h-[56vh] max-w-6xl flex-col justify-end px-4 pb-10 sm:px-6">
           <p className="text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">{hero.festivalId ? "Festival guide" : "Upcoming near you"}</p>
