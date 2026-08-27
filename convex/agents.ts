@@ -19,11 +19,16 @@ export const SCOPES = [
   "write:attendance",
   "write:logs",
   "write:candidates",
+  "resolve:candidates",
   "pay",
 ] as const;
 
 // `pay` is never granted implicitly. An agent that can plan a night is not
-// thereby an agent that can spend money on one.
+// thereby an agent that can spend money on one. `resolve:candidates` is never
+// granted implicitly either, and for the same shape of reason: the agent that
+// proposes a night must not be the agent that accepts it. Proposing is
+// evidence-gathering; accepting writes the diary. One credential holding both
+// is an agent approving its own work.
 const DEFAULT_SCOPES = ["read:shows", "read:taste", "write:attendance", "write:candidates"];
 
 function assertScopes(scopes: string[]) {

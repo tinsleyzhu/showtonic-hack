@@ -122,9 +122,9 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: "resolve_candidate",
-    scope: "write:candidates",
+    scope: "resolve:candidates",
     description:
-      "Accept or reject one reconstructed night. Accepting writes a real diary entry, which changes the owner's taste profile.",
+      "Accept or reject one reconstructed night. Accepting writes a real diary entry, which changes the owner's taste profile. Deliberately a separate scope from write:candidates, and never granted by default: the agent that proposed a night must not be able to accept its own proposal.",
     inputSchema: {
       type: "object",
       properties: {
