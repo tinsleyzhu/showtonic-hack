@@ -45,6 +45,43 @@ artists by MBID, MusicBrainz resolves a name → MBID, and Spotify is matched by
 name search. That MBID is our free stand-in for JamBase's cross-platform id
 matching.
 
+### Ticketmaster does not serve past events
+
+**Discovery API v2 is a ticketing catalog, not an archive.** A query whose
+`startDateTime` and `endDateTime` both sit in the past returns zero events.
+
+What we checked before concluding that, since it decides where history comes
+from: every documented date parameter is forward-oriented (`startDateTime` /
+`endDateTime` filter on event date, `onsaleStartDateTime` / `onsaleEndDateTime`
+on the sale window); no `sort` value exposes ended events (the documented set is
+name, date, relevance, distance, onSaleStartDate, id, venueName, random);
+`includeTBA` / `includeTBD` / `includeTest` control unannounced and test
+entities, not past ones; and neither `/attractions` nor `/venues` documents a
+past-event history. Ticketmaster's only historical product is the Archtics
+Season Ticketing API, which is partner-tier and unrelated.
+
+Honesty about the evidence: Ticketmaster **never states outright** that past
+events are unavailable. This is one live probe returning zero plus the complete
+absence of any documented mechanism — strongly implied, not officially
+confirmed. **Do not force it.** It means Ticketmaster fixes the *upcoming* half
+of the catalog and leaves the historical half exactly where it was.
+
+That matters because **backfill matches against past shows.** History has to
+come from Setlist.fm (designed below, key still unset) or from the catalog-gap
+agent, which turns an unexplained night into a proposed show via web search.
+
+### The 1000-item paging cap
+
+Officially documented: *"we only support retrieving the 1000th item.
+i.e. ( size * page < 1000 )"*. A city with more upcoming shows than that
+**cannot be paged through** — San Francisco (~807) fits, New York (~2,011) does
+not, and the excess is lost silently rather than with an error.
+
+`syncUpcomingCatalog` therefore walks the date horizon in windows and halves any
+window that reports more items than can be paged. Note also that TM's own docs
+disagree on the rate limit — Getting Started says 5 req/s, the FAQ says 2 req/s
+— so we pace to the conservative bound. Both agree on 5,000/day.
+
 ### Coverage honesty (where JamBase is genuinely better)
 
 - **Ticketmaster misses non-TM inventory** — small clubs, DICE / AXS / eventbrite
@@ -129,6 +166,18 @@ History for specific artists:
 ```bash
 npx convex run freeEvents:syncFreeCatalog '{"city":"San Francisco","historicalArtistNames":["Tame Impala","Vampire Weekend"]}'
 ```
+
+Grow the upcoming catalog across cities (windowed, so no silent truncation):
+
+```bash
+npx convex run freeEvents:syncUpcomingCatalog \
+  '{"cities":["San Francisco","New York"],"horizonDays":180,"windowDays":30}'
+```
+
+Returns `{ totals, byCity, horizon }`. Watch `truncated` (a single day too dense
+to page), `rateLimited` (429 — stop for the day), and `budgetExhausted`
+(`maxRequests` hit, default 400). Re-running is safe and resumes: events upsert
+by id.
 
 Enrich artist cards:
 
