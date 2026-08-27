@@ -145,8 +145,10 @@ export function InlinePanel({ title, detail, actionLabel, onAction }: { title: s
   return <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6"><section aria-live="polite" className="border border-[#2A2521] bg-[#141210] p-8" role="status"><h1 className="font-display text-2xl">{title}</h1><p className="mt-3 leading-7 text-[#C9C1B4]">{detail}</p>{actionLabel && onAction && <button className="mt-6 bg-[#FF7A50] px-5 py-3 text-sm font-black text-black" onClick={onAction} type="button">{actionLabel}</button>}</section></div>;
 }
 
-export function SectionTitle({ title, eyebrow }: { title: string; eyebrow: string }) {
-  return <div><p className="text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]">{eyebrow}</p><h2 className="font-display mt-1 text-2xl">{title}</h2></div>;
+export function SectionTitle({ title, eyebrow, id }: { title: string; eyebrow: string; id?: string }) {
+  // `id` exists so a wrapping <section aria-labelledby=…> can actually resolve
+  // to this heading — a reference to a missing id names the landmark nothing.
+  return <div><p className="text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]">{eyebrow}</p><h2 className="font-display mt-1 text-2xl" id={id}>{title}</h2></div>;
 }
 
 export function PageTitle({ title, eyebrow }: { title: string; eyebrow: string }) {
