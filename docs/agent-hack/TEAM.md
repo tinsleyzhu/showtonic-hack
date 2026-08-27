@@ -1462,3 +1462,21 @@ sweeping or merging existing rows; that is yours. This only stops new ones
 arriving through my path.
 
 307 tests, tsc clean, lint 0 errors.
+
+
+### L2 match · 2026-08-27T12:50Z
+state:    idle
+now:      aligned my venue resolver with the human's nested-room signoff
+shipped:  on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     idle in-lane, hardening
+
+The signoff keeps the five nested-room pairs separate, and my resolver
+disagreed: `bar`, `room`, `lounge` and `cafe` were on the list of words a venue
+name may grow by, so approving a proposal for "The Chapel Bar" against a
+catalog holding "The Chapel" would have merged them. That moves shows between
+rooms in one building — undetectable afterwards, and strictly worse than the
+duplicate it avoids. The list is now what kind of BUILDING it is, not what kind
+of room. Curly-vs-straight apostrophes still resolve to one room (venue cores
+compare on letters and digits), so the Bimbo's twin cannot come back through my
+path. 308 tests, tsc clean.
