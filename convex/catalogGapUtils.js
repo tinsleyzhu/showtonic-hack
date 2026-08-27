@@ -690,6 +690,18 @@ const FESTIVAL_FURNITURE = new Set([
   "faq",
   "festival",
   "fest",
+  // Site chrome that sits in the same lists as the acts on listings pages.
+  "report",
+  "group",
+  "by",
+  "sort",
+  "filter",
+  "view",
+  "share",
+  "menu",
+  "search",
+  "setlists",
+  "setlist",
 ]);
 
 const MONTH_PATTERN = MONTHS.map((month) =>
@@ -883,6 +895,9 @@ function trimBillFragment(value) {
       // A sentence's full stop, but never the one inside "Fred again..", which
       // is part of the name and drops the act if we take it.
       .replace(/(?<!\.)\.$/, "")
+      // setlist.fm writes "Albert Lee. 14 setlists"; the count survives the
+      // noise filter because it is attached to a real name.
+      .replace(/\.\s*\d{1,3}$/, "")
       // Prose lists leave the sentence's joints on the fragment: "…Dijon on
       // Saturday" splits to "Dijon on". No act name ends in a bare preposition.
       .replace(/\s+(?:on|at|in|for|with|plus|feat|ft|featuring|presents)$/i, "")
@@ -913,6 +928,10 @@ function looksLikeArtistName(value) {
   if (/^\$/.test(name)) return false;
   // A fragment that opens with a year is the tail of a date, not an act.
   if (/^(?:19|20)\d{2}\b/.test(name.trim())) return false;
+  // Listings pages count things next to the names they count: "625 attendances
+  // by 114 users", "14 setlists". A name is not a statistic.
+  if (/\b\d+\s+(?:attendances?|users?|setlists?|comments?|fans?|photos?|videos?|reviews?|shows?|concerts?|tickets?)\b/i.test(name))
+    return false;
   // "Lands End Stage", "Panhandle Tent" — a festival page names its rooms in
   // the same lists as its acts, and a stage that becomes an artist is a row
   // every later match can land on.
@@ -949,6 +968,15 @@ function dropCommaSplitNames(fragments) {
 }
 
 // Every plausible act named in one day's slice of one page.
+// Publishers punctuate names freely: "I’m With Her" and "I'm With Her" are one
+// act, and billing them twice on one day makes the bill look padded and the
+// catalog gain a duplicate artist.
+function billKey(name) {
+  return normalizeText(name)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 function harvestBillNames(segment, context = {}) {
   const fragments = String(segment ?? "")
     .split(BILL_SEPARATORS)
@@ -961,7 +989,7 @@ function harvestBillNames(segment, context = {}) {
   const seen = new Set();
   const kept = [];
   for (const name of names) {
-    const key = normalizeText(name);
+    const key = billKey(name);
     if (seen.has(key)) continue;
     if (excluded.some((value) => key === value || value.includes(key) || key.includes(value)))
       continue;
@@ -1064,7 +1092,7 @@ function proposeFestivalDay(festival, results, options = {}) {
   const tally = new Map();
   for (const row of [...admissible, ...corroborating]) {
     for (const name of row.names) {
-      const key = normalizeText(name);
+      const key = billKey(name);
       const entry = tally.get(key) ?? { name, hosts: new Set(), authoritative: false };
       if (!isSocialDomain(row.url)) entry.hosts.add(row.host);
       entry.authoritative = entry.authoritative || row.authoritative;
