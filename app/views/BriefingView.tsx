@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Bot, Clock, MapPin, Sparkles, UserCheck, Users, X } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -162,6 +162,100 @@ function FindCard({
   );
 }
 
+// A belief you can argue with.
+//
+// The whole section is a claim the app makes about you, and a claim you cannot
+// contradict is not a belief, it is an assertion. Two verbs, and what each one
+// means is deliberately NOT symmetric — see convex/briefingLogic.js:
+//
+//   "That's right"  pins it and says so in the basis. It does NOT promote
+//                   forming → strong: strength is derived from how many nights
+//                   are in your diary, and you agreeing with us is not more
+//                   nights. Confirmation is its own fact, not a louder ours.
+//   "That's wrong"  suppresses it. Not for a cooling-off period — you said the
+//                   claim is false, and re-asserting it next week because a
+//                   timer expired would be the app arguing with you. It returns
+//                   only if the evidence genuinely changes, and then it says so.
+//
+// `basisAtTime` is the basis AS DISPLAYED, because "only comes back when the
+// evidence changed" has to compare against the number you were actually
+// looking at, not the number by the time your tap arrives.
+function BeliefCard({
+  belief,
+  onCorrect,
+}: {
+  belief: TasteBelief;
+  onCorrect: (belief: TasteBelief, verdict: "right" | "wrong") => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<"right" | "wrong" | null>(null);
+  const [status, setStatus] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  async function correct(verdict: "right" | "wrong") {
+    if (busy) return;
+    setBusy(verdict);
+    setFailed(false);
+    setStatus(verdict === "right" ? "Noting that…" : "Taking that back…");
+    try {
+      await onCorrect(belief, verdict);
+      // "wrong" removes the card on the next query result, so this line is
+      // mostly read by someone who cannot see it go.
+      setStatus(verdict === "right" ? "Noted — I'll keep this one." : "Dropped. I won't claim that again.");
+    } catch (error) {
+      setFailed(true);
+      setStatus(
+        error instanceof Error && error.message
+          ? error.message
+          : "That did not save, so the belief stands. Try again.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-[#2A2521] bg-[#141210] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-display min-w-0 flex-1 text-lg leading-7">{belief.statement}</p>
+        <span
+          className={`shrink-0 text-[10px] uppercase tracking-wide ${
+            belief.strength === "strong" ? "text-[#4EC98F]" : "text-[#8A8177]"
+          }`}
+        >
+          {belief.strength}
+        </span>
+      </div>
+      {/* The basis is the point. A belief without one is a horoscope. */}
+      <p className="mt-2 text-xs leading-5 text-[#8A8177]">{belief.basis}</p>
+
+      {status && (
+        <div className="mt-3">
+          <LiveMessage tone={failed ? "error" : "info"}>{status}</LiveMessage>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-2 border-t border-white/10 pt-3">
+        <button
+          className="border border-[#2A2521] px-3 py-2 text-xs font-black text-[#4EC98F] disabled:opacity-60"
+          disabled={busy !== null}
+          onClick={() => void correct("right")}
+          type="button"
+        >
+          {busy === "right" ? "Noting…" : "That's right"}
+        </button>
+        <button
+          className="border border-[#2A2521] px-3 py-2 text-xs font-black text-[#8A8177] disabled:opacity-60"
+          disabled={busy !== null}
+          onClick={() => void correct("wrong")}
+          type="button"
+        >
+          {busy === "wrong" ? "Dropping…" : "That's wrong"}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export function BriefingView({
   userId,
   handle,
@@ -186,6 +280,11 @@ export function BriefingView({
   const liveBriefing = useQuery(api.briefing.forUser, { userId, today: todayIso() });
   const briefing = briefingOverride ?? liveBriefing;
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const correct = useMutation(api.briefing.correctBelief);
+
+  async function correctBelief(belief: TasteBelief, verdict: "right" | "wrong") {
+    await correct({ userId, statement: belief.statement, basisAtTime: belief.basis, verdict });
+  }
 
   // The home screen now waits on a real round trip, which it never did on
   // fixtures. Same rule as every other detail view: hold the silhouette rather
@@ -274,20 +373,7 @@ export function BriefingView({
               <SectionTitle eyebrow="Drawn from your diary" title="What it believes" />
               <div className="mt-5 space-y-3">
                 {beliefs.map((belief) => (
-                  <article className="border border-[#2A2521] bg-[#141210] p-4" key={belief.statement}>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="font-display min-w-0 flex-1 text-lg leading-7">{belief.statement}</p>
-                      <span
-                        className={`shrink-0 text-[10px] uppercase tracking-wide ${
-                          belief.strength === "strong" ? "text-[#4EC98F]" : "text-[#8A8177]"
-                        }`}
-                      >
-                        {belief.strength}
-                      </span>
-                    </div>
-                    {/* The basis is the point. A belief without one is a horoscope. */}
-                    <p className="mt-2 text-xs leading-5 text-[#8A8177]">{belief.basis}</p>
-                  </article>
+                  <BeliefCard belief={belief} key={belief.statement} onCorrect={correctBelief} />
                 ))}
               </div>
             </section>
