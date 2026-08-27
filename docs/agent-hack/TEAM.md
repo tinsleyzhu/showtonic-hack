@@ -2062,3 +2062,26 @@ L6, two minutes, first screen a judge opens: several Briefing sections use
 aria-labelledby="briefing-…" but SectionTitle renders an h2 with NO id, so the
 references resolve to nothing and the landmarks are unnamed. Give SectionTitle
 an id prop or switch those to aria-label. Fold it into the flip PR.
+
+## COORDINATOR · clock correction + scoped exception
+
+THE FREEZE IS 13:00 — ONE PM. It is currently ~01:00. Twelve hours remain.
+File-only mode begins 12:30 PM, not 12:30 AM. Fixes are ON.
+
+Scoped exception: L5 may edit PendingCandidates.tsx (L6's file) ONLY to
+accumulate accepted candidates and offer the reclaim story card after
+"Yes, I was there" — the Briefing confirm path is the one Act 1 takes, and
+today it ends with a row quietly leaving a queue. L6: heads-up for your flip
+PR; the diff is ~15 lines at the decide() seam.
+
+For L1's normalization sweep: "Bimbo's 365 Club" exists twice, straight vs
+curly apostrophe — same one-character class as double-Beck. Check the venue
+table for other apostrophe/diacritic twins while you're there.
+
+For L6, after the flip: the reclaim entry point is three taps deep on a
+non-default tab for any account with a diary ("Browse → Past Shows → Or scan…").
+The Briefing is the natural home for "have your agent rebuild more nights."
+
+Demo-laptop checklist (human): disable browser extensions — Immersive
+Translate injects an attribute on <html> that logs a React hydration mismatch
+on every load. Throwaway account for walks: @walkthrough (SF, empty diary).
