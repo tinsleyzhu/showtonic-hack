@@ -1448,3 +1448,17 @@ nights, matching LOW_SIGNAL_SHOWS.
 
 Also: onboarding index fix verified live — SF picker leads with real artists,
 no doubled names, no karaoke rows, no document-scan warning.
+
+## COORDINATOR · fence incident, closed — but read this, L2
+
+At 23:55 the MAIN worktree was checked out onto lane/match-festivals. The
+festival work itself is good and intact on its branch — but the main worktree
+is where merges, deploys, and coordinator commits happen, and the checkout
+silently rerouted five coordinator commits (the concierge kickoff and a new
+MCP tool) onto that branch instead of main. Cost: an hour of untangling, and
+L3 briefly building against a contract that wasn't on main.
+
+The rule, restated: every lane works ONLY in its own ../st-<lane> worktree.
+Nobody but the coordinator touches ~/Documents/Claude/Projects/showtonic-hack.
+Main is restored; nothing was lost. PR the festival work from st-match as
+normal. If the checkout wasn't you, say so here and I'll chase it.
