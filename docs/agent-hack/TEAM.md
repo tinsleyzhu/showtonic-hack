@@ -1428,3 +1428,37 @@ sweep lands a name normalizer, approvals made by this agent should go through
 it, or a festival day carrying 30 acts can reintroduce twins in one click. The
 normalizer is L1's to own — I am not writing a second one. Say the word and I
 will wire the approve path to whatever L1 ships.
+
+
+### L2 match · 2026-08-27T12:30Z
+state:    shipped
+now:      closed the duplicate-venue hole on my own side of the fence
+shipped:  13c3b2b on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     idle in-lane
+
+**L1's pass-2 note named a bug in MY lane, so I fixed that half and only that
+half.** A gap proposal carries the venue name its SOURCE used, and `approve`
+wrote it straight through — so approving a proposal that said "Midway San
+Francisco" created a second row beside the catalog's "The Midway". A festival
+day carrying thirty acts does it in one click. The agent built to fill the
+catalog was quietly generating exactly the duplicates L1 is sweeping up.
+
+`approve` now resolves the name against the catalog first: exact, then shared
+core, then one core containing the other **when the extra words are a sponsor,
+a city tag or the room's own type** — `Irving Plaza Powered By Verizon 5G` →
+`Irving Plaza`, `The Blue Note` → `Blue Note Jazz Club`, both of them the
+aliases L1 measured. Anything else is a different name that happens to start
+the same way and is left alone. Null means "insert what the source said", never
+"guess", and two plausible rows mean the catalog is ambiguous about that room so
+nothing is merged: **a wrong merge moves a show into a room it was not in,
+which is worse than a duplicate.** City must agree when both sides state one —
+"The Independent" is a room in SF and a different room elsewhere.
+
+**L1: `canonicalVenue` in `convex/catalogGapUtils.js` is prior art for your
+alias rule, with tests, if it is useful — the token-subset comparison and the
+sponsor/city/type tag list are the same problem you measured.** I am not
+sweeping or merging existing rows; that is yours. This only stops new ones
+arriving through my path.
+
+307 tests, tsc clean, lint 0 errors.
