@@ -78,7 +78,7 @@ export function RecapCard({ userId }: { userId: Id<"users"> }) {
             </p>
           )}
 
-          <RecapExport recap={{ ...recap, heroImage: hero }} />
+          <RecapExport recap={{ ...recap, heroImage: hero }} userId={userId} />
 
           {recap.lowSignal && (
             <p className="mt-3 text-xs leading-5 text-[#8A8177]">

@@ -1,6 +1,7 @@
-import { query } from "./_generated/server";
+import { action, query } from "./_generated/server";
+import { api } from "./_generated/api";
 import { v } from "convex/values";
-import { buildRecap } from "./recapSummary.js";
+import { buildRecap, captionPrompt, tidyCaption } from "./recapSummary.js";
 
 // Recap — the diary as something a person wants to post.
 //
@@ -68,5 +69,70 @@ export const build = query({
       ...summary,
       photos: photos.filter((photo) => photo.url),
     };
+  },
+});
+
+// --- Caption ----------------------------------------------------------------
+// The recap says what happened; the caption is what a person would actually
+// type over it. AIsa carries this rather than a second provider — one key, and
+// it is a sponsor tool that is already funded.
+//
+// The model is given ONLY facts we counted, and it is told it may not add any.
+// If it is unreachable, unfunded, or returns nothing usable, the locally
+// composed caption from `recapSummary.js` ships instead and the response says
+// which one you got. A caption that is always there beats one that sometimes is.
+
+export const caption = action({
+  args: { userId: v.id("users") },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ caption: string; source: "aisa" | "local"; note: string }> => {
+    const recap = await ctx.runQuery(api.recap.build, { userId: args.userId });
+    // Empty-room rule again: nothing logged, nothing to caption.
+    if (!recap || recap.empty) {
+      return { caption: "", source: "local", note: "No logged shows to caption yet." };
+    }
+
+    const key = process.env.AISA_API_KEY;
+    if (!key) {
+      return {
+        caption: recap.shareText,
+        source: "local",
+        note: "Written here — no AISA_API_KEY set.",
+      };
+    }
+
+    try {
+      const response = await fetch("https://api.aisa.one/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: process.env.AISA_RECAP_MODEL ?? "claude-haiku-4-5-20251001",
+          max_tokens: 160,
+          messages: [{ role: "user", content: captionPrompt(recap) }],
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      const written = tidyCaption(payload?.choices?.[0]?.message?.content);
+      if (response.ok && written) {
+        return { caption: written, source: "aisa", note: "Written by a model through AIsa." };
+      }
+      // Name the rail that declined and why. "Fell back" with no reason is how
+      // a demo quietly becomes a lie.
+      const reason =
+        payload?.error?.code ?? payload?.error?.message ?? (response.ok ? "empty_response" : `http_${response.status}`);
+      return {
+        caption: recap.shareText,
+        source: "local",
+        note: `Written here — AIsa declined (${reason}).`,
+      };
+    } catch {
+      return {
+        caption: recap.shareText,
+        source: "local",
+        note: "Written here — AIsa was unreachable.",
+      };
+    }
   },
 });

@@ -129,3 +129,45 @@ test("a caption never claims a favourite room from a single visit", () => {
   assert.match(text, /Starting with MUNA\./);
   assert.doesNotMatch(text, /Mostly at/);
 });
+
+// --- Caption -----------------------------------------------------------------
+
+import { captionPrompt, MAX_CAPTION, tidyCaption } from "../convex/recapSummary.js";
+
+test("the caption prompt carries only facts we counted, and forbids inventing more", () => {
+  const recap = buildRecap([
+    log({ showId: "a", showDate: "2022-03-04", rating: 5, source: "reclaim" }),
+    log({ showId: "b", showDate: "2024-08-19", artistNames: ["MUNA"], venueName: "The Fillmore" }),
+  ]);
+  const prompt = captionPrompt(recap);
+  assert.match(prompt, /shows logged: 2/);
+  assert.match(prompt, /most seen artists: /);
+  assert.match(prompt, /nights recovered from a camera roll: 1/);
+  assert.match(prompt, /Invent nothing/);
+  assert.match(prompt, /best night: RÜFÜS DU SOL at The Midway at The Midway \(5 stars\)/);
+});
+
+test("the prompt omits a fact rather than asserting an empty one", () => {
+  const recap = buildRecap([log({ rating: 0, source: "live", artistGenres: [] })]);
+  const prompt = captionPrompt(recap);
+  assert.doesNotMatch(prompt, /best night:/);
+  assert.doesNotMatch(prompt, /camera roll/);
+  assert.doesNotMatch(prompt, /genres:/);
+});
+
+test("a caption wrapped in quotes by the model is unwrapped", () => {
+  assert.equal(tidyCaption('"Four years of nights."'), "Four years of nights.");
+  assert.equal(tidyCaption("“Four years of nights.”"), "Four years of nights.");
+});
+
+test("a caption that runs long is ellipsed, not posted at full length", () => {
+  const long = tidyCaption("a".repeat(MAX_CAPTION + 50));
+  assert.equal(long.length, MAX_CAPTION);
+  assert.match(long, /…$/);
+});
+
+test("an unusable model response becomes an empty caption, so the caller can fall back", () => {
+  assert.equal(tidyCaption(null), "");
+  assert.equal(tidyCaption("   "), "");
+  assert.equal(tidyCaption({ content: "nope" }), "");
+});

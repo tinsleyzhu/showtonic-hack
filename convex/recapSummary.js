@@ -175,4 +175,61 @@ function composeShareText(summary) {
   return parts.join(" ");
 }
 
-export { buildRecap, composeShareText, LOW_SIGNAL_SHOWS, spanPhrase, tally };
+
+// --- Caption ----------------------------------------------------------------
+// `recap.caption` asks AIsa for something with more personality than
+// `composeShareText`. Both halves of that call live here so they can be tested
+// without a network: the prompt that pins the model to facts we counted, and
+// the tidy-up that catches the two ways a model breaks a caption.
+
+const MAX_CAPTION = 240;
+
+function captionPrompt(recap) {
+  const facts = [
+    `shows logged: ${recap.shows}`,
+    recap.spanPhrase ? `span: ${recap.spanPhrase}` : "",
+    recap.topArtists?.length
+      ? `most seen artists: ${recap.topArtists.map((artist) => `${artist.name} (${artist.count})`).join(", ")}`
+      : "",
+    recap.topVenues?.length
+      ? `most visited venues: ${recap.topVenues.map((venue) => `${venue.name} (${venue.count})`).join(", ")}`
+      : "",
+    recap.topGenres?.length ? `genres: ${recap.topGenres.map((genre) => genre.name).join(", ")}` : "",
+    recap.highestRated
+      ? `best night: ${recap.highestRated.title}${recap.highestRated.venueName ? ` at ${recap.highestRated.venueName}` : ""} (${recap.highestRated.rating} stars)`
+      : "",
+    recap.reclaimed ? `nights recovered from a camera roll: ${recap.reclaimed}` : "",
+  ].filter(Boolean);
+
+  return [
+    "Write a caption a person would post over a photo grid of the live shows they went to.",
+    "",
+    "Facts, and the only ones you may use:",
+    ...facts.map((fact) => `- ${fact}`),
+    "",
+    "Rules: one or two short sentences, under 200 characters. Warm and specific,",
+    "not promotional. No hashtags, no emoji, no quotation marks around the caption,",
+    "no preamble. Invent nothing — every name and number must come from the list above.",
+  ].join("\n");
+}
+
+// Catches the two ways a model breaks a caption: wrapping it in quotes, and
+// running long. It cannot catch an invented fact, which is why the prompt
+// carries the facts explicitly and the caller labels where the caption came from.
+function tidyCaption(text) {
+  if (typeof text !== "string") return "";
+  const trimmed = text.trim().replace(/^["'\u201C]+|["'\u201D]+$/g, "").trim();
+  if (!trimmed) return "";
+  return trimmed.length > MAX_CAPTION ? `${trimmed.slice(0, MAX_CAPTION - 1).trimEnd()}\u2026` : trimmed;
+}
+
+export {
+  buildRecap,
+  captionPrompt,
+  composeShareText,
+  LOW_SIGNAL_SHOWS,
+  MAX_CAPTION,
+  spanPhrase,
+  tally,
+  tidyCaption,
+};

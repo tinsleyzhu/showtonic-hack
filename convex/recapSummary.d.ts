@@ -63,3 +63,9 @@ export function composeShareText(summary: {
 export function spanPhrase(dates: readonly string[]): string;
 
 export function tally(values: readonly (string | null | undefined)[]): RecapTally[];
+
+export const MAX_CAPTION: number;
+
+export function captionPrompt(recap: RecapSummary): string;
+
+export function tidyCaption(text: unknown): string;

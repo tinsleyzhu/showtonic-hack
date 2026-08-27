@@ -260,13 +260,24 @@ export const TOOLS: ToolDef[] = [
       type: "object",
       properties: {
         limit: { type: "number", description: "How many top artists/venues/genres, default 5, max 10." },
+        include_caption: {
+          type: "boolean",
+          description:
+            "Also write a caption for it. Costs a model call, so it is off by default; the recap always carries a locally written `shareText` regardless.",
+        },
       },
     },
-    run: (client, me, args) =>
-      client.query("recap:build" as any, {
+    run: async (client, me, args) => {
+      const recap: any = await client.query("recap:build" as any, {
         userId: me.userId,
         ...(args.limit !== undefined ? { limit: Number(args.limit) } : {}),
-      }),
+      });
+      if (!args.include_caption || !recap || recap.empty) return recap;
+      // The caption is a separate call because it costs a model round trip; the
+      // note it returns says who wrote it, and that travels to the agent too.
+      const written = await client.action("recap:caption" as any, { userId: me.userId });
+      return { ...recap, caption: written };
+    },
   },
 ];
 

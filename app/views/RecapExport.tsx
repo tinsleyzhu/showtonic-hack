@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Download, ImageDown, Share2 } from "lucide-react";
+import { useAction } from "convex/react";
+import { Copy, Download, ImageDown, Share2, Wand2 } from "lucide-react";
+import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import {
   drawRecap,
   RECAP_FORMATS,
@@ -64,9 +67,27 @@ async function renderRecap(recap: ExportRecap, format: RecapFormat) {
   return { blob, skipped };
 }
 
-export function RecapExport({ recap }: { recap: ExportRecap }) {
+export function RecapExport({ recap, userId }: { recap: ExportRecap; userId: Id<"users"> }) {
   const [busy, setBusy] = useState<RecapFormat | null>(null);
   const [status, setStatus] = useState("");
+  const writeCaption = useAction(api.recap.caption);
+  const [caption, setCaption] = useState<{ caption: string; source: string; note: string } | null>(null);
+  const [writing, setWriting] = useState(false);
+
+  async function generateCaption() {
+    setWriting(true);
+    try {
+      setCaption(await writeCaption({ userId }));
+    } catch (error) {
+      setCaption({
+        caption: recap.shareText,
+        source: "local",
+        note: error instanceof Error ? `Written here — ${error.message}` : "Written here.",
+      });
+    } finally {
+      setWriting(false);
+    }
+  }
 
   async function exportRecap(format: RecapFormat) {
     setBusy(format);
@@ -127,6 +148,36 @@ export function RecapExport({ recap }: { recap: ExportRecap }) {
         ))}
       </div>
       {status && <p className="mt-2 text-xs text-[#8A8177]">{status}</p>}
+
+      <div className="mt-4 border border-[#2A2521] bg-[#141210] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <b className="text-xs font-black uppercase tracking-wide text-[#8A8177]">Caption</b>
+          <button
+            className="flex items-center gap-2 text-xs font-black text-[#6FBCD3] disabled:opacity-50"
+            disabled={writing}
+            onClick={() => void generateCaption()}
+            type="button"
+          >
+            <Wand2 className="h-3 w-3" />
+            {writing ? "Writing…" : caption ? "Rewrite" : "Write me one"}
+          </button>
+        </div>
+        <p className="mt-2 text-sm leading-6 text-[#C9C1B4]">{caption?.caption || recap.shareText}</p>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          {/* Where the words came from, always. A model-written caption that
+              claims to be your own words is the small lie this avoids. */}
+          <small className="text-[10px] text-[#6B6258]">
+            {caption ? caption.note : "Written here from your logs."}
+          </small>
+          <button
+            className="flex items-center gap-2 text-xs font-black text-[#8A8177] hover:text-white"
+            onClick={() => void navigator.clipboard?.writeText(caption?.caption || recap.shareText)}
+            type="button"
+          >
+            <Copy className="h-3 w-3" /> Copy
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
