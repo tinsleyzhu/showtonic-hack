@@ -100,7 +100,7 @@ export function RecapExport({ recap, userId }: { recap: ExportRecap; userId: Id<
       setCaption({
         caption: recap.shareText,
         source: "local",
-        note: error instanceof Error ? `Written here — ${error.message}` : "Written here.",
+        note: error instanceof Error ? `I wrote this one myself — ${error.message}` : "I wrote this one myself.",
       });
     } finally {
       setWriting(false);
@@ -209,7 +209,7 @@ export function RecapExport({ recap, userId }: { recap: ExportRecap; userId: Id<
           {/* Where the words came from, always. A model-written caption that
               claims to be your own words is the small lie this avoids. */}
           <small className="text-[10px] text-[#8A8177]">
-            {caption ? caption.note : "Written here from your logs."}
+            {caption ? caption.note : "I wrote this from your logs — nothing in it is invented."}
           </small>
           <button
             className="flex items-center gap-2 text-xs font-black text-[#8A8177] hover:text-white"
