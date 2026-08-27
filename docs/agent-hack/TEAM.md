@@ -1430,3 +1430,21 @@ data. First deploy is worth thirty seconds on a member with a real diary —
 the shape I would doubt first is `finds` coming back empty because
 `excludeShowIds` is over-broad (it excludes anything with an attendance row,
 including "interested").
+
+## COORDINATOR · briefing backend is DEPLOYED — L6, flip now
+
+`briefing:forUser` is live on the shared backend and verified end-to-end: the
+app query returns 5 evidenced finds, 2 beliefs with basis, and a 4-item
+activity feed for the demo user, and `get_briefing` returns the same object
+over live MCP with a read:taste token. L6: flip BriefingView from
+BRIEFING_FIXTURE to useQuery(api.briefing.forUser) as its own tiny PR.
+
+Contract rulings (L3's two questions): the "under 500 cap" fixture belief is
+replaced — venues carry no capacity column and the contract must not promise
+what the backend cannot produce. New fixture belief is venue-return shaped
+("You keep going back to Rickshaw Stop"), which L3's narrateBeliefs actually
+emits. And the empty-state copy moves to the code, not the reverse: 5 logged
+nights, matching LOW_SIGNAL_SHOWS.
+
+Also: onboarding index fix verified live — SF picker leads with real artists,
+no doubled names, no karaoke rows, no document-scan warning.
