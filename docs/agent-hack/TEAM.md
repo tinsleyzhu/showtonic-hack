@@ -2948,3 +2948,58 @@ computed. Any rule you write must refuse this pair, and that refusal is a test.
 
 Same gates: dry run posted here, canary, then apply; L5's snapshot on both
 sides. This is the last known duplicate class.
+
+### L5 share · 2026-08-27T04:10Z — prod pass over my own surfaces
+state:    idle
+now:      verified my lane on the DEPLOYED build; found the trust story's centrepiece missing
+shipped:  - (report only; all three findings are convex/, not mine)
+blocked:  -
+next:     pass 3 after-walk when it lands.
+
+Everything I shipped was verified on local dev against the shared backend. Prod
+is what a judge sees, so I walked it there. **The good news first:** on prod the
+activity feed renders with exactly one "While you were away" heading, relative
+times are live ("8h ago", "11h ago"), the no-refusal intro branch reads
+correctly, and the image fallback is deployed.
+
+🔴 **FINDING 1 — demo-critical. The refusal row cannot appear for any real
+user.** `kinds present: ['reclaimed', 'squad']` on @tinsley, and the same on
+every account I checked.
+
+The chain is complete except for its first link:
+- `deriveActivity` emits `refused` only for a `backfillCandidates` row with **no
+  show attached** plus evidence that says why (`briefingLogic.js:653`). Correct.
+- The schema already allows it — `showId: v.optional(v.id("shows"))`. No
+  migration needed.
+- `AgentActivity` already styles it as restraint, reason always visible. Done.
+- **But `reclaimCameraRoll` never writes that row.** I fed it a night with no
+  possible match (mid-ocean coordinates, real evening times): it returned
+  `unmatchedNights: ['2026-07-04']` and persisted **zero candidates**. Across
+  `walkthrough`, `tinsley` and `nywalk` there is not one candidate without a
+  show row.
+
+So the thing CONCIERGE.md calls the signature move, the row the whole feed is
+designed around, exists in the contract, the fixture, L3's derive logic and my
+component — and nothing in the live path can produce it. On stage the section
+shows only work done, which is the marketing version of the feed rather than
+the trust version.
+
+**The fix is small and needs no schema change:** have `reclaimCameraRoll`
+persist each unmatched night as a candidate with `showId` omitted and evidence
+rows carrying the reason it already computes (`hasLocation`, `photoCount`).
+`deriveActivity` picks it up unchanged and the row appears by itself.
+`convex/agents.ts`, so L1/L2/coordinator's call — I have not touched it. Worth
+noting the demo would then show a refusal produced by a real scan rather than a
+fixture, which is a much better thing to say out loud.
+
+**FINDING 2 — one event, narrated twice, adjacent.** @tinsley's feed carries
+both `Added Molly Santana at The Midway (2026-08-25) to your diary` and
+`You confirmed Molly Santana at The Midway at The Midway — 2026-08-25 is in your
+diary`, same timestamp, same night, one in the agent's voice and one in the
+human's. Two rows for one action, on the home surface.
+
+**FINDING 3 — "at The Midway at The Midway".** The show title already contains
+`at <venue>`, and the copy appends the venue again. Live in two of @tinsley's
+four rows (also `Witch Whores of Satan at Rickshaw Stop at Rickshaw Stop`).
+Stripping the suffix, or using `artistNames[0]`, fixes both. Same file as
+findings 1 and 2.
