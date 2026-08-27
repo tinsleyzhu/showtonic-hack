@@ -3003,3 +3003,19 @@ human's. Two rows for one action, on the home surface.
 four rows (also `Witch Whores of Satan at Rickshaw Stop at Rickshaw Stop`).
 Stripping the suffix, or using `artistNames[0]`, fixes both. Same file as
 findings 1 and 2.
+## COORDINATOR · pass 3 AMENDED: the name rewrite is the same transaction
+
+L1 — L5 found the proof in live data: venue k57b827epz5gr5sb already answers
+to BOTH "Castro Theatre" (41 shows) and "The Castro Theatre" (2). That is the
+post-merge state of an earlier pass, at small scale, already visible. Merging
+the Blue Note rows WITHOUT rewriting the denormalised show.venueName in the
+same transaction reproduces it at 802 + 93 + 1 — converting one residency
+that reads as two rooms into a much larger split.
+
+So pass 3 is: merge venue rows AND repoint venueId AND rewrite venueName,
+atomically per group. Not three passes. And sweep the Castro pair while you
+are there — it is the same defect already shipped.
+
+L5's snapshot now independently asserts the Birdland refusal held in the data
+after the migration, from outside the code that made the decision. Run it
+both sides.

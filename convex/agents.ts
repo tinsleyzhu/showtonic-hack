@@ -309,6 +309,40 @@ export const reclaimCameraRoll = mutation({
       hasLocation: Boolean(cluster.gps),
     }));
 
+    // Persist the refusals themselves. Until now an unplaced night existed
+    // only in this return value, so the agent that called us heard about it
+    // and the OWNER never did — deriveActivity emits a `refused` row for a
+    // candidate with no show, and nothing in the live path could produce one.
+    // The feed showed only work done, which is the marketing version of a
+    // product whose whole claim is that it refuses when it cannot know.
+    //
+    // A refusal carries no showId and confidence 0: it is a record that this
+    // night happened and we could not place it, never a claim about it.
+    for (const cluster of unplaced) {
+      await ctx.db.insert("backfillCandidates", {
+        userId: args.userId,
+        clusterDate: cluster.clusterDate,
+        photoCount: cluster.photoCount,
+        confidence: 0,
+        evidence: [
+          {
+            kind: "date",
+            detail: `${cluster.photoCount} ${cluster.photoCount === 1 ? "photo" : "photos"} on this night`,
+            delta: 0,
+          },
+          {
+            kind: cluster.gps ? "gps" : "volume",
+            detail: cluster.gps
+              ? "No show in the catalog near where these were taken"
+              : "No location on these photos, and no show in the catalog that night",
+            delta: 0,
+          },
+        ],
+        status: "pending",
+        createdAt: now,
+      });
+    }
+
     // Hand the queue to the gap agent. Scheduled rather than awaited because
     // this is a mutation and the search is network I/O: the human gets their
     // candidates back immediately, and proposals arrive when they arrive.
