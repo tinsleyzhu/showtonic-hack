@@ -279,6 +279,39 @@ export const TOOLS: ToolDef[] = [
       return { ...recap, caption: written };
     },
   },
+  {
+    name: "get_briefing",
+    scope: "read:taste",
+    description:
+      "The owner's concierge briefing, the same one the app renders: decisions they owe, shows the fleet found for them (each with the evidence it was scored on — a find with no evidence does not exist), what the fleet did while they were away including its refusals, and what it currently believes about their taste with the basis for each belief. Read-only. This is the product's home surface exposed to agents, so a caller sees exactly what the human sees.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        today: {
+          type: "string",
+          description: "ISO date (yyyy-mm-dd) to brief against; defaults to today.",
+        },
+      },
+    },
+    run: async (client, me, args) => {
+      const today =
+        typeof args.today === "string" && /^\d{4}-\d{2}-\d{2}$/.test(args.today)
+          ? args.today
+          : new Date().toISOString().slice(0, 10);
+      try {
+        return await client.query("briefing:forUser" as any, { userId: me.userId, today });
+      } catch (error) {
+        // The briefing query ships in the concierge wave; between worker and
+        // backend deploys this tool must degrade into a plain answer, not a
+        // stack trace an agent has to interpret.
+        return {
+          ok: false,
+          error: "briefing_not_available",
+          detail: "The briefing backend is not deployed yet. Every other tool works.",
+        };
+      }
+    },
+  },
 ];
 
 export const TOOLS_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));
