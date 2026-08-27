@@ -554,3 +554,71 @@ test("a small room inside a big one is still a different room", () => {
   const finds = scoreFinds(both, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
   assert.equal(finds.length, 3, "the side room keeps its slot");
 });
+
+test("a confirmed night is narrated once, in the agent's voice", () => {
+  // Live on the demo feed: the same event twice, adjacent, same timestamp, in
+  // two voices — "Added Molly Santana at The Midway to your diary" from the
+  // log the agent wrote, and "You confirmed … is in your diary" from the
+  // candidate. The feed records what the agent did, so the agent's line stays.
+  const candidate = {
+    clusterDate: "2026-08-25",
+    showTitle: "Molly Santana at The Midway",
+    venueName: "The Midway",
+    photoCount: 4,
+    confidence: 0.9,
+    status: "accepted",
+    createdAt: 5,
+  };
+  const log = {
+    source: "reclaim",
+    showTitle: "Molly Santana at The Midway",
+    showDate: "2026-08-25",
+    createdAt: 5,
+  };
+
+  const items = deriveActivity([candidate], [], [log]);
+  assert.equal(items.length, 1);
+  assert.match(items[0].summary, /^Added Molly Santana at The Midway/);
+});
+
+test("but a confirmed night no log covers is still reported", () => {
+  // Dropping the candidate line unconditionally would lose the event whenever
+  // the log is missing, which is the one case it exists for.
+  const items = deriveActivity(
+    [
+      {
+        clusterDate: "2026-08-25",
+        showTitle: "Molly Santana at The Midway",
+        venueName: "The Midway",
+        status: "accepted",
+        createdAt: 5,
+      },
+    ],
+    [],
+    [],
+  );
+
+  assert.equal(items.length, 1);
+  assert.match(items[0].summary, /^You confirmed/);
+});
+
+test("the venue is not said twice when the title already carries it", () => {
+  // Ticketmaster names shows after their room, so "at The Midway at The
+  // Midway" was live on two of four rows.
+  const items = deriveActivity(
+    [
+      { clusterDate: "2026-08-25", showTitle: "Molly Santana at The Midway", venueName: "The Midway", photoCount: 3, confidence: 0.91, status: "pending", createdAt: 5 },
+      { clusterDate: "2026-08-24", showTitle: "Osees", venueName: "Rickshaw Stop", photoCount: 3, confidence: 0.8, status: "pending", createdAt: 4 },
+      { clusterDate: "2026-08-23", showTitle: "Someone at Warfield", venueName: "The Warfield", photoCount: 3, confidence: 0.8, status: "pending", createdAt: 3 },
+    ],
+    [],
+    [],
+  );
+
+  assert.match(items[0].summary, /Molly Santana at The Midway, 91%$/);
+  assert.ok(!/Midway at The Midway/.test(items[0].summary));
+  // A title with no venue in it still gets one.
+  assert.match(items[1].summary, /Osees at Rickshaw Stop, 80%$/);
+  // And the alias spellings count as the same room, like everywhere else.
+  assert.ok(!/Warfield at The Warfield/.test(items[2].summary), items[2].summary);
+});

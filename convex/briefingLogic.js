@@ -621,13 +621,26 @@ export function deriveActivity(candidates = [], squadPlans = [], logs = [], opti
   const { limit = 10, userId } = options;
   const items = [];
 
+  // A confirmed night is narrated ONCE, by the agent.
+  //
+  // Live, @tinsley's feed carried the same event twice, adjacent and on the
+  // same timestamp, in two different voices: "Added Molly Santana at The
+  // Midway to your diary" from the log the agent wrote, and "You confirmed
+  // Molly Santana… is in your diary" from the candidate they accepted. The
+  // feed is a record of what the agent did, so the agent's line is the one
+  // that stays. The candidate line survives only for a night no log covers,
+  // which is the case where dropping it would lose the event entirely.
+  const reclaimedNights = new Set(
+    logs
+      .filter((log) => log.source === "reclaim" || log.source === "backfill")
+      .map((log) => String(log.showDate ?? "").slice(0, 10)),
+  );
+
   for (const candidate of candidates) {
     const night = String(candidate.clusterDate ?? "").slice(0, 10);
     const photos = candidate.photoCount ?? 0;
     const confidence = Math.round((candidate.confidence ?? 0) * 100);
-    const where = candidate.showTitle
-      ? `${candidate.showTitle}${candidate.venueName ? ` at ${candidate.venueName}` : ""}`
-      : null;
+    const where = candidate.showTitle ? describeShow(candidate.showTitle, candidate.venueName) : null;
 
     if (candidate.status === "pending" && where) {
       items.push({
@@ -639,7 +652,7 @@ export function deriveActivity(candidates = [], squadPlans = [], logs = [], opti
       continue;
     }
 
-    if (candidate.status === "accepted" && where) {
+    if (candidate.status === "accepted" && where && !reclaimedNights.has(night)) {
       items.push({
         at: candidate.createdAt ?? 0,
         kind: "reclaimed",
@@ -697,6 +710,22 @@ export function deriveActivity(candidates = [], squadPlans = [], logs = [], opti
     .map((item) => (item.detail === undefined ? { at: item.at, kind: item.kind, summary: item.summary } : item))
     .sort((left, right) => right.at - left.at)
     .slice(0, Math.max(1, Math.min(limit, 10)));
+}
+
+// "Molly Santana at The Midway" + venue "The Midway" is not "Molly Santana at
+// The Midway at The Midway". Ticketmaster names shows after their room, so the
+// title usually carries the venue already, and appending it again read as a
+// stutter on two of the four rows in the live feed.
+//
+// Compared through `venueKey`, so "The Midway" in the title still matches
+// "Midway" on the row — the same aliasing the venue ceiling has to survive.
+function describeShow(title, venueName) {
+  const name = String(title ?? "").trim();
+  const venue = String(venueName ?? "").trim();
+  if (!venue) return name;
+  const tail = name.split(/\s+at\s+/i).pop();
+  if (venueKey(tail) === venueKey(venue)) return name;
+  return `${name} at ${venue}`;
 }
 
 function firstDetail(evidence) {
