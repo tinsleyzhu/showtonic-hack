@@ -211,7 +211,7 @@ export function Onboarding({
 
         {/* Progress segments (wizard steps only) */}
         {step !== "welcome" && step !== "signin" && (
-          <div className="mt-5 grid grid-cols-4 gap-2">
+          <div aria-hidden className="mt-5 grid grid-cols-4 gap-2">
             {wizardSteps.map((item, index) => (
               <span
                 className={`h-1 ${index < stepNumber ? "bg-[#FF7A50]" : "bg-[#2A2521]"}`}
@@ -284,7 +284,7 @@ export function Onboarding({
             <p className="mt-3 border-l-2 border-[#6FBCD3] bg-[#141210] p-3 text-xs leading-5 text-[#8A8177]">
               This build signs you in by handle. Passwords and Apple sign-in arrive when accounts can be claimed.
             </p>
-            {stepError && <p className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{stepError}</p>}
+            {stepError && <p aria-live="assertive" className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{stepError}</p>}
             <div className="flex-1" />
             <button className="mt-8 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={loginBusy} onClick={() => void submitLogin()} type="button">
               {loginBusy ? "Signing in..." : "Sign in"}
@@ -341,7 +341,7 @@ export function Onboarding({
             <p className="mt-4 border-l-2 border-[#6FBCD3] bg-[#141210] p-3 text-xs leading-5 text-[#8A8177]">
               <b className="text-[#F5F1E8]">No email yet.</b> The diary begins on this device — claim it with Apple or email after your first share.
             </p>
-            {stepError && <p className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{stepError}</p>}
+            {stepError && <p aria-live="assertive" className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{stepError}</p>}
             <div className="flex-1" />
             <button
               className="mt-8 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60"
@@ -365,6 +365,7 @@ export function Onboarding({
             {!!onboardingGenres?.length && (
               <div className="hide-scrollbar mt-6 flex gap-2 overflow-x-auto">
                 <button
+                  aria-pressed={!genreFilter}
                   className={`shrink-0 border px-4 py-2 text-xs font-bold ${genreFilter ? "border-[#2A2521] text-[#C9C1B4]" : "border-[#FF7A50] bg-[#FF7A50] text-black"}`}
                   onClick={() => setGenreFilter("")}
                   type="button"
@@ -373,6 +374,7 @@ export function Onboarding({
                 </button>
                 {onboardingGenres.map((entry) => (
                   <button
+                    aria-pressed={genreFilter === entry.genre}
                     className={`shrink-0 border px-4 py-2 text-xs font-bold capitalize ${genreFilter === entry.genre ? "border-[#FF7A50] bg-[#FF7A50] text-black" : "border-[#2A2521] text-[#C9C1B4]"}`}
                     key={entry.genre}
                     onClick={() => setGenreFilter(entry.genre === genreFilter ? "" : entry.genre)}
@@ -384,7 +386,7 @@ export function Onboarding({
               </div>
             )}
             {onboardingArtists?.length === 0 && (
-              <p className="mt-4 border-l-2 border-[#6FBCD3] pl-3 text-xs leading-5 text-[#8A8177]">
+              <p aria-live="polite" className="mt-4 border-l-2 border-[#6FBCD3] pl-3 text-xs leading-5 text-[#8A8177]" role="status">
                 {genreFilter
                   ? `Nothing upcoming in ${genreFilter}${homeCity ? ` near ${homeCity}` : ""} yet — try another, or go back to most seen.`
                   : `Nothing upcoming near ${homeCity} yet. Go back and pick another home base, or skip it to see artists from everywhere.`}
@@ -394,7 +396,7 @@ export function Onboarding({
               {tasteChoices.map((artist) => {
                 const selected = favorites.includes(artist.name);
                 return (
-                  <button className="flex flex-col items-center gap-2 text-center" key={artist.name} onClick={() => toggleFavorite(artist.name)} type="button">
+                  <button aria-pressed={selected} className="flex flex-col items-center gap-2 text-center" key={artist.name} onClick={() => toggleFavorite(artist.name)} type="button">
                     <span className={`relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-full border-2 ${selected ? "border-[#4EC98F]" : "border-transparent"}`} style={{ backgroundColor: colorFor(artist.name) }}>
                       {artist.image ? (
                         <img alt={artist.name} className="h-full w-full object-cover" src={artist.image} />
@@ -413,12 +415,12 @@ export function Onboarding({
               })}
             </div>
             <div className={`mt-6 flex items-center justify-between border px-4 py-3 text-sm ${favorites.length >= TASTE_SEED_MIN ? "border-[#4EC98F]/40 bg-[#15251C]" : "border-[#2A2521] bg-[#141210]"}`}>
-              <span className={favorites.length >= TASTE_SEED_MIN ? "text-[#BFE8D2]" : "text-[#8A8177]"}>
+              <span aria-live="polite" className={favorites.length >= TASTE_SEED_MIN ? "text-[#BFE8D2]" : "text-[#8A8177]"} role="status">
                 {describeTasteSelection(favorites.length)}
               </span>
               {favorites.length >= TASTE_SEED_MIN && <Check className="h-4 w-4 text-[#4EC98F]" />}
             </div>
-            {stepError && <p className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{stepError}</p>}
+            {stepError && <p aria-live="assertive" className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{stepError}</p>}
             <button className="mt-6 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={favorites.length < TASTE_SEED_MIN} onClick={advance} type="button">
               Continue with these artists
             </button>
@@ -456,7 +458,7 @@ export function Onboarding({
             </label>
             <div className="mt-3 divide-y divide-white/10 border-y border-white/10">
               {(visibleCities.length ? visibleCities : cityStats ?? []).slice(0, 5).map((entry) => (
-                <button className="flex w-full items-center gap-3 py-3 text-left" key={entry.city} onClick={() => setHomeCity(entry.city)} type="button">
+                <button aria-pressed={homeCity === entry.city} className="flex w-full items-center gap-3 py-3 text-left" key={entry.city} onClick={() => setHomeCity(entry.city)} type="button">
                   <span className="flex h-10 w-10 items-center justify-center" style={{ backgroundColor: colorFor(entry.city) }}>
                     <MapPin className="h-4 w-4 text-[#0A0908]" />
                   </span>
@@ -467,9 +469,9 @@ export function Onboarding({
                   {homeCity === entry.city && <Check className="h-4 w-4 text-[#4EC98F]" />}
                 </button>
               ))}
-              {cityStats === undefined && <p className="py-3 text-sm text-[#8A8177]">Loading cities…</p>}
+              {cityStats === undefined && <p aria-live="polite" className="py-3 text-sm text-[#8A8177]" role="status">Loading cities…</p>}
             </div>
-            {stepError && <p className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{stepError}</p>}
+            {stepError && <p aria-live="assertive" className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{stepError}</p>}
             <div className="flex-1" />
             <button className="mt-6 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={!homeCity} onClick={advance} type="button">
               {homeCity ? `Use ${homeCity} as home base` : "Pick a city to continue"}

@@ -769,6 +769,8 @@ agent.**
 | empty-state actions + share fallback (DiscoverView, ProfileView, ShowView StubCard) | L6 | 07:10Z |
 | interaction feedback: BackfillFlow accept, ShowView attendance/watchlist, AgentAccess revoke, ActivityView like/save | L6 | 07:35Z |
 | surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
+| onboarding a11y: aria-pressed on taste/genre/city selection, announced errors (app/OnboardingFlow.tsx) | L6 | 08:05Z |
+| app/views/PendingCandidates.tsx — NEW: human review surface for agent-created candidates | L6 | 08:25Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked
@@ -1033,3 +1035,44 @@ thirty seconds of a rendering pair of eyes, in this order:
 Discover can no longer strand you on an empty catalog. If the rehearsal machine
 has Reduce Motion on at the OS level, the accept beat will not play — worth
 knowing before you cut the recording rather than after.
+
+### L6 surface · 2026-08-27T08:30Z
+state:    shipped
+now:      found a hole in the demo path and filled it — pushed onto PR #12
+shipped:  PR #12, now 7 commits (235/235 tests, tsc clean, lint 0 errors)
+blocked:  still cannot render anything here
+next:     demo-surface pass with L4 from 11:00
+
+**DEMO.md Act 1 step 2 had no surface. `convex/backfill.ts:pending` has existed
+since the reclaim flow landed and NOTHING in `app/` ever called it.**
+
+The script says: agent runs `reclaim_camera_roll` over MCP → "flip to the app,
+candidates appear reactively (Convex push — no refresh)". They do not. They land
+in `backfillCandidates` and the app renders nothing at all, because the only
+consumer of that table is `BackfillFlow`, which builds its own queue in local
+state from a scan the *browser* just ran. An agent's work had nowhere to show up.
+
+That is the whole premise of the product — the agent does the archaeology, the
+human keeps the last touch — with no place for the last touch to happen.
+
+`app/views/PendingCandidates.tsx` renders on Profile above the squad plan: one
+card per waiting night, the evidence rows behind a "Why this match" disclosure,
+the draft caption shown as a draft, and accept / dismiss wired to the existing
+`backfill.resolve`. Empty-room rule holds — nothing pending, no card, so it
+never claims an agent did something before one has.
+
+It also makes an existing promise true. The reclaim flow's summary says "N more
+shows added · Review anytime" for nights you skipped. There was no anytime and
+no anywhere; that copy was a lie until now.
+
+I touched no `convex/` file — the query and the mutation both already existed
+and were already typed.
+
+⚠️ **Unrendered, like everything else in this PR.** This one is worth the most
+of your thirty seconds because it is on the demo path: after an agent calls
+`reclaim_camera_roll`, open Profile and the card should be there without a
+refresh. If `backfill.pending` returns rows the local scan saved but never
+resolved, they will appear too — that is intended (it is the "review anytime"
+case), but say the word if you would rather it filtered to agent-created rows
+only. Doing that properly needs a provenance column, which is `convex/` and
+therefore not mine.
