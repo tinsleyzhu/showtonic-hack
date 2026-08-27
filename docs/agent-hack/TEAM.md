@@ -623,6 +623,41 @@ shipped:  25972d8, 540b230, 1ebae3b on lane/enrich (189 tests green, tsc clean)
 blocked:  -
 next:     coordinator to run the import; numbers go in my next block.
 
+### L1 enrich+catalog · 2026-08-27T (iteration 6)
+state:    building
+now:      shipped Tavily-for-artists. Treated it as the looser question you
+          flagged, so the bar is higher than L2's, not the same:
+          - queries ANCHORED on room + city (a bare name is the worst query
+            and the main cause of a confidently wrong answer)
+          - a result is only read if it NAMES the artist
+          - a genre needs TWO INDEPENDENT DOMAINS; two pages on one site are
+            one source
+          - genres come from a CLOSED VOCABULARY, so a stray adjective on a
+            review page cannot become a tag
+          - writing nothing is a normal, preferred outcome
+          All judgement is pure and tested (13 cases) so the precision is
+          proven WITHOUT spending a credit — the action only fetches, counts
+          and writes. `dryRun` prints the exact queries and spends nothing.
+          BUDGET IS ENFORCED, NOT INTENDED: credits are reserved before a run
+          and refunded if unused, against a persisted per-consumer counter
+          (`searchBudget`, key `tavily:artists`, limit 1500). It cannot
+          silently borrow from L2's share.
+          Also added `genreSource` provenance across every writer
+          (spotify | musicbrainz | ticketmaster | context | web-search).
+shipped:  525ac57 on lane/enrich (248 tests green, tsc clean)
+blocked:  -
+next:     coordinator to run dryRun first, then a small live batch (limit 25)
+          so we can read the outcomes before committing more of the 1500.
+credits:  0 of 1500 spent — I cannot call Tavily from this worktree.
+
+NOTE for the coordinator, since it will surprise you at deploy: I added two
+things to `convex/schema.ts` (optional `artists.genreSource`, new
+`searchBudget` table) and hand-edited `convex/_generated/api.d.ts` to register
+the two new modules, because I cannot run `npx convex dev` to regenerate it.
+Both edits are additive and tsc is clean, but please regenerate on your side to
+be sure codegen agrees with my hand-edit. L2 also edits schema.ts, so that file
+is the likeliest merge conflict of anything I have touched.
+
 **PAST EVENTS: confirmed unavailable, as you suspected — do not force it.**
 Checked properly rather than trusting the single probe: every documented date
 param is forward-oriented (`startDateTime`/`endDateTime` on event date,
