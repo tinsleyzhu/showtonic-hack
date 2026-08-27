@@ -73,3 +73,17 @@ export function planVenueAliasDeduplication<T extends { _id: unknown }>(
   untimedAttached: number;
   merges: (MergePlan<T["_id"]> & { key: string })[];
 };
+
+export function chooseDisplayVenueName(
+  candidates: readonly { name: string; count?: number; fromVenueRow?: boolean }[] | undefined,
+): string;
+
+/** One spelling per room for the denormalized shows.venueName string. */
+export function planVenueNameCanonicalization(
+  shows: readonly unknown[] | undefined,
+  venues: readonly unknown[] | undefined,
+): {
+  roomCount: number;
+  spellingCount: number;
+  renames: { key: string; keep: string; replace: string[] }[];
+};

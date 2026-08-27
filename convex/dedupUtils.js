@@ -414,7 +414,43 @@ export function hasSponsorSuffix(name) {
  * token set contains the other, and the contained set says something more
  * specific than "hall" or "park".
  */
+// Rooms INSIDE a venue, decided by a human on 2026-08-27 and encoded here so
+// the decision is auditable rather than remembered. Structural rules cover the
+// "<room> at <venue>" shape below; these are the ones no rule should guess.
+const VENUE_KEEP_SEPARATE = [
+  // Unresolved at signoff — treat as separate until someone reads the source.
+  ["apollos victoria theater", "apollos victoria theater 1"],
+  // Nested rooms, also caught structurally; listed so the signoff is explicit.
+  ["city winery", "loft at city winery"],
+  ["madison square garden", "infosys theater at madison square garden"],
+  ["lincoln center", "david geffen hall at lincoln center"],
+  ["bill graham civic auditorium", "theater at bill graham civic auditorium"],
+  ["chapel", "chapels outdoor stage"],
+].map((pair) => pair.map((name) => name.split(" ").sort().join(" ")).sort().join("||"));
+
+const keepSeparatePairKey = (left, right) =>
+  [venueTokens(left), venueTokens(right)]
+    .map((tokens) => [...tokens].sort().join(" "))
+    .sort()
+    .join("||");
+
+// "The Loft at City Winery" is a room inside City Winery, not another name for
+// it — and a token subset cannot tell those apart, because the room's name
+// genuinely contains the venue's. What separates them is WHERE the containment
+// sits: if everything the shorter name says appears after an "at", the longer
+// name is a room within it. "David Geffen Hall at Lincoln Center" is nested
+// inside "Lincoln Center" and is an alias of "David Geffen Hall", and this
+// rule gets both right for the same reason.
+function isNestedRoom(smallTokens, largeTokens) {
+  const at = largeTokens.lastIndexOf("at");
+  if (at < 1) return false;
+  const after = new Set(largeTokens.slice(at + 1));
+  if (after.size === 0) return false;
+  return [...smallTokens].every((token) => after.has(token));
+}
+
 export function venueNamesAlias(left, right) {
+  if (VENUE_KEEP_SEPARATE.includes(keepSeparatePairKey(left, right))) return false;
   const a = new Set(venueTokens(left));
   const b = new Set(venueTokens(right));
   if (a.size === 0 || b.size === 0) return false;
@@ -423,6 +459,9 @@ export function venueNamesAlias(left, right) {
   for (const token of small) {
     if (!large.has(token)) return false;
   }
+
+  const largeTokens = a.size <= b.size ? venueTokens(right) : venueTokens(left);
+  if (isNestedRoom(small, largeTokens)) return false;
   // The shared part has to be distinctive on its own.
   return [...small].some((token) => !GENERIC_VENUE_TOKENS.has(token));
 }
@@ -511,5 +550,87 @@ export function planVenueAliasDeduplication(shows) {
     excessRows: merges.reduce((total, merge) => total + merge.duplicateIds.length, 0),
     untimedAttached,
     merges,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Denormalized display names
+// ---------------------------------------------------------------------------
+//
+// shows.venueName is a denormalized string, and the Browse dropdown reads it
+// directly — so "Bimbo's 365 Club" and "Bimbo’s 365 Club" (straight vs curly
+// apostrophe) appear as two rooms even after every duplicate SHOW is merged.
+// The rows are correct; the strings disagree. One spelling per room, chosen
+// once, fixes the dropdown without touching a single show's identity.
+
+/**
+ * Pick the spelling a room should be displayed under: the one most shows
+ * already use. Measured on the catalog, the majority spelling is the natural
+ * public name every time — "The Warfield" 36 to 2, "The Cutting Room" 206 to
+ * 6, "The Gramercy Theatre" 175 to 23. Letting the venues table win instead
+ * produced "Warfield" and "Golden Gate Theater", which is a visible
+ * downgrade for the person who reported the twins in the first place. So the
+ * venue row is a TIE-BREAK, not an authority — it holds one spelling, not a
+ * count, and cannot outvote 200 shows.
+ */
+export function chooseDisplayVenueName(candidates) {
+  const pool = (candidates ?? []).filter((candidate) => candidate?.name);
+  if (pool.length === 0) return "";
+
+  return [...pool].sort((left, right) => {
+    const byCount = (right.count ?? 0) - (left.count ?? 0);
+    if (byCount !== 0) return byCount;
+    const byRecord = Number(right.fromVenueRow) - Number(left.fromVenueRow);
+    if (byRecord !== 0) return byRecord;
+    const bySponsor = Number(hasSponsorSuffix(left.name)) - Number(hasSponsorSuffix(right.name));
+    if (bySponsor !== 0) return bySponsor;
+    const byLength = right.name.length - left.name.length;
+    if (byLength !== 0) return byLength;
+    return left.name.localeCompare(right.name);
+  })[0].name;
+}
+
+/**
+ * The whole rename plan: for each room, the spelling to keep and the spellings
+ * to replace. Rooms already spelled one way produce nothing.
+ */
+export function planVenueNameCanonicalization(shows, venues) {
+  const rooms = new Map();
+
+  // Only shows are counted. A venues row contributes its spelling as a
+  // tie-break flag, never as a vote — one record must not outweigh the rows
+  // people actually see.
+  const bump = (key, name, fromVenueRow) => {
+    if (!key || !name) return;
+    const room = rooms.get(key) ?? new Map();
+    const entry = room.get(name) ?? { name, count: 0, fromVenueRow: false };
+    if (fromVenueRow) entry.fromVenueRow = true;
+    else entry.count += 1;
+    room.set(name, entry);
+    rooms.set(key, room);
+  };
+
+  for (const show of shows ?? []) {
+    bump(venueKey({ name: show.venueName, city: show.city }), show.venueName, false);
+  }
+  for (const venue of venues ?? []) {
+    bump(venueKey(venue), venue.name, true);
+  }
+
+  const renames = [];
+  for (const [key, room] of rooms) {
+    const candidates = [...room.values()];
+    if (candidates.length < 2) continue;
+    const keep = chooseDisplayVenueName(candidates);
+    const replace = candidates
+      .filter((candidate) => candidate.name !== keep)
+      .map((candidate) => candidate.name);
+    if (replace.length > 0) renames.push({ key, keep, replace });
+  }
+
+  return {
+    roomCount: renames.length,
+    spellingCount: renames.reduce((total, rename) => total + rename.replace.length, 0),
+    renames,
   };
 }

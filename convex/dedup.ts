@@ -36,6 +36,7 @@ import {
   artistKey,
   venueKey,
   planVenueAliasDeduplication,
+  planVenueNameCanonicalization,
   planShowMerge,
   planArtistMerge,
   planVenueMerge,
@@ -621,6 +622,91 @@ export const runVenueAliasDedup = action({
         { table: "shows", cursor },
       );
       summary.keyed += page.patched;
+      if (page.isDone) break;
+      cursor = page.cursor;
+    }
+
+    return summary;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Denormalized display names
+// ---------------------------------------------------------------------------
+//
+// Merging every duplicate SHOW still leaves the Browse dropdown showing
+// "Bimbo's 365 Club" and "Bimbo’s 365 Club" as two rooms, because it reads the
+// denormalized shows.venueName string. This rewrites the minority spellings to
+// the majority one. It changes no row's identity — but it DOES change
+// showKey, so the keys are rebuilt afterwards.
+//
+// Pairs, not an object: a rename map keyed by name would hit Convex's
+// 1,024-field object cap on a larger catalog, which already bit the repoint map.
+export const rewriteVenueNamesPage = internalMutation({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    renames: v.array(v.object({ from: v.string(), to: v.string() })),
+  },
+  handler: async (ctx, args) => {
+    const lookup = new Map(args.renames.map((rename) => [rename.from, rename.to]));
+    const page = await ctx.db.query("shows").paginate({ cursor: args.cursor, numItems: 200 });
+
+    let patched = 0;
+    for (const show of page.page) {
+      const replacement = lookup.get(show.venueName);
+      if (!replacement || replacement === show.venueName) continue;
+      const next = { ...show, venueName: replacement };
+      await ctx.db.patch(show._id, {
+        venueName: replacement,
+        dedupKey: showKey(next),
+        aliasKey: showAliasKey(next),
+      });
+      patched += 1;
+    }
+
+    return { patched, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+export const canonicalizeVenueNames = action({
+  args: { apply: v.optional(v.boolean()) },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    applied: boolean;
+    roomCount: number;
+    spellingCount: number;
+    rewritten: number;
+    renames: { keep: string; replace: string[] }[];
+  }> => {
+    const [shows, venues] = await Promise.all([
+      collectTable(ctx, "shows"),
+      collectTable(ctx, "venues"),
+    ]);
+    const plan = planVenueNameCanonicalization(shows as never[], venues as never[]);
+
+    const summary = {
+      applied: args.apply ?? false,
+      roomCount: plan.roomCount,
+      spellingCount: plan.spellingCount,
+      rewritten: 0,
+      renames: plan.renames.map((rename) => ({ keep: rename.keep, replace: rename.replace })),
+    };
+    if (!args.apply) return summary;
+
+    const pairs = plan.renames.flatMap((rename) =>
+      rename.replace.map((from) => ({ from, to: rename.keep })),
+    );
+    if (pairs.length === 0) return summary;
+
+    let cursor: string | null = null;
+    for (;;) {
+      const page: { patched: number; cursor: string; isDone: boolean } = await ctx.runMutation(
+        internal.dedup.rewriteVenueNamesPage,
+        { cursor, renames: pairs },
+      );
+      summary.rewritten += page.patched;
       if (page.isDone) break;
       cursor = page.cursor;
     }
