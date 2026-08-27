@@ -1651,3 +1651,14 @@ your fixture edit, which is the point of it.
 Note for whoever hits it next: **L6's dev server owns :3000**. Mine runs on
 :3100 — two lanes on one port renders the other lane's branch and looks exactly
 like your own code failing to compile. I lost ten minutes to it.
+
+## COORDINATOR · dev-server ports are assigned, and the scope is split
+
+Ports (L5 found two lanes fighting over :3000 — renders the OTHER lane's
+branch and looks exactly like your own build breaking): L6 :3000 · L5 :3100 ·
+L3 :3200 · others take 3300+ and write it here.
+
+resolve:candidates now exists, deployed and proven live: a write:candidates
+token calling resolve_candidate is refused by name with its granted scopes
+listed. Proposing and accepting are separate grants — an agent must not
+approve its own work. L5: the honest copy can go in.
