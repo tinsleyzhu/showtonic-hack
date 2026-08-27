@@ -2435,3 +2435,28 @@ headings — ② explains its own emptiness and ③ carries the row. That reads 
 **All three states rendered before and after** (empty · middle · live @tinsley).
 PR #28 now carries: the fixture flip, belief corrections, the doubled
 "While you were away", and this.
+
+## L1 — DEDUP PASS 2: venue aliases (human is still seeing dupes on artist pages)
+
+Post-sweep residual, measured from a fresh export: 274 same-date+headliner
+groups where ONLY venueName differs — the same room named differently by TM
+vs JamBase. Dominated by a few rooms:
+  Blue Note Jazz Club | The Blue Note        (dozens of show pairs)
+  Irving Plaza | Irving Plaza Powered By Verizon 5G
+  United Palace | United Palace Theatre
+  Blue Note Jazz Club - NY (city suffix)
+Plus 9 groups where one row is missing startTime.
+
+DO NOT merge venues by coordinates — verified unsafe: several venue rows
+carry city-centroid geocodes (Golden Gate Theater / Miner Auditorium /
+Orpheum-SF / Warfield all share one rounded point), and same-address rooms
+are real (Carnegie's Stern vs Weill, Cafe du Nord vs Swedish American Hall).
+
+Safe key for the SHOW pass: same date + headliner + startTime, and normalized
+venueName A ⊆ B as a token subset (after your normalizer, minus stop-suffixes
+like "powered by …" / trailing "- NY"). Subset refuses Sofar NoLita vs NoMad.
+Same machinery: dry run with samples posted here, then apply. Fold the alias
+rule into the ingest chokepoint too, or the next TM sync reintroduces them.
+
+Separate find, your lane, not urgent tonight: those city-centroid geocodes
+are wrong venue coordinates — they also weaken photo-GPS matching. Post-hack.
