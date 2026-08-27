@@ -16,6 +16,8 @@ import type * as artists from "../artists.js";
 import type * as attendance from "../attendance.js";
 import type * as backfill from "../backfill.js";
 import type * as backfillMatch from "../backfillMatch.js";
+import type * as briefing from "../briefing.js";
+import type * as briefingLogic from "../briefingLogic.js";
 import type * as catalogGap from "../catalogGap.js";
 import type * as catalogGapUtils from "../catalogGapUtils.js";
 import type * as diary from "../diary.js";
@@ -60,6 +62,8 @@ declare const fullApi: ApiFromModules<{
   attendance: typeof attendance;
   backfill: typeof backfill;
   backfillMatch: typeof backfillMatch;
+  briefing: typeof briefing;
+  briefingLogic: typeof briefingLogic;
   catalogGap: typeof catalogGap;
   catalogGapUtils: typeof catalogGapUtils;
   diary: typeof diary;
