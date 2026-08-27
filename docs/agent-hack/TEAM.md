@@ -1361,3 +1361,45 @@ wrong-day placements, 0 acts on two days. 301 tests, tsc clean, lint 0 errors.
 `../st-fest` on `lane/match-festivals-pr`. The main checkout was being reset
 under it by the concierge session, which discarded uncommitted lane work once;
 the fence exists for exactly that reason.
+
+
+### L2 match · 2026-08-27T11:20Z
+state:    shipped
+now:      fourth festival (Coachella) produced a real wrong-day claim; two rules close it
+shipped:  0bd397f on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     idle in-lane, hardening. Will re-probe if the catalog gains festivals
+
+**Coachella 2025 put Friday's headliner on the Sunday, in production.** It has
+no day-by-day listing in the top results — what it has is a Pitchfork news
+story. Cut at its "April 13" mention and split on its commas, that story billed
+`the festival wrote`, `many more artists`, and `scheduled for Sunday, April
+13-20. Lady Gaga`. Nine acts, 85% confident, sourced, and wrong. This is the
+exact failure the day model exists to prevent, and the first time it happened
+outside a fixture.
+
+Two rules, because the failure has two halves:
+
+1. **A bill is a LIST.** A source contributes names only when its day section is
+   delimited like one, or is a clean comma list with nothing but names in it.
+   Prose can be right about a festival and still be uncuttable into a day.
+2. **A sentence fragment is never an act** — wrote / scheduled / will /
+   includes / headlines / many more / and others.
+
+**Where four festivals leave it, stated as recall and not as a win:**
+
+| festival | days probed | days billed | acts | wrong day |
+|---|---|---|---|---|
+| Outside Lands 2026 (SF) | 3 | 3 | 32, 31, 30 | 0 |
+| Hardly Strictly 2025 (SF) | 3 | 1 | 29 | 0 |
+| Lollapalooza 2025 (Chicago) | 4 | 0 | — | 0 |
+| Coachella 2025 (Indio) | 3 | 0 | — | 0 |
+
+**Four of thirteen days billed.** The agent recovers a festival when some
+publisher has written that festival's day down as a list, and refuses — with a
+reason — when nobody has. That is the honest shape of it: it is not a lineup
+scraper, it is a reader of lists that says no to everything else. Zero
+wrong-day claims across all thirteen days is the number that decides whether it
+can ship at all, and it is the one I would put on stage.
+
+Tavily spend: ~290 credits total for L2. 303 tests, tsc clean, lint 0 errors.
