@@ -179,3 +179,37 @@ would have blocked npm installs for every lane. Cleared `~/.npm` cache (933Mi, s
 regenerable) to buy headroom; did not touch other apps' caches (Spotify/Codex/Google/
 Firefox were the bigger hogs but out of scope for this repo). Now at 830Mi free — still
 tight, worth knowing if lanes start hitting ENOSPC again.
+
+### L4 sponsors · 2026-08-27T00:09Z
+state:    building
+now:      Bob still blocked (its MCP tools need a session STARTED in st-sponsors; this
+          session was launched from showtonic-hack, so `/bob-evaluate` can't run here).
+          Switched per rule #4: ran a manual demo-surface drill + mini-scan against the
+          live worker — the honest stand-in for the blocked Bob run, and it hardens Act 1.
+shipped:  - (findings below; no code change)
+blocked:  /bob-evaluate needs a fresh Claude Code session opened inside st-sponsors/
+next:     hand the two untested boundaries (scope + cross-tenant) to Bob once a
+          st-sponsors session exists; else demo-record Act 1 as Wi-Fi backup
+
+**Manual MCP surface drill (read-only, our own infra) — all green:**
+- Discovery `/.well-known/mcp.json` → 200, well-formed, scopes documented. `ai-agent.json` also 200.
+- `initialize` + `tools/list` → 200; 10 tools present and matching DEMO.md Act 1/2/3
+  (search_shows, get_taste_profile, find_compatible_humans, reclaim_camera_roll,
+  get_pending_candidates, resolve_candidate, set_attendance, log_show, checkout_tickets,
+  record_squad_plan).
+- **Auth boundary holds** (the "no backdoor" Q&A claim, verified live): no-token AND
+  bogus-token `sho_deadbeef...` both rejected `no_token` on a read tool (search_shows)
+  AND write tools (set_attendance, log_show). No scope leaks whether a token is merely
+  malformed vs unknown — good.
+- Robustness: malformed JSON → -32700, unknown method → -32601, unknown tool
+  ("drop_tables") → -32602, GET on the POST endpoint → 405. No 500s, no stack traces.
+
+**Two boundaries the manual drill CANNOT reach without a real minted token — these are
+the higher-value checks and the reason the Bob run is still worth doing:**
+1. Inter-scope enforcement: a `read:shows`-only token being correctly refused a
+   `write:logs` call. Manifest promises per-scope gating; I only proved "some token
+   required," not "correct scope required."
+2. Cross-tenant isolation: owner A's token cannot `resolve_candidate` into owner B's
+   diary. This is the one that would actually hurt if wrong.
+Both are exactly what Bob's auth-differential profile tests. Mint one `sho_` token from
+the app's "Connect your agent" screen and Bob (or a 5-min manual differential) closes them.
