@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Camera, Check, ExternalLink, MapPin, Music2, Star, Ticket, X } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { vibes } from "../data";
@@ -8,10 +8,13 @@ import { resolveShowImage } from "../liveData.js";
 import {
   adaptShow,
   collapseFestivalShows,
+  DetailSkeleton,
   EmptyLine,
+  InlinePanel,
   RatingStars,
   ReviewRow,
   SectionTitle,
+  shareOrCopy,
   ShowRail,
   Stat,
   StatusPanel,
@@ -79,8 +82,22 @@ export function ShowView({
   submitLog: () => Promise<void>;
   currentUserId?: Id<"users">;
 }) {
-  if (detail === undefined) return <StatusPanel title="Loading show" detail="Pulling the live details from Convex..." loading />;
-  if (!detail) return <StatusPanel title="Show not found" detail="Choose another show from Discover." />;
+  // Declared before the guards below: a hook after a conditional return is a
+  // rules-of-hooks violation the moment `detail` flips.
+  const [watchlistBusy, setWatchlistBusy] = useState(false);
+
+  async function toggleWatchlist() {
+    if (watchlistBusy) return;
+    setWatchlistBusy(true);
+    try {
+      await onToggleWatchlist(show.id);
+    } finally {
+      setWatchlistBusy(false);
+    }
+  }
+
+  if (detail === undefined) return <DetailSkeleton label="Loading this show" />;
+  if (!detail) return <InlinePanel actionLabel="Back to Discover" detail="It may have been removed from the catalog since you opened it." onAction={onBack} title="We could not open this show" />;
 
   const show = adaptShow({
     ...detail.show,
@@ -139,10 +156,10 @@ export function ShowView({
           </section>
 
           {isPast ? <button className="mt-5 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black" data-log-show-fallback onClick={() => setLogOpen(true)} type="button">{detail.attendanceStatus === "logged" ? "Edit your show log" : "Log this show"}</button> : <div className="mt-5 grid grid-cols-3 gap-2">
-            {(["interested", "going"] as Attendance[]).map((status) => <button className={`border px-3 py-3 text-xs font-black capitalize ${detail.attendanceStatus === status ? "border-[#FF7A50] bg-[#FF7A50] text-black" : "border-[#2A2521] text-[#C9C1B4]"}`} disabled={operation !== "idle"} key={status} onClick={() => setAttendance(status)} type="button">{status}</button>)}
-            <button className={`border px-3 py-3 text-xs font-black ${detail.isWatchlisted ? "border-[#4EC98F] text-[#4EC98F]" : "border-[#2A2521] text-[#C9C1B4]"}`} onClick={() => void onToggleWatchlist(show.id)} type="button">{detail.isWatchlisted ? "Watchlisted" : "Watchlist"}</button>
+            {(["interested", "going"] as Attendance[]).map((status) => <button aria-pressed={detail.attendanceStatus === status} className={`border px-3 py-3 text-xs font-black capitalize disabled:opacity-60 ${detail.attendanceStatus === status ? "border-[#FF7A50] bg-[#FF7A50] text-black" : "border-[#2A2521] text-[#C9C1B4]"}`} disabled={operation !== "idle"} key={status} onClick={() => setAttendance(status)} type="button">{operation === "saving" ? "Saving…" : status}</button>)}
+            <button aria-pressed={detail.isWatchlisted} className={`border px-3 py-3 text-xs font-black disabled:opacity-60 ${detail.isWatchlisted ? "border-[#4EC98F] text-[#4EC98F]" : "border-[#2A2521] text-[#C9C1B4]"}`} disabled={watchlistBusy} onClick={() => void toggleWatchlist()} type="button">{watchlistBusy ? "Saving…" : detail.isWatchlisted ? "Watchlisted" : "Watchlist"}</button>
           </div>}
-          {error && <p className="mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
+          {error && <p aria-live="assertive" className="surface-settle mt-3 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{error}</p>}
 
           <section className="mt-9">
             <SectionTitle eyebrow={isFestival ? `${detail.artists.length} artists on one festival page` : "Artist and song previews"} title={isFestival ? "Festival lineup" : "Lineup"} />
@@ -232,11 +249,12 @@ export function ShowView({
 // carrying handle + stub code.
 function StubCard({ artistLine, venueName, city, date, rating, handle, stubCode }: { artistLine: string; venueName?: string; city?: string; date: string; rating: number; handle: string; stubCode: string }) {
   const dateLabel = new Intl.DateTimeFormat("en", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`));
-  function share() {
-    void navigator.share?.({
+  const [shareState, setShareState] = useState<"idle" | "shared" | "copied" | "failed">("idle");
+  async function share() {
+    setShareState(await shareOrCopy({
       title: `${artistLine} — Showtonic stub`,
       text: `I was at ${artistLine}${venueName ? ` at ${venueName}` : ""} · ${dateLabel}${rating > 0 ? ` · rated ${rating}/5` : ""} — logged by @${handle} on Showtonic · stub ${stubCode}`,
-    });
+    }));
   }
   return (
     <div className="mt-4 max-w-md">
@@ -253,9 +271,16 @@ function StubCard({ artistLine, venueName, city, date, rating, handle, stubCode 
           <span className="font-mono text-xs font-black text-[#FF7A50]">{stubCode}</span>
         </div>
       </div>
-      <button className="mt-3 w-full border border-[#2A2521] px-4 py-3 text-sm font-black text-[#4EC98F]" onClick={share} type="button">
+      <button className="mt-3 w-full border border-[#2A2521] px-4 py-3 text-sm font-black text-[#4EC98F]" onClick={() => void share()} type="button">
         Share this stub
       </button>
+      {shareState !== "idle" && (
+        <p aria-live="polite" className={`mt-2 text-xs ${shareState === "failed" ? "text-red-200" : "text-[#8A8177]"}`} role="status">
+          {shareState === "copied" && "Copied to your clipboard — paste it anywhere."}
+          {shareState === "shared" && "Sent to your share sheet."}
+          {shareState === "failed" && "Could not share or copy. Select the stub text above and copy it by hand."}
+        </p>
+      )}
     </div>
   );
 }
@@ -339,7 +364,7 @@ export function LogSheet({ show, rating, setRating, selectedVibes, toggleVibe, r
               {tracks.map((track) => <button className={`flex w-full items-center gap-2 border p-2 text-left text-sm ${selectedSong === track ? "border-[#FF7A50] text-[#FF7A50]" : "border-[#2A2521]"}`} key={track} onClick={() => setSelectedSong(track)} type="button"><Music2 className="h-4 w-4" /> {track}{selectedSong === track && <Check className="ml-auto h-4 w-4" />}</button>)}
             </div>
           </div>
-          {error && <p className="border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
+          {error && <p aria-live="assertive" className="border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{error}</p>}
           <button className="w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-50" disabled={operation !== "idle"} onClick={submit} type="button">{operation === "saving" ? "Saving log..." : operation === "uploading" ? "Uploading poster..." : "Save show"}</button>
         </div>
       </section>

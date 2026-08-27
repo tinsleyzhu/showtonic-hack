@@ -4,9 +4,10 @@ import { Bookmark, Star } from "lucide-react";
 import {
   Avatar,
   BackButton,
+  DetailSkeleton,
   EmptyLine,
+  InlinePanel,
   SectionTitle,
-  StatusPanel,
   type LiveState,
 } from "./shared";
 
@@ -28,8 +29,8 @@ export function TasteMatchView({
   onOpenShow: (id: string) => void;
   onWatchlist: (showId: string) => Promise<unknown>;
 }) {
-  if (detail === undefined) return <StatusPanel title="Loading taste match" detail="Comparing your diaries..." loading />;
-  if (!detail) return <StatusPanel title="Match unavailable" detail="Head back to Activity and pick another person." />;
+  if (detail === undefined) return <DetailSkeleton label="Comparing your diaries" />;
+  if (!detail) return <InlinePanel actionLabel="Back to Activity" detail="There is not enough shared history to compare yet. Pick someone else from Activity." onAction={onBack} title="No match to show" />;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">

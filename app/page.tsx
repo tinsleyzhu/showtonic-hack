@@ -406,13 +406,13 @@ export default function Home() {
     return <StatusPanel title="Could not create your local profile" detail={live.identityError} />;
   }
   if (live.isIdentityLoading || live.discovery === undefined) {
-    return <StatusPanel title="Opening your show diary" detail="Connecting to Convex..." loading />;
+    return <StatusPanel title="Opening your show diary" detail="Fetching tonight's listings and the nights you have already logged." loading />;
   }
   if (shows.length === 0) {
     return (
       <StatusPanel
-        title="The lineup is ready to seed"
-        detail="Run npx convex run seed:run, then reload this page."
+        title="There are no shows in the catalog yet"
+        detail="Nothing to browse until the catalog is seeded. Operator: run `npx convex run seed:run`, then reload."
       />
     );
   }
@@ -463,7 +463,7 @@ export default function Home() {
 
       {notice && (
         <div className="mx-auto mt-4 max-w-6xl px-4 sm:px-6">
-          <div className="flex items-center justify-between gap-4 border border-[#4EC98F] bg-[#15251C] px-4 py-3 text-sm text-[#BFE8D2]">
+          <div aria-live="polite" className="surface-settle flex items-center justify-between gap-4 border border-[#4EC98F] bg-[#15251C] px-4 py-3 text-sm text-[#BFE8D2]" role="status">
             <span>{notice}</span>
             {pendingMedia && (
               <button
@@ -475,6 +475,9 @@ export default function Home() {
                 {live.operation === "uploading" ? "Retrying..." : "Retry poster"}
               </button>
             )}
+            <button aria-label="Dismiss this message" className="shrink-0 border border-[#4EC98F]/40 px-2 py-2 text-xs font-black" onClick={() => setNotice("")} type="button">
+              Dismiss
+            </button>
           </div>
         </div>
       )}
@@ -579,6 +582,7 @@ export default function Home() {
           openArtist={openArtist}
           openShow={openShow}
           openVenue={openVenue}
+          onOpenBackfill={() => setBackfillOpen(true)}
           onSetFavorites={(logIds) => live.setFavorites(logIds as Id<"logs">[])}
           onSignOut={signOut}
           profile={live.profile}

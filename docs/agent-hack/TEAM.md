@@ -690,6 +690,13 @@ agent.**
 | optional city scope on search + squad slate | L3 | 04:40Z |
 | Runtype spike | L4 | 23:30Z |
 | Hacker Bob scan | L4 | 2026-08-26T23:50Z |
+| app/globals.css + app/views/shared.tsx (design primitives) | L6 | 06:00Z |
+| focus visibility + live regions (globals.css only) | L6 | 06:00Z |
+| loading-state guards in ShowView/EntityViews/TasteMatchView/ProfileView (first 2 lines of each component only) | L6 | 06:40Z |
+| notice banner + boot copy in app/page.tsx | L6 | 06:40Z |
+| empty-state actions + share fallback (DiscoverView, ProfileView, ShowView StubCard) | L6 | 07:10Z |
+| interaction feedback: BackfillFlow accept, ShowView attendance/watchlist, AgentAccess revoke, ActivityView like/save | L6 | 07:35Z |
+| surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked
@@ -771,3 +778,186 @@ the higher-value checks and the reason the Bob run is still worth doing:**
    diary. This is the one that would actually hurt if wrong.
 Both are exactly what Bob's auth-differential profile tests. Mint one `sho_` token from
 the app's "Connect your agent" screen and Bob (or a 5-min manual differential) closes them.
+
+### L6 surface · 2026-08-27T06:00Z
+state:    building
+now:      AUDIT ONLY — walked every screen in source (Discover, Show, Log sheet,
+          Backfill, Profile/Diary, Activity, Taste match, Artist/Venue, Agent
+          access, onboarding shell) against DESIGN.md and globals.css. No code
+          changed yet. Ranked list below; I ship strictly in that order.
+shipped:  -
+blocked:  cannot render — no CONVEX_DEPLOYMENT in this worktree. Everything
+          below is read from source, so severity is judgement, not observation.
+next:     P0 batch (focus visibility + live regions + placeholder contrast),
+          globals.css and shared.tsx only — no other lane's files touched.
+
+**The audit. Ranked by what a judge notices, then by what a keyboard user
+cannot work around.**
+
+*P0 — accessibility, and all of it is invisible until someone presses Tab.*
+
+1. **Focus is invisible on every text input and select.** `outline-none` with
+   no replacement: `DiscoverView.tsx:140` (the main search), `:176 :179 :182
+   :186 :189` (home base / artist / venue / from / to), `EntityViews.tsx:40,56`
+   (artist and venue directory search), `ShowView.tsx:338` (poster caption).
+   `ShowView.tsx:304` is the only one that replaces it (`focus:border-[#FF7A50]`).
+   There is no global `:focus-visible` rule in `globals.css` to fall back on, so
+   a keyboard user tabbing through Discover's filter row genuinely cannot see
+   where they are.
+2. **No focus style on any button either** — the app relies on the UA default
+   ring, which on `#0A0908` is low-contrast and inconsistent across browsers.
+   Under a projector this is the difference between a legible demo and a
+   guessing game.
+3. **Placeholder text fails contrast.** `#6B6258` on `#0A0908` is ~3.4:1 —
+   under the 4.5:1 AA floor for 14px text. It is the placeholder colour in every
+   search and filter field. (The same token is fine where it is used for large
+   bold rank numerals — `ProfileView.tsx:121`, `ActivityView.tsx:90` — those
+   clear the 3:1 large-text bar.)
+4. **Status messages are silent to screen readers.** The `notice` banner
+   (`page.tsx:463`), `formError` (`ShowView.tsx:145`), the log-sheet error
+   (`:342`) and the backfill error (`BackfillFlow.tsx:279`) all render as plain
+   paragraphs. No `role="alert"`, no `aria-live`. An assistive-tech user gets
+   no signal that a save failed.
+5. **`RatingStars` has no state semantics.** `shared.tsx` renders five buttons
+   labelled "3 stars" with no `aria-pressed`/radio grouping, so the current
+   rating is announced nowhere; in read-only mode it renders five *disabled
+   buttons*, which is five pieces of noise where one label belongs.
+6. **`Avatar` puts `aria-label` on a bare `<span>`** (`shared.tsx`) — no role,
+   so the name is dropped by most screen readers.
+
+*P1 — loading, and this is what thin data looks like on stage.*
+
+7. **Every detail view loads as a full-screen takeover.** `StatusPanel` blanks
+   the entire app — header and tab bar included — on the way into a show
+   (`ShowView.tsx:82`), an artist or venue (`EntityViews.tsx:60,82`), a taste
+   match (`TasteMatchView.tsx:31`) and the profile (`ProfileView.tsx:26`). Tap
+   a show card in the demo and the chrome vanishes and reappears. This is the
+   single most visible "things that move when they should not" in the app.
+8. **The loading copy leaks implementation at a judge.** "Pulling the live
+   details from Convex...", "Connecting to Convex...", "Reading the seeded
+   JamBase profile...", and `page.tsx:411`'s "Run npx convex run seed:run".
+   Internally honest, externally a stack trace with better manners.
+9. **No skeletons anywhere.** Rails and grids render nothing at all until data
+   arrives, so thin data reads as broken rather than as loading.
+10. **`Sync JamBase` (`DiscoverView.tsx:196`) has no busy state.** A tap does
+    nothing observable until `catalogStatus` changes. It is a plain text button
+    next to a status line — the least acknowledged control in the app.
+
+*P2 — empty states that dead-end.*
+
+11. **A search with no results is a cul-de-sac.** `DiscoverView.tsx:204` falls
+    through to `ShowRail`'s generic "No shows in this shelf yet." with no way
+    to clear the filter that caused it. Worst case in the demo: a filter left
+    on from a previous run makes the catalog look empty.
+12. **Diary wall empty state has no action** (`ProfileView.tsx:133`): "Log your
+    first show and it will appear here." — the camera-roll scan that would
+    actually fill it is two taps away and unmentioned.
+13. **`EmptyLine` is one component doing nine different jobs.** Same dashed box
+    for "no reviews yet" (fine, terminal) and "no shows match" (not fine,
+    actionable). No affordance distinguishes them.
+14. **Silent share failures.** `ProfileView.tsx:58` and `ShowView.tsx:236` both
+    call `navigator.share?.()`. On any desktop browser without the Web Share
+    API the optional-chain swallows it and the button does *nothing* — no
+    error, no fallback copy-to-clipboard. Two share buttons that are dead on a
+    demo laptop.
+
+*P3 — interaction feedback.*
+
+15. Attendance buttons (`ShowView.tsx:142`) disable during a write but keep
+    their label, so a slow round-trip reads as a dead button.
+16. Watchlist, follow, and feed-row like are all round-trip-then-render with no
+    optimistic state.
+17. `BackfillFlow`'s "Yes, add it" (`:384`) dims on `busy` but never says it is
+    working — this is the Act 2 accept tap, the one moment in the demo that
+    most deserves an acknowledgement.
+18. **Revoking an agent token is one unconfirmed tap** (`AgentAccess.tsx`) with
+    no busy state. Destructive and irreversible.
+
+*Deliberately NOT on this list:* the app's motion budget. `globals.css` has
+exactly one animation (`onboarding-reveal`) and it already honours
+`prefers-reduced-motion`. That restraint is correct and I am not going to spend
+it on decoration — motion gets added only at candidate-accept and plan-arrival,
+per the brief, and only after P0–P2 land.
+
+### L6 surface · 2026-08-27T07:45Z
+state:    shipped
+now:      P0 through P3 of the audit are in one PR, four commits, in rank order
+shipped:  PR to follow on lane/surface (235/235 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + render — I cannot run the app (no CONVEX_DEPLOYMENT here)
+next:     demo-surface pass with L4 from 11:00; meanwhile hardening in-lane
+
+**What landed, in the order the audit ranked it.**
+
+*P0 · e0779af.* Focus was invisible on every text input and select in the app —
+`outline-none` with no replacement and no global `:focus-visible` to fall back
+on. One unlayered rule in `globals.css` fixes every call site at once: Tailwind
+utilities live in `@layer utilities`, and unlayered declarations beat layered
+ones regardless of specificity, so I did not have to edit four other lanes'
+files to do it. Ember, square, 2px offset — the accent and the right angles the
+app already uses. Placeholder contrast went from ~3.3:1 to ~5.2:1 by resolving
+`::placeholder` to the existing muted token; a contrast fix, not a palette
+change. `RatingStars` read-only is now one labelled image instead of five
+disabled buttons; interactive stars carry `aria-pressed` on the chosen star.
+`Avatar`'s `aria-label` moved onto a `role="img"`, where screen readers will
+actually read it.
+
+*P1 · 8660e81.* **I got one thing wrong in my own audit and it is worth
+correcting.** I claimed the detail views were full-screen takeovers that ate the
+header and tab bar. They are not — they render inside `page.tsx`'s `<main>`, so
+the chrome stays. What is real is worse in a subtler way: `StatusPanel` emits
+its OWN `<main class="min-h-screen items-center justify-center">`, so every show
+/ artist / venue / taste-match / diary load nests a second `main` landmark and a
+full viewport of centred empty space inside the first, shoving your content off
+screen and yanking it back. Those five now render skeletons with the same
+silhouette as the real page, as polite live regions. The not-found halves became
+`InlinePanel` — in the layout, and each one says what to do next and hands you
+the control to do it.
+
+Loading copy no longer names our stack at a judge. "Pulling the live details
+from Convex", "Connecting to Convex", "Reading the seeded JamBase profile".
+Internally honest, externally a stack trace with better manners. The seed screen
+keeps its command, demoted to an operator note under a sentence that says what
+is actually wrong.
+
+*P2 · f3e61a3.* Three dead ends opened up. A filtered search that matched
+nothing now names what you are filtering by, says how many shows the catalog
+actually holds, and offers Clear all filters — **the failure mode this prevents
+is a filter left on from an earlier run making the whole catalog read as empty
+on stage.** The diary wall now offers the camera-roll scan that would fill it,
+which was two taps away and unmentioned. And both share buttons were calling
+`navigator.share?.()`: on any desktop browser without the Web Share API the
+optional chain swallows the call and the button does *nothing* — two dead
+controls on exactly the class of machine a demo runs on. There is a clipboard
+fallback now, and it reports which of the two happened.
+
+*P3 · dae32e5.* Feedback, weighted to the Act 2 accept. "Yes, add it" says
+Adding…; a failed rating now says the show IS saved and only the rating did not
+land; attendance and watchlist say Saving… instead of going inert; revoking an
+agent token takes two taps with the consequence stated in between. Motion went
+to exactly the two moments the brief named — a night being accepted and a plan
+arriving — under one global `prefers-reduced-motion` rule that replaces the
+per-animation list a future animation would have escaped.
+
+⚠️ **What I have NOT seen, stated plainly.** No `CONVEX_DEPLOYMENT` in this
+worktree, so **none of this has been rendered by me — not one pixel.** It is
+type-checked, lint-clean and the 235 tests pass, but `node --test` only reaches
+the pure `.js` modules and touches none of these files. Four things are worth
+thirty seconds of a rendering pair of eyes, in this order:
+
+1. **The focus ring.** The unlayered-beats-layered cascade argument is correct
+   in the spec and I have not watched it win. Tab through Discover's filter row;
+   every field should show an ember outline.
+2. **The skeletons.** They should hold roughly the height of the real page. If a
+   detail view still jumps, my silhouette guess was off — it is a one-line fix.
+3. **Reduced motion.** The global rule uses `animation-duration: 0.01ms` with
+   `both`, which should leave every element at its final state. If anything
+   renders *invisible* under Reduce Motion, that rule is the culprit.
+4. **`ProfileView`.** L5 is building a recap card onto this same file. My edits
+   there are the two loading-guard lines, the share handler, and the diary empty
+   state — narrow on purpose, but a merge conflict is likelier here than
+   anywhere else.
+
+**For L4 (demo):** the Act 2 accept tap and the reclaimed-count now animate, and
+Discover can no longer strand you on an empty catalog. If the rehearsal machine
+has Reduce Motion on at the OS level, the accept beat will not play — worth
+knowing before you cut the recording rather than after.

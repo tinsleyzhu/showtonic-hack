@@ -7,24 +7,27 @@ import { SquadPlanCard } from "./SquadPlan";
 import { groupMemories, resolveShowImage, toMemory, type LiveMemory } from "../liveData.js";
 import {
   Avatar,
+  DetailSkeleton,
   EmptyLine,
   formatDate,
+  InlinePanel,
   LOW_N_THRESHOLD,
   PageTitle,
   SectionTitle,
+  shareOrCopy,
   Stat,
-  StatusPanel,
   type DiaryFilter,
   type LiveState,
 } from "./shared";
 
-export function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue, onSignOut, onSetFavorites, userId }: { userId: import("../../convex/_generated/dataModel").Id<"users">; profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void; onSignOut: () => void; onSetFavorites: (logIds: string[]) => Promise<unknown> }) {
+export function ProfileView({ profile, memories, filter, onFilter, openShow, openArtist, openVenue, onSignOut, onSetFavorites, onOpenBackfill, userId }: { userId: import("../../convex/_generated/dataModel").Id<"users">; profile: LiveState["profile"]; memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; openArtist: (id: string) => void; openVenue: (id: string) => void; onSignOut: () => void; onSetFavorites: (logIds: string[]) => Promise<unknown>; onOpenBackfill?: () => void }) {
   const [editingFavorites, setEditingFavorites] = useState(false);
   const [pinDraft, setPinDraft] = useState<string[]>([]);
   const [favoritesError, setFavoritesError] = useState("");
+  const [shareState, setShareState] = useState<"idle" | "shared" | "copied" | "failed">("idle");
 
-  if (profile === undefined) return <StatusPanel title="Loading profile" detail="Calculating your live music stats..." loading />;
-  if (!profile) return <StatusPanel title="Profile unavailable" detail="Reload to retry your local identity." />;
+  if (profile === undefined) return <DetailSkeleton label="Loading your diary" />;
+  if (!profile) return <InlinePanel actionLabel="Reload" detail="Your diary lives against a local identity that did not load. Reloading usually brings it back." onAction={() => window.location.reload()} title="We could not open your diary" />;
 
   const lowN = profile.stats.shows < LOW_N_THRESHOLD;
 
@@ -46,6 +49,14 @@ export function ProfileView({ profile, memories, filter, onFilter, openShow, ope
     });
   }
 
+  async function shareProfile() {
+    const result = await shareOrCopy({
+      title: "My Showtonic diary",
+      text: `@${profile!.user.handle} — ${profile!.stats.shows} shows and counting on Showtonic.`,
+    });
+    setShareState(result);
+  }
+
   async function savePins() {
     try {
       await onSetFavorites(pinDraft);
@@ -55,7 +66,15 @@ export function ProfileView({ profile, memories, filter, onFilter, openShow, ope
     }
   }
 
-  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between gap-4"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your diary" /><div className="flex items-center gap-4"><button className="text-xs font-black text-[#8A8177] hover:text-white" onClick={onSignOut} type="button">Switch account</button><button aria-label="Share profile" onClick={() => navigator.share?.({ title: "My Showtonic diary", text: `${profile.stats.shows} shows and counting.` })} type="button"><Share2 /></button></div></div>
+  return <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6"><div className="flex items-center justify-between gap-4"><PageTitle eyebrow={`@${profile.user.handle}`} title="Your diary" /><div className="flex items-center gap-4"><button className="text-xs font-black text-[#8A8177] hover:text-white" onClick={onSignOut} type="button">Switch account</button><button aria-label="Share profile" onClick={() => void shareProfile()} type="button"><Share2 /></button></div></div>
+
+    {shareState !== "idle" && (
+      <p aria-live="polite" className={`mt-3 text-xs ${shareState === "failed" ? "text-red-200" : "text-[#8A8177]"}`} role="status">
+        {shareState === "copied" && "Diary summary copied to your clipboard."}
+        {shareState === "shared" && "Sent to your share sheet."}
+        {shareState === "failed" && "Could not share or copy on this browser."}
+      </p>
+    )}
 
     {/* Stats header (design 12) — low-N rule swaps averages for potential copy */}
     <section className="mt-6 border border-[#2A2521] bg-[#1A1713] p-6">
@@ -121,16 +140,16 @@ export function ProfileView({ profile, memories, filter, onFilter, openShow, ope
     <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow="Based on verified logs" title="Top artists" /><div className="mt-4 divide-y divide-white/10">{profile.topArtists.length ? profile.topArtists.map((item, index) => item.artist ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openArtist(item.artist!._id)} type="button"><span className="w-6 text-lg font-black text-[#6B6258]">{index + 1}</span><img alt={item.name} className="h-10 w-10 object-cover" src={resolveShowImage(item.artist.image, [item.name])} /><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#8A8177]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your artists." />}</div></div><div><SectionTitle eyebrow="Based on verified logs" title="Top venues" /><div className="mt-4 divide-y divide-white/10">{profile.topVenues.length ? profile.topVenues.map((item, index) => item.venue ? <button className="flex w-full items-center gap-3 py-3 text-left" key={item.name} onClick={() => openVenue(item.venue!._id)} type="button"><span className="w-6 text-lg font-black text-[#6B6258]">{index + 1}</span><span className="flex h-10 w-10 items-center justify-center border border-[#2A2521]"><MapPin className="h-4 w-4 text-[#FF7A50]" /></span><span className="min-w-0 flex-1"><b className="block truncate">{item.name}</b><small className="text-[#8A8177]">{item.count} attended</small></span></button> : null) : <EmptyLine text="Log shows to rank your venues." />}</div></div></section>
     <section className="mt-10 grid gap-8 border-t border-white/10 pt-8 md:grid-cols-2"><div><SectionTitle eyebrow={`${profile.followedArtists.length} saved`} title="Artists you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedArtists.length ? profile.followedArtists.map((artist) => artist ? <button className="flex items-center gap-2 border border-[#2A2521] px-3 py-2 text-sm" key={artist._id} onClick={() => openArtist(artist._id)} type="button"><Heart className="h-3 w-3 fill-[#4EC98F] text-[#4EC98F]" /> {artist.name}</button> : null) : <EmptyLine text="Follow artists to keep them here." />}</div></div><div><SectionTitle eyebrow={`${profile.followedVenues.length} saved`} title="Venues you follow" /><div className="mt-4 flex flex-wrap gap-2">{profile.followedVenues.length ? profile.followedVenues.map((venue) => venue ? <button className="flex items-center gap-2 border border-[#2A2521] px-3 py-2 text-sm" key={venue._id} onClick={() => openVenue(venue._id)} type="button"><MapPin className="h-3 w-3 text-[#FF7A50]" /> {venue.name}</button> : null) : <EmptyLine text="Follow venues to keep them here." />}</div></div></section>
     <SquadPlanCard openShow={openShow} userId={userId} />
-    <DiaryArchive filter={filter} memories={memories} onFilter={onFilter} openShow={openShow} />
+    <DiaryArchive filter={filter} memories={memories} onFilter={onFilter} onOpenBackfill={onOpenBackfill} openShow={openShow} />
   <AgentAccess userId={userId} />
   </div>;
 }
 
-export function DiaryArchive({ memories, filter, onFilter, openShow }: { memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void }) {
+export function DiaryArchive({ memories, filter, onFilter, openShow, onOpenBackfill }: { memories: LiveMemory[]; filter: DiaryFilter; onFilter: (filter: DiaryFilter) => void; openShow: (id: string) => void; onOpenBackfill?: () => void }) {
   // One grid, seven sorts (design 19): Wall is the photo-first default.
   const filters: DiaryFilter[] = ["Wall", "Calendar", "Artist", "Venue", "City", "Genre", "Rating"];
   const groups = groupMemories(memories, filter);
-  return <section className="mt-10 border-t border-white/10 pt-8"><div className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-[#FF7A50]" /><SectionTitle eyebrow={`${memories.length} logged shows`} title="Your diary" /></div><div className="hide-scrollbar mt-4 flex gap-2 overflow-x-auto">{filters.map((item) => <button className={`shrink-0 border px-4 py-2 text-xs font-bold ${filter === item ? "border-[#FF7A50] bg-[#FF7A50] text-black" : "border-[#2A2521] text-[#C9C1B4]"}`} key={item} onClick={() => onFilter(item)} type="button">{item}</button>)}</div>{filter === "Calendar" ? <DiaryCalendar memories={memories} /> : filter === "Wall" ? memories.length ? <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3">{[...memories].sort((a, b) => b.date.localeCompare(a.date)).map((memory) => <MemoryTile key={memory.id} memory={memory} openShow={openShow} />)}</div> : <EmptyLine text="Log your first show and it will appear here." /> : groups.length ? <div className="mt-7 divide-y divide-white/10 border-y border-white/10">{groups.map((group) => <section className="py-6" key={group.key}><div className="flex items-end justify-between gap-3"><div><h3 className="font-display text-xl">{group.label}</h3><p className="mt-1 text-xs text-[#8A8177]">{group.count} {group.count === 1 ? "show" : "shows"}</p></div><span className="text-xs text-[#8A8177]">Latest {formatDate(group.latestDate)}</span></div><div className="hide-scrollbar mt-4 flex gap-3 overflow-x-auto">{group.memories.map((memory) => <button className="grid w-64 shrink-0 grid-cols-[72px_1fr] overflow-hidden border border-[#2A2521] bg-[#141210] text-left" key={`${group.key}-${memory.id}`} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-24 w-[72px] object-cover" src={memory.photo} /><span className="min-w-0 p-3"><b className="block truncate text-sm">{memory.artistNames.join(" + ")}</b><small className="mt-1 block truncate text-[#8A8177]">{formatDate(memory.date)} · {memory.venueName}</small><small className="mt-2 block text-[#4EC98F]">{memory.rating > 0 ? `${memory.rating} stars` : "unrated"}</small></span></button>)}</div></section>)}</div> : <EmptyLine text="No diary groups yet." />}</section>;
+  return <section className="mt-10 border-t border-white/10 pt-8"><div className="flex items-center gap-2"><ListFilter className="h-5 w-5 text-[#FF7A50]" /><SectionTitle eyebrow={`${memories.length} logged shows`} title="Your diary" /></div><div className="hide-scrollbar mt-4 flex gap-2 overflow-x-auto">{filters.map((item) => <button className={`shrink-0 border px-4 py-2 text-xs font-bold ${filter === item ? "border-[#FF7A50] bg-[#FF7A50] text-black" : "border-[#2A2521] text-[#C9C1B4]"}`} key={item} onClick={() => onFilter(item)} type="button">{item}</button>)}</div>{filter === "Calendar" ? <DiaryCalendar memories={memories} /> : filter === "Wall" ? memories.length ? <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3">{[...memories].sort((a, b) => b.date.localeCompare(a.date)).map((memory) => <MemoryTile key={memory.id} memory={memory} openShow={openShow} />)}</div> : <EmptyLine actionLabel={onOpenBackfill ? "Scan my camera roll" : undefined} onAction={onOpenBackfill} text="Nothing logged yet. Your camera roll probably already remembers a few of these." /> : groups.length ? <div className="mt-7 divide-y divide-white/10 border-y border-white/10">{groups.map((group) => <section className="py-6" key={group.key}><div className="flex items-end justify-between gap-3"><div><h3 className="font-display text-xl">{group.label}</h3><p className="mt-1 text-xs text-[#8A8177]">{group.count} {group.count === 1 ? "show" : "shows"}</p></div><span className="text-xs text-[#8A8177]">Latest {formatDate(group.latestDate)}</span></div><div className="hide-scrollbar mt-4 flex gap-3 overflow-x-auto">{group.memories.map((memory) => <button className="grid w-64 shrink-0 grid-cols-[72px_1fr] overflow-hidden border border-[#2A2521] bg-[#141210] text-left" key={`${group.key}-${memory.id}`} onClick={() => openShow(memory.showId)} type="button"><img alt={memory.caption} className="h-24 w-[72px] object-cover" src={memory.photo} /><span className="min-w-0 p-3"><b className="block truncate text-sm">{memory.artistNames.join(" + ")}</b><small className="mt-1 block truncate text-[#8A8177]">{formatDate(memory.date)} · {memory.venueName}</small><small className="mt-2 block text-[#4EC98F]">{memory.rating > 0 ? `${memory.rating} stars` : "unrated"}</small></span></button>)}</div></section>)}</div> : <EmptyLine actionLabel={onOpenBackfill ? "Scan my camera roll" : undefined} onAction={onOpenBackfill} text="Nothing to group yet — this view fills in once you have logged a show." />}</section>;
 }
 
 export function MemoryTile({ memory, openShow }: { memory: LiveMemory; openShow: (id: string) => void }) {
