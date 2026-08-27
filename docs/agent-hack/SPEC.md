@@ -200,7 +200,14 @@ mostly collapsing, not adding:
 
 1. **Catalog** — a `festivals` entity (or a designated "festival day" show row
    per date) that owns the page. The per-set rows stay as the lineup, but stop
-   being separately matchable.
+   being separately matchable. **Shipped 2026-08-27 (L2), from the other end:**
+   the catalog-gap agent recovers festival lineups a day at a time and proposes
+   exactly this row — one per date, titled `<Festival> — <Weekday>`, carrying
+   that day's bill in `artistNames`, keyed `gap:fest:<festivalId>:<date>` with
+   `festivalId` set (`convex/catalogGap.ts:sweepFestival`). So the shape now
+   arrives already collapsed for every festival the agent fills in; what is
+   still missing is the collapse of festivals the catalog imported as sixty
+   per-set rows.
 2. **Matcher** — collapse same-date candidates sharing a `festivalId` into one
    candidate before the ambiguity guard runs. The guard then sees one
    well-located option instead of sixty tied ones and matches it confidently:
@@ -210,6 +217,23 @@ mostly collapsing, not adding:
    `backfill.resolve` unchanged.
 4. **Discover** — one card per festival instead of a wall of sets, which is the
    change a user notices first.
+
+### What festival recovery does NOT claim
+
+The gap agent's festival path claims that a day of a festival had a bill, and
+never that anybody attended it — the same weaker claim a history sweep makes,
+with the same evidence bar. It does not touch the matcher, so the ambiguity
+guard still declines a festival night, and it does not decide what a festival
+diary entry is. It only means that when the collapse above is built, the rows
+to collapse to already exist and are sourced.
+
+The failure it is built against is specific and worth naming: on a festival
+page every act is real, so the mistake is not invention, it is **a real act
+filed under the wrong day** — sourced, plausible, and uncatchable by the person
+approving it. Reading a lineup page whole put 24 known headliners on days they
+did not play across three days of Outside Lands 2026; cutting the page into its
+days put zero. Measured in `eval/festivalEval.mjs` against the festival's own
+daily-lineup announcement, and pinned by `test/festivalEval.test.mjs`.
 
 ### Why declining is the right interim
 
