@@ -770,7 +770,13 @@ now:      the Tavily identifier RAN, and it works. dryRun first (queries read
           for an empty backlog (that is how a drain stalls silently), and a
           partial grant reads budgetRemaining instead of inferring emptiness
           from a short page — identical shapes, opposite meanings.
-shipped:  6634d95 on lane/enrich (291 tests green, tsc + eslint clean)
+shipped:  6634d95, 1402101 on lane/enrich — PR #17 (291 green, tsc + eslint
+          clean). The second one is the reason the first is safe to run: the
+          candidate query collected every show AND every artist on every call,
+          which at 9,162 artists is near Convex's read ceiling — a call with
+          limit 1 timed out on me mid-batch — and the drain calls it 43 times.
+          Now indexed on date and hydrating only the anchored artists, a chunk
+          at a time, stopping when the page is full.
 blocked:  -
 next:     coordinator: merge + deploy, then
           `npx convex run artistSearch:identifyArtistsContinuously
