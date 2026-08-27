@@ -75,10 +75,16 @@ export const saveCandidates = mutation({
 export const pending = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const candidates = await ctx.db
+    const rows = await ctx.db
       .query("backfillCandidates")
       .withIndex("by_user_status", (q) => q.eq("userId", args.userId).eq("status", "pending"))
       .collect();
+
+    // A candidate with no show is a REFUSAL — a night the matcher declined to
+    // place. It belongs in the activity feed, where it reads as restraint, not
+    // in the decisions queue: there is nothing for the human to confirm, and
+    // rendering it as a card would ask them to approve an absence.
+    const candidates = rows.filter((candidate) => candidate.showId);
 
     const joined = await Promise.all(
       candidates.map(async (candidate) => {
