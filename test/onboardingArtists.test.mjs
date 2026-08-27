@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rankOnboardingArtists } from "../convex/onboardingArtists.js";
+import {
+  isEventNotAnArtist,
+  mergeArtistDuplicates,
+  rankOnboardingArtists,
+} from "../convex/onboardingArtists.js";
 
 function artist(name, homeCityShows, otherCityShows = 0) {
   return { name, homeCityShows, otherCityShows };
@@ -97,4 +101,71 @@ test("home city matching ignores case and stray whitespace", () => {
   });
 
   assert.equal(ranked.length, 1);
+});
+
+test("the picker does not offer a member the venue's karaoke night", () => {
+  // Live catalog, San Francisco, 2026-08-27: "Karaoke Tuesday" (13 upcoming
+  // SF dates) and "Open Mic Night" (12) were the first two cards in the grid,
+  // ahead of every touring act. A weekly night really does have more dates
+  // than a band; it just cannot answer "artists you'd cross town to see".
+  const ranked = rankOnboardingArtists(
+    [
+      artist("Karaoke Tuesday", 13),
+      artist("Open Mic Night", 12),
+      artist("Sofar Sounds NYC Secret Concert", 20),
+      artist("Live Weekly Bluegrass with  Allison Kelly", 9),
+      artist("My Morning Jacket", 8),
+    ],
+    { homeCity: "San Francisco" },
+  );
+
+  assert.deepEqual(
+    ranked.map((entry) => entry.name),
+    ["My Morning Jacket"],
+  );
+});
+
+test("event vocabulary is the rule, not a blocklist of names, and not weekdays", () => {
+  // "Sunday Saari" and "Ruby Tuesday" are in or like the catalog's real rows.
+  // A bare weekday can never be the signal.
+  assert.equal(isEventNotAnArtist("Karaoke Tuesday"), true);
+  assert.equal(isEventNotAnArtist("Bottomless Brunch at Ellen's Stardust Diner!"), true);
+  assert.equal(isEventNotAnArtist("Sunday Saari"), false);
+  assert.equal(isEventNotAnArtist("Ruby Tuesday"), false);
+  assert.equal(isEventNotAnArtist("The Red Party"), false);
+  assert.equal(isEventNotAnArtist("Nightlands"), false);
+});
+
+test("one card per artist, however many rows the feeds left behind", () => {
+  // Two Becks is not only ugly: selection in the picker is by NAME, so tapping
+  // one card lights both and still counts as one of the five picks.
+  const ranked = rankOnboardingArtists(
+    [
+      { name: "Beck", homeCityShows: 2, otherCityShows: 0, genres: ["rock"] },
+      { name: "beck", homeCityShows: 1, otherCityShows: 0, image: "beck.jpg" },
+      artist("Osees", 2),
+    ],
+    { homeCity: "San Francisco" },
+  );
+
+  assert.deepEqual(
+    ranked.map((entry) => entry.name),
+    ["Beck", "Osees"],
+  );
+  // Counts add up, because both rows describe the same person's nights.
+  assert.equal(ranked[0].homeCityShows, 3);
+  // The row with a picture wins the display, so the grid is faces not letters
+  // — but its lower-case spelling does not come with it.
+  assert.equal(ranked[0].image, "beck.jpg");
+});
+
+test("merging tidies the whitespace the feeds ship with", () => {
+  const [merged] = mergeArtistDuplicates([
+    { name: "  Vince Giordano and the  Nighthawks", homeCityShows: 3, otherCityShows: 0 },
+    { name: "Vince Giordano and The Nighthawks", homeCityShows: 2, otherCityShows: 1 },
+  ]);
+
+  assert.equal(merged.name, "Vince Giordano and the Nighthawks");
+  assert.equal(merged.homeCityShows, 5);
+  assert.equal(merged.otherCityShows, 1);
 });
