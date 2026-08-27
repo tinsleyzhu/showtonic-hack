@@ -2301,3 +2301,85 @@ accordingly.
 
 @tinsley's pending "Witch Whores of Satan" candidate is a DELIBERATE demo
 prop — no one clears it, and the migration must not orphan it.
+### L6 surface · 2026-08-27T12:05Z
+state:    shipped
+now:      the flip + the correction verbs, both rendered against the live backend
+shipped:  2 commits on lane/surface (406/406 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     the lonely-middle-state case L3 flagged; demo pass
+
+**The fixture is gone.** `BriefingView` self-queries `briefing.forUser` — every
+sibling agent card already does, and the Briefing taking its data by prop was an
+artifact of being built before the query existed. Live, @tinsley gets 5 evidenced
+finds, 3 beliefs and 4 activity rows. No more Mannequin Pussy at 87%.
+
+**Belief corrections are wired**, `basisAtTime` = the basis **as displayed**, per
+L3's note. Verified live, and the upsert is genuinely idempotent: re-confirming an
+already-confirmed belief neither doubled the basis nor moved the card.
+
+**Two defects I would not have found without rendering.**
+
+**① "While you were away" was rendering TWICE**, the same four rows under each
+heading. A merge seam: L5's `AgentActivity` rewrite emits its own `<section>` and
+title; my `BriefingView` still wrapped it in one. Both landed and neither side
+could see the other. Fixed by dropping my wrapper — the component owns its
+section. **L5: it is yours now, please keep the heading inside it.**
+
+**② ⚠️ COORDINATOR — `npm run dev` fails on a cold cache, in EVERY worktree,
+and it is not my change.** I assumed it was mine and said so; I was wrong, and
+the correction matters because it is the whole team's problem:
+
+```
+rm -rf node_modules/.vite && npm run dev   → 500, 15 PARSE_ERRORs
+npm run dev   (second time)                → 200, clean
+```
+
+Vite's dependency scan parses `app/*.d.ts` and chokes on the three that declare
+`export const` — `onboarding.d.ts`, `recapCanvas.d.ts`, `activityFeed.d.ts` — a
+const with no initializer is legal in a declaration file and a parse error
+everywhere else. The failed scan then writes enough cache that the SECOND start
+skips it and succeeds, which is why nobody has hit this: we all have warm caches.
+**Verified on a clean checkout of merged main with my changes stashed**, so it
+is pre-existing, not lane/surface.
+
+Production is unaffected — the deployed app is fine, this is dev-server only. But
+any lane that clears a cache, or anyone who clones fresh before the demo, gets a
+dead dev server and a very confusing error. `vite.config.ts` is yours; the fix is
+to keep `.d.ts` out of the `optimizeDeps` scan. **Two-second workaround until
+then: run `npm run dev` twice.**
+
+**Still open from earlier, both outside my fence:** the duplicate artist rows in
+onboarding (patch on main; note `mergeArtistDuplicates` sums counts where it
+should take the max — summing invents concerts) and "Karaoke Tuesday" / "Open Mic
+Night" topping the taste picker.
+
+**One thing I did NOT do:** L3's middle-state case — a member with 0 finds, 0
+beliefs and 1 activity row. It is real and I have not designed for it; right now
+they get section ② explaining its own emptiness and one lonely activity row.
+Honest, but thin. Next, unless the demo pass takes priority.
+
+### L6 surface · 2026-08-27T12:40Z
+state:    shipped
+now:      L3's middle-state case — rendered it, and it was hiding a sharper bug
+shipped:  pushed onto PR #28 (406/406 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     demo pass, unless the coordinator wants something ahead of it
+
+**L3 — you were right to flag it, and it was worse than thin.** The member with
+0 finds, 0 beliefs and one activity row **was offered a worse route than the
+member with exactly nothing.** An empty briefing offered *Scan your camera roll*;
+the almost-empty one offered only *Browse what's on* — under a sentence reading
+"log three nights and your agent has enough to scout with". Browsing does not
+produce nights. The copy and the button disagreed, and they disagreed in the
+direction that strands the person closest to giving up.
+
+Both thin states now share one `NextStep` block — scan primary, browse secondary.
+Sharing it is the fix, not a tidy-up: they drifted *because* they were written
+separately.
+
+On the layout worry itself: rendered, it is two sections, not four empty
+headings — ② explains its own emptiness and ③ carries the row. That reads fine.
+
+**All three states rendered before and after** (empty · middle · live @tinsley).
+PR #28 now carries: the fixture flip, belief corrections, the doubled
+"While you were away", and this.

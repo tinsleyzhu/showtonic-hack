@@ -57,7 +57,6 @@ export default function Home() {
   const [leaderScope, setLeaderScope] = useState<"city" | "artist" | "venue">("city");
   const [activityScope, setActivityScope] = useState<"friends" | "you">("friends");
   const [selectedMatchUserId, setSelectedMatchUserId] = useState("");
-  const [briefingNow] = useState(() => Date.now());
   const [logOpen, setLogOpen] = useState(false);
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [morningAfterDismissed, setMorningAfterDismissed] = useState(false);
@@ -487,7 +486,6 @@ export default function Home() {
       {view === "briefing" && live.user && (
         <BriefingView
           handle={onboardingProfile.handle}
-          now={briefingNow}
           onBrowse={() => navigate("discover")}
           onOpenBackfill={() => setBackfillOpen(true)}
           onYes={async (find) => {

@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { Bot, Clock, MapPin, Sparkles, UserCheck, Users, X } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
-import { BRIEFING_FIXTURE, type AgentFind, type Briefing, type BriefingEvidence } from "../briefing";
+import type { AgentFind, Briefing, BriefingEvidence, TasteBelief } from "../briefing";
 import { briefingIsEmpty, visibleFinds } from "../briefingSurface.js";
 import { PendingCandidates } from "./PendingCandidates";
 import { SquadPlanCard } from "./SquadPlan";
 import { AgentActivity } from "./AgentActivity";
-import { EmptyLine, formatDate, LiveMessage, SectionTitle } from "./shared";
+import { DetailSkeleton, formatDate, LiveMessage, SectionTitle, todayIso } from "./shared";
 
 // The Briefing — the home surface.
 //
@@ -160,15 +162,149 @@ function FindCard({
   );
 }
 
+// The way out of an empty briefing, offered identically wherever the briefing is
+// thin.
+//
+// It exists because the two thin states had drifted: a member with NOTHING was
+// offered the camera-roll scan, and a member with almost nothing — one activity
+// row, no finds — was offered only "browse what's on", under a sentence that
+// says "log three nights". The member with less data got the better route. The
+// scan is the primary because it is the one that actually produces history;
+// browsing is how you find one specific night, which is a different job.
+function NextStep({
+  text,
+  onOpenBackfill,
+  onBrowse,
+}: {
+  text: string;
+  onOpenBackfill: () => void;
+  onBrowse: () => void;
+}) {
+  return (
+    <div className="mt-4 border border-dashed border-[#2A2521] p-5">
+      <p className="text-sm leading-6 text-[#8A8177]">{text}</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          className="bg-[#FF7A50] px-4 py-2 text-xs font-black text-black"
+          onClick={onOpenBackfill}
+          type="button"
+        >
+          Scan your camera roll
+        </button>
+        <button
+          className="border border-[#2A2521] px-4 py-2 text-xs font-black text-[#4EC98F]"
+          onClick={onBrowse}
+          type="button"
+        >
+          Browse what&rsquo;s on
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// A belief you can argue with.
+//
+// The whole section is a claim the app makes about you, and a claim you cannot
+// contradict is not a belief, it is an assertion. Two verbs, and what each one
+// means is deliberately NOT symmetric — see convex/briefingLogic.js:
+//
+//   "That's right"  pins it and says so in the basis. It does NOT promote
+//                   forming → strong: strength is derived from how many nights
+//                   are in your diary, and you agreeing with us is not more
+//                   nights. Confirmation is its own fact, not a louder ours.
+//   "That's wrong"  suppresses it. Not for a cooling-off period — you said the
+//                   claim is false, and re-asserting it next week because a
+//                   timer expired would be the app arguing with you. It returns
+//                   only if the evidence genuinely changes, and then it says so.
+//
+// `basisAtTime` is the basis AS DISPLAYED, because "only comes back when the
+// evidence changed" has to compare against the number you were actually
+// looking at, not the number by the time your tap arrives.
+function BeliefCard({
+  belief,
+  onCorrect,
+}: {
+  belief: TasteBelief;
+  onCorrect: (belief: TasteBelief, verdict: "right" | "wrong") => Promise<void>;
+}) {
+  const [busy, setBusy] = useState<"right" | "wrong" | null>(null);
+  const [status, setStatus] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  async function correct(verdict: "right" | "wrong") {
+    if (busy) return;
+    setBusy(verdict);
+    setFailed(false);
+    setStatus(verdict === "right" ? "Noting that…" : "Taking that back…");
+    try {
+      await onCorrect(belief, verdict);
+      // "wrong" removes the card on the next query result, so this line is
+      // mostly read by someone who cannot see it go.
+      setStatus(verdict === "right" ? "Noted — I'll keep this one." : "Dropped. I won't claim that again.");
+    } catch (error) {
+      setFailed(true);
+      setStatus(
+        error instanceof Error && error.message
+          ? error.message
+          : "That did not save, so the belief stands. Try again.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <article className="border border-[#2A2521] bg-[#141210] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-display min-w-0 flex-1 text-lg leading-7">{belief.statement}</p>
+        <span
+          className={`shrink-0 text-[10px] uppercase tracking-wide ${
+            belief.strength === "strong" ? "text-[#4EC98F]" : "text-[#8A8177]"
+          }`}
+        >
+          {belief.strength}
+        </span>
+      </div>
+      {/* The basis is the point. A belief without one is a horoscope. */}
+      <p className="mt-2 text-xs leading-5 text-[#8A8177]">{belief.basis}</p>
+
+      {status && (
+        <div className="mt-3">
+          <LiveMessage tone={failed ? "error" : "info"}>{status}</LiveMessage>
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-2 border-t border-white/10 pt-3">
+        <button
+          className="border border-[#2A2521] px-3 py-2 text-xs font-black text-[#4EC98F] disabled:opacity-60"
+          disabled={busy !== null}
+          onClick={() => void correct("right")}
+          type="button"
+        >
+          {busy === "right" ? "Noting…" : "That's right"}
+        </button>
+        <button
+          className="border border-[#2A2521] px-3 py-2 text-xs font-black text-[#8A8177] disabled:opacity-60"
+          disabled={busy !== null}
+          onClick={() => void correct("wrong")}
+          type="button"
+        >
+          {busy === "wrong" ? "Dropping…" : "That's wrong"}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 export function BriefingView({
   userId,
   handle,
-  // Fixtures are the DEFAULT, not a hardcoding: when convex/briefing.ts lands,
-  // page.tsx passes `briefing={useQuery(api.briefing.forUser, { userId })}` and
-  // nothing else in this file changes. The contract's shapes are identical by
-  // construction, which is the whole point of building against it.
-  briefing = BRIEFING_FIXTURE,
-  now,
+  // Live. `briefing` survives only as a test/story override — every sibling
+  // agent card (PendingCandidates, SquadPlanCard, RecapCard) self-queries, and
+  // the Briefing being the one that took its data by prop was an artifact of
+  // being built before the query existed.
+  briefing: briefingOverride,
   openShow,
   onYes,
   onBrowse,
@@ -177,13 +313,24 @@ export function BriefingView({
   userId: Id<"users">;
   handle: string;
   briefing?: Briefing;
-  now: number;
   openShow: (showId: string) => void;
   onYes: (find: AgentFind) => Promise<void>;
   onBrowse: () => void;
   onOpenBackfill: () => void;
 }) {
+  const liveBriefing = useQuery(api.briefing.forUser, { userId, today: todayIso() });
+  const briefing = briefingOverride ?? liveBriefing;
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const correct = useMutation(api.briefing.correctBelief);
+
+  async function correctBelief(belief: TasteBelief, verdict: "right" | "wrong") {
+    await correct({ userId, statement: belief.statement, basisAtTime: belief.basis, verdict });
+  }
+
+  // The home screen now waits on a real round trip, which it never did on
+  // fixtures. Same rule as every other detail view: hold the silhouette rather
+  // than popping in, and say so to a screen reader.
+  if (!briefing) return <DetailSkeleton label="Reading your briefing" />;
 
   // Both rules live in app/briefingSurface.js, where they are tested. See the
   // header there for why they are not inlined: "no evidence, no card" and the
@@ -203,9 +350,9 @@ export function BriefingView({
       {nothingYet ? (
         // The empty room, stated once and honestly, instead of four headings
         // that imply an agent has been working when none has.
-        <EmptyLine
-          actionLabel="Scan your camera roll"
-          onAction={onOpenBackfill}
+        <NextStep
+          onBrowse={onBrowse}
+          onOpenBackfill={onOpenBackfill}
           text="Your agent has nothing to report yet. Give it your history and it can start scouting."
         />
       ) : (
@@ -246,15 +393,21 @@ export function BriefingView({
             ) : (
               // Says WHY it is empty, per CONCIERGE.md. An empty recommender
               // that explains itself is a working one; a silent one looks broken.
-              <EmptyLine
-                actionLabel="Browse what's on"
-                onAction={onBrowse}
+              <NextStep
+                onBrowse={onBrowse}
+                onOpenBackfill={onOpenBackfill}
                 text="Log three nights and your agent has enough to scout with. Until then it would be guessing, so it doesn't."
               />
             )}
           </section>
 
           {activity.length > 0 && (
+            // The double-heading seam was fixed from BOTH sides at once: L5
+            // stripped the component's chrome while this file stripped the
+            // wrapper, and the merge of the two fixes left section ③ with no
+            // heading at all. The contract is L5's: the component owns the
+            // rows, the composer owns the section and the title. So the
+            // wrapper is back, and it is the only one.
             <section aria-labelledby="briefing-activity" className="mt-10 border-t border-white/10 pt-8">
               <SectionTitle eyebrow="Since you last looked" title="While you were away" />
               <AgentActivity items={activity} />
@@ -266,23 +419,7 @@ export function BriefingView({
               <SectionTitle eyebrow="Drawn from your diary" title="What it believes" />
               <div className="mt-5 space-y-3">
                 {beliefs.map((belief) => (
-                  <article
-                    className="border border-[#2A2521] bg-[#141210] p-4"
-                    key={belief.statement}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="font-display min-w-0 flex-1 text-lg leading-7">{belief.statement}</p>
-                      <span
-                        className={`shrink-0 text-[10px] uppercase tracking-wide ${
-                          belief.strength === "strong" ? "text-[#4EC98F]" : "text-[#8A8177]"
-                        }`}
-                      >
-                        {belief.strength}
-                      </span>
-                    </div>
-                    {/* The basis is the point. A belief without one is a horoscope. */}
-                    <p className="mt-2 text-xs leading-5 text-[#8A8177]">{belief.basis}</p>
-                  </article>
+                  <BeliefCard belief={belief} key={belief.statement} onCorrect={correctBelief} />
                 ))}
               </div>
             </section>
