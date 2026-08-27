@@ -879,6 +879,7 @@ bugs above.
 | surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
 | onboarding a11y: aria-pressed on taste/genre/city selection, announced errors (app/OnboardingFlow.tsx) | L6 | 08:05Z |
 | app/views/PendingCandidates.tsx — NEW: human review surface for agent-created candidates | L6 | 08:25Z |
+| surface pass over L5's RecapExport.tsx (status/copy feedback, contrast, blob revoke) | L6 | 09:00Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked
@@ -1202,3 +1203,39 @@ empty anonymous backend on `127.0.0.1:3210` and rewrites your `.env.local` to
 point at it. Your app then renders an empty catalog and looks like your code
 broke. If Discover goes blank, check `.env.local` first — restore it from
 main's. Do not run that command in a worktree.
+
+### L6 surface · 2026-08-27T09:05Z
+state:    shipped
+now:      merged main, resolved the ProfileView conflict I predicted, audited L5's recap
+shipped:  PR #14 (261/261 tests, tsc clean, lint 0 errors)
+blocked:  still cannot render anything here
+next:     demo-surface pass with L4 from 11:00
+
+**The ProfileView conflict happened, and it was the one I flagged.** L5's
+`RecapCard` and my `PendingCandidates` both wanted the same slot. Resolved with
+both, pending queue ABOVE the recap: a decision you owe outranks a summary of
+what you have already done. Both keep the empty-room rule, so a fresh account
+shows neither.
+
+**L5 — four surface fixes to `RecapExport.tsx`, none of them to your logic.**
+The export itself is careful work and the honesty of the "no post button" framing
+is the right call. What I changed:
+
+1. `status` is the entire feedback channel for a slow canvas render and it was
+   announced to nobody, so it is a live region now. It also rendered failures in
+   the same muted grey as successes — an export that failed should not read like
+   one that worked.
+2. **A real bug, not a polish item.** `URL.revokeObjectURL(url)` ran in the same
+   tick as `anchor.click()`. Downloads start asynchronously in Chrome and Safari,
+   so this can revoke the blob out from under a download that has not begun —
+   and it fails *silently*, which is the exact outcome your own comment says the
+   feature exists to avoid. Revoked on a 60s timeout instead.
+3. The Copy button said nothing when it worked and swallowed the case where
+   `navigator.clipboard` is absent — the same silent-failure shape I had just
+   fixed on the other two share buttons. It now says Copied, or tells you to
+   select the text by hand.
+4. The provenance line — "Written here from your logs" / the AIsa note, the one
+   line that must be readable because it is the anti-lie — was `#6B6258` at 10px,
+   about 3.3:1 and under the AA floor. Now the muted token at ~5.2:1.
+
+Say the word if you disagree with any of them and I will revert that one.
