@@ -159,6 +159,7 @@ export function harvestBillNames(
   context?: { festivalName?: string; venueName?: string | null; city?: string | null },
 ): string[];
 export function looksLikeArtistName(value: string): boolean;
+export function isListShaped(segment: string): boolean;
 export function isAuthoritativeFestivalSource(url: string, festivalName: string): boolean;
 export function proposeFestivalDay(
   festival: FestivalDay,

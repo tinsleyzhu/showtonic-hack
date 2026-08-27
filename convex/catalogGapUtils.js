@@ -911,6 +911,26 @@ function nextHeadingIndex(text, from) {
   return match ? match.index : null;
 }
 
+// A bill is a LIST. Coachella 2025 is why this exists: Pitchfork's news story
+// names the right acts in sentences, and splitting those sentences on their
+// commas produced "the festival wrote" and "scheduled for Sunday, April 13-20.
+// Lady Gaga" as acts — and put Friday's headliner on the Sunday, which is the
+// one error this whole path is shaped to prevent.
+//
+// Prose can be right about a festival and still cannot be cut into a day's
+// bill. So a source contributes names only when its day section is delimited
+// like a list, or is a clean comma list with nothing but names in it.
+function isListShaped(segment) {
+  const text = String(segment ?? "");
+  const delimiters = (text.match(/[\n|•·・\t]/g) ?? []).length;
+  if (delimiters >= 3) return true;
+  const fragments = text
+    .split(/\s*,\s*/)
+    .map(trimBillFragment)
+    .filter(Boolean);
+  return fragments.length >= 3 && fragments.every(looksLikeArtistName);
+}
+
 function countPlausibleNames(segment) {
   return String(segment ?? "")
     .split(BILL_SEPARATORS)
@@ -961,6 +981,12 @@ function isFestivalFurniture(value) {
   return words.every((word) => FESTIVAL_FURNITURE.has(word) || NOISE_WORDS.has(word));
 }
 
+// News prose reads like a bill once it is split on commas: "Charli xcx, Megan
+// Thee Stallion, the festival wrote, Missy Elliott". These are the words that
+// give a sentence away — no act is billed with a verb in its name.
+const PROSE_WORDS =
+  /\b(?:wrote|said|says|announced|announces|scheduled|will|returns?|includ(?:e|es|ed|ing)|featur(?:e|es|ed|ing)|perform(?:s|ed|ance|ances)?|headlin(?:e|es|ed|ing)|culminat(?:e|es|ed)|many more|and more|others|other artists|full lineup)\b/i;
+
 function looksLikeArtistName(value) {
   const name = String(value ?? "").trim();
   if (name.length < 2 || name.length > 40) return false;
@@ -973,6 +999,7 @@ function looksLikeArtistName(value) {
   if (/\b\d{1,2}\s*(?::\s*\d{2})?\s*(?:am|pm)\b/i.test(name)) return false;
   if (new RegExp(`^(?:${DAY_HEADER_SOURCE})$`, "i").test(normalizeText(name))) return false;
   if (/^\$/.test(name)) return false;
+  if (PROSE_WORDS.test(name)) return false;
   // A fragment that opens with a year is the tail of a date, not an act.
   if (/^(?:19|20)\d{2}\b/.test(name.trim())) return false;
   // Listings pages count things next to the names they count: "625 attendances
@@ -1107,6 +1134,12 @@ function proposeFestivalDay(festival, results, options = {}) {
     });
     if (!names.length) {
       rejected.push({ url, reason: "no act name survived on this day's part of the page" });
+      continue;
+    }
+    // A social caption is judged as a caption below, not as prose: it can never
+    // carry a day either way, and saying so is the more useful refusal.
+    if (!isSocialDomain(url) && !isListShaped(slice.segment)) {
+      rejected.push({ url, reason: "this day's part of the page reads as prose, not a lineup" });
       continue;
     }
     const row = {
@@ -1277,6 +1310,7 @@ export {
   harvestBillNames,
   hostOf,
   isAuthoritativeFestivalSource,
+  isListShaped,
   looksLikeArtistName,
   isSocialDomain,
   isTicketingDomain,

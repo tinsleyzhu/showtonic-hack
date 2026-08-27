@@ -511,9 +511,38 @@ test("a day that yields two or three names is a page we failed to read", () => {
     {
       title: "Outside Lands 2026 At-a-Glance",
       url: "https://www.jambase.com/festival/outside-lands-2026",
-      content: "Friday, August 7, 2026\nTame Impala\nKaytranada",
+      // List-shaped, so the refusal below is the floor talking and not the
+      // prose rule: the page is readable, it just did not yield a bill.
+      content:
+        "Friday, August 7, 2026\nTame Impala\nKaytranada\nVenue\nMap & Directions\nAdvertisement",
     },
   ]);
   assert.equal(proposal, null);
   assert.match(declineReason, /failed to read/);
+});
+
+test("prose about a festival cannot be cut into a day's bill", () => {
+  // Coachella 2025: Pitchfork named the right acts in sentences, and splitting
+  // those sentences on their commas billed "the festival wrote" as an act and
+  // put Friday's headliner on the Sunday. Being right about the festival is not
+  // being right about the day.
+  const { proposal, rejected } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands 2026 Full Lineup Announced",
+      url: "https://pitchfork.com/news/outside-lands-2026-lineup",
+      content:
+        "The full lineup has been revealed. Charli xcx, Turnstile, and Labrinth " +
+        "will headline Friday, August 7, 2026, the festival wrote, with sets from " +
+        "Wet Leg, Geese, and many more.",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.equal(rejected.at(-1).reason, "this day's part of the page reads as prose, not a lineup");
+});
+
+test("a sentence fragment is never an act", () => {
+  assert.equal(looksLikeArtistName("the festival wrote"), false);
+  assert.equal(looksLikeArtistName("many more artists"), false);
+  assert.equal(looksLikeArtistName("scheduled for Sunday"), false);
+  assert.equal(looksLikeArtistName("Wet Leg"), true);
 });
