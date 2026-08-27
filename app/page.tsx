@@ -19,6 +19,7 @@ import {
 import { useShowtonic } from "./useShowtonic";
 import { ActivityView } from "./views/ActivityView";
 import { BackfillFlow } from "./views/BackfillFlow";
+import { BriefingView } from "./views/BriefingView";
 import { DiscoverView } from "./views/DiscoverView";
 import { ArtistView, ArtistsDirectoryView, VenueView, VenuesDirectoryView } from "./views/EntityViews";
 import { ProfileView } from "./views/ProfileView";
@@ -44,9 +45,9 @@ const SOCIAL_ENABLED = true;
 export default function Home() {
   const [onboardingProfile, setOnboardingProfile] = useState<OnboardingProfile | null>(null);
   const [pendingOnboardingIntent, setPendingOnboardingIntent] = useState<OnboardingIntent | null>(null);
-  const [view, setView] = useState<View>("discover");
+  const [view, setView] = useState<View>("briefing");
   const [catalogMode, setCatalogMode] = useState<CatalogMode>("upcoming");
-  const [cameFrom, setCameFrom] = useState("discover");
+  const [cameFrom, setCameFrom] = useState("briefing");
   const [selectedShowId, setSelectedShowId] = useState("");
   const [selectedArtistId, setSelectedArtistId] = useState("");
   const [selectedVenueId, setSelectedVenueId] = useState("");
@@ -56,6 +57,7 @@ export default function Home() {
   const [leaderScope, setLeaderScope] = useState<"city" | "artist" | "venue">("city");
   const [activityScope, setActivityScope] = useState<"friends" | "you">("friends");
   const [selectedMatchUserId, setSelectedMatchUserId] = useState("");
+  const [briefingNow] = useState(() => Date.now());
   const [logOpen, setLogOpen] = useState(false);
   const [backfillOpen, setBackfillOpen] = useState(false);
   const [morningAfterDismissed, setMorningAfterDismissed] = useState(false);
@@ -257,7 +259,7 @@ export default function Home() {
     }
     setOnboardingProfile(nextProfile);
     setPendingOnboardingIntent(null);
-    setView("discover");
+    setView("briefing");
   }
 
   function openShow(showId: string, openLogger = false) {
@@ -482,6 +484,20 @@ export default function Home() {
         </div>
       )}
 
+      {view === "briefing" && live.user && (
+        <BriefingView
+          handle={onboardingProfile.handle}
+          now={briefingNow}
+          onBrowse={() => navigate("discover")}
+          onOpenBackfill={() => setBackfillOpen(true)}
+          onYes={async (find) => {
+            await live.toggleWatchlist("show", find.showId);
+          }}
+          openShow={openShow}
+          userId={live.user._id}
+        />
+      )}
+
       {view === "discover" && (
         <DiscoverView
           dataStatus={catalogStatus || `JamBase catalog · ${live.discovery.catalogStats.historical} past / ${live.discovery.catalogStats.upcoming} upcoming`}
@@ -517,7 +533,7 @@ export default function Home() {
           openArtist={openArtist}
           openShow={openShow}
           openVenue={openVenue}
-          onBack={() => navigate(cameFrom === "diary" ? "profile" : "discover")}
+          onBack={() => navigate(cameFrom === "diary" ? "profile" : cameFrom === "briefing" ? "briefing" : "discover")}
           operation={live.operation}
           rating={rating}
           review={review}
