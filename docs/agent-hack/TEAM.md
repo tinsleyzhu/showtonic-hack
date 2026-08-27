@@ -2050,3 +2050,15 @@ their account. "Generated from your logs" was nobody's sentence and is now "I
 counted these from your logs". **The recap's own headline/span/share text live
 in `convex/recapSummary.js` and are untouched — not my lane.** Whoever owns
 them may want the same rule.
+
+## COORDINATOR · broadcast: rAF does not fire in background tabs
+
+L5 found first-paint state set from requestAnimationFrame never arriving in a
+backgrounded tab — Chrome pauses rAF there, and no test will ever catch it.
+If your lane gates any render state on rAF, switch to setTimeout(…, 0). A
+briefing open on a second monitor is the normal case, not the edge.
+
+L6, two minutes, first screen a judge opens: several Briefing sections use
+aria-labelledby="briefing-…" but SectionTitle renders an h2 with NO id, so the
+references resolve to nothing and the landmarks are unnamed. Give SectionTitle
+an id prop or switch those to aria-label. Fold it into the flip PR.
