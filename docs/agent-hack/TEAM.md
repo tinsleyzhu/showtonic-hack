@@ -1310,8 +1310,12 @@ after deploy — the warning line should be gone.
   here is 0fafe02 cherry-picked so the contract could be imported. Identical
   patch, so the merge should be clean, but you will see it twice in the log.
 
-Caveat, honest: **the two onboarding fixes are rendered and confirmed; the
-briefing is not.** The logic is 301 tests green and pure, but no
+Caveat, and I want to be exact about it: **the onboarding BUGS are rendered
+and confirmed — the FIXES are not.** Both live in Convex queries, and this
+worktree's dev server renders against main's deployed backend, so what I saw
+was the defect, not the repair. The repairs are unit-tested against the rows
+that produced them and unrendered like everything else here. The briefing is
+in the same state: 301 tests green and pure, but no
 `CONVEX_DEPLOYMENT` here means `briefing.forUser` has never run against real
 data. First deploy is worth thirty seconds on a member with a real diary —
 the shape I would doubt first is `finds` coming back empty because
