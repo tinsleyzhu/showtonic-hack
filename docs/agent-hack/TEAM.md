@@ -2608,3 +2608,102 @@ the page title. One of them should be a `p` or `div`. L6's call.
 **FYI on the ruled repoint:** it is visible on Diary, not just in data — the
 Favorite Shows tile for @tinsley's 5★ night now reads `Outside Lands`, where she
 pinned Charli XCX. Your ruling stands, just noting where it surfaces on screen.
+### L3 taste · 2026-08-27T13:10Z
+state:    shipped
+now:      both presenter items from L5's walk — one party once, two nights per room max
+shipped:  PR to follow (429/429 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**1. One party, two headliners.** Caught on the EVENT rather than the key, as
+specified: same room, same date, same start time, and at least one artist in
+common. All four conditions, because two of them alone would overreach — an
+early set and a late set share a room and a date and are genuinely two
+nights, and a support act playing two nights running is not a duplicate.
+Both of those are tests, next to the Midway one.
+
+This needed `startTime` plumbed from `shows` into the find shape. It is
+internal and **stripped before the card leaves**, next to `billArtists` — the
+contract does not gain a field, and the existing "the bill never leaks into
+the contract" test now guards both.
+
+**2. Two finds per venue.** Not zero-tolerance: two lets a residency someone
+clearly likes keep a foothold, five is the catalog talking about itself. The
+freed slots go to the next-best venue, which is asserted rather than assumed.
+
+**A note on why the fixtures needed changing to prove this**, since it is the
+same lesson again: my slate tests all used one default venue, so the venue
+ceiling would have cut them to two and I would have "discovered" a bug in my
+own new rule. Fixing them meant giving each act its own room — and then they
+all went to ZERO finds, because with every show carrying the same genre the
+rarity weighting correctly says that genre separates nobody, so nothing had
+evidence. The tests only became honest once the fixture catalog had a genre
+mix. A fixture that is uniform in the dimension your model reasons about
+cannot exercise the model.
+
+Sanity-checked against the New York fixture after the change: still five
+distinct acts, still led by Smoke Jazz at 0.91, no room appearing more than
+twice.
+
+### L3 taste · 2026-08-27T13:55Z
+state:    shipped
+now:      alias-proofed the venue ceiling ahead of L1's pass 2; NY assertion re-checked
+shipped:  PR to follow (431/431 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; re-read the NY assertion after L1's pass 2 lands
+
+**The two-per-venue ceiling could be evaded by a definite article.** I keyed
+it on the raw venue name, and the live SF catalog holds "Castro Theatre"
+alongside "The Castro Theatre", "Cafe Du Nord" alongside "Cafe du Nord",
+"Palace of Fine Arts" alongside "The Palace of Fine Arts" — so three nights in
+one room could still have taken three slots. Case and spacing already fell out
+of the normalizer; a leading article and L1's two suffix shapes ("Powered By
+…", trailing "- NY") are the rest.
+
+**I tried the token-subset rule L1 documented as safe for the SHOW pass and
+rejected it here, on evidence from the same catalog.** Subset merges "Bill
+Graham Civic Auditorium" with "The Theater at Bill Graham Civic Auditorium" —
+a 7,000-capacity arena and a small room inside it — and it merges "Miner
+Auditorium" with "Miner Auditorium @ SFJAZZ Center". For L1's pass the cost of
+a false merge is a duplicate that stays; for my ceiling the cost is
+**suppressing a real recommendation**, which is the wrong way round. So the
+rule stays conservative and lets a genuinely missed alias through rather than
+hiding a genuinely different room. Both cases are tests, using those exact
+names. **L1's data pass is still the right place to canonicalise** — this only
+stops the ceiling being cheated by an article in the meantime, and it will not
+fight their canonical spellings when they land.
+
+**NY assertion re-checked after the change**, as you asked to do post-pass-2:
+five distinct acts, Smoke Jazz still leading at 0.91, no room twice.
+"Birdland Theater" and "Birdland Jazz Club" stay separate, correctly — they
+are two different rooms and my rule does not touch them.
+
+**Live briefing for @tinsley, read just now:** 1 owed / 5 finds / 3 beliefs /
+4 activity, four distinct venues, and the belief correction round-trips —
+"Friday is your night · 3 of 7 logged shows fell on a Friday — and you
+confirmed it".
+
+## COORDINATOR · pass-2 spec correction (evidence from L3)
+
+L1: the token-subset venue rule I specified over-reaches on real rows — it
+merges "Bill Graham Civic Auditorium" ⊆ "The Theater at Bill Graham Civic
+Auditorium" (an arena and a room INSIDE it) and "Miner Auditorium" ⊆ "Miner
+Auditorium @ SFJAZZ Center". Your full show key (same date + headliner +
+startTime) makes most such merges harmless in practice — same act, same
+minute, nested rooms is almost certainly one event — but "almost certainly"
+is not the standard for deletes. Requirement: your dry-run samples MUST
+include every nested-room subset pair the rule would merge, printed
+separately, so a human signs off on that specific class before apply. If any
+look wrong, drop subset down to the safe shapes only (leading article,
+"powered by …" suffix, trailing "- NY"/city tag) and leave the rest for a
+curated alias list.
+
+## COORDINATOR · image-fallback exception for L5
+
+Scoped exception #2: L5 may touch L6's view files ONLY to add the image error
+fallback — one shared handler (shared.tsx is the home) swapping a failed
+artwork load to DEFAULT_SHOW_IMAGE, applied at the img sites. Every poster is
+a hotlink to a host we don't control, fetched ~50 per screen, with no onError
+anywhere; @tinsley's Diary — Act 1's first screen — has four broken images
+right now. L6: heads-up, keep your diffs clear of img tags until this lands.
+The two-h1 wordmark item is filed for L6, post-flip work, not urgent.
