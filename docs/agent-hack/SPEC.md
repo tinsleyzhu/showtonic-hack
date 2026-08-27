@@ -14,6 +14,7 @@
 > | Squad negotiation (phase 4) | ✅ shipped — `agents/squad.mjs` + `agents/negotiate.mjs`, N agents from the roster / uneven scopes, verified against production. Three outcomes: consensus, split (a subgroup goes and the rest are named), refused |
 > | Taste v2 + peer discovery | ✅ shipped — genre affinity when both sides have genres, artist/venue fallback when they don't; `find_compatible_humans` finds compatible humans with neither human online, and refuses under five logged shows |
 > | Squad plan in the app UI | ✅ shipped — `app/views/SquadPlan.tsx` on Profile: the plan, who's going, what actually settled, and the full transcript, for a human who owns no agent |
+> | Recap + share (L5) | ✅ shipped — `recap.build` + `generate_recap` (scope `read:taste`), recap card on Profile, canvas export at 1080x1920 and 1080x1080, caption through AIsa with a locally written fallback. **No auto-post, deliberately** — the agent generates, the human approves and posts, and the UI says so. |
 > | Agent payments (AIsa) | ✅ shipped — `checkout_tickets`, scope-gated on `pay`. Settles a real metered AIsa transaction and stores its id. The ticket purchase itself is still recorded as `simulated`, because no ticketing API here sells to agents. |
 >
 > Beyond the original plan: **New York catalog** (1,567 upcoming + a year of
