@@ -110,17 +110,84 @@ export const locatedVenues = query({
 // Every venue's name and city, with coordinates where they exist. Wider than
 // `locatedVenues`, which filters to rows the anchoring can use: approval needs
 // the rooms that have no coordinates too, or it mints a twin for each of them.
+// dedupKey rides along because the approve path's unkeyed-row fallback gates
+// on it — a keyed row needs no repoint; importUpcoming finds it by key.
 export const namedVenues = query({
   args: {},
   handler: async (ctx) => {
     const venues = await ctx.db.query("venues").collect();
     return venues.map((venue) => ({
       id: venue._id,
+      jambaseId: venue.jambaseId,
       name: venue.name,
       city: venue.city,
       latitude: venue.latitude,
       longitude: venue.longitude,
+      dedupKey: venue.dedupKey,
     }));
+  },
+});
+
+// `shows.importUpcoming` keys venues by `venue-<slug(name-city)>`, so a show
+// lands on the row whose id matches the NAME it was given. That is fine until a
+// dedup pass merges two rows: the survivor keeps its own id, and if that id was
+// minted from the other spelling, importing under the survivor's current name
+// mints a second row again. Same defect L5 found live on the Castro Theatre —
+// one venue answering to two names — arriving from the other direction.
+//
+// So approval checks whether the canonical row's id agrees with its name, and
+// repoints the show itself when it does not.
+//
+// Narrowed at rebase: `shows.importUpcoming` now also finds KEYED rows by
+// dedupKey — the normalized name + city — so a merged survivor is recognised
+// whatever spelling it was minted under, and no twin is minted for it. The
+// repoint below therefore fires only for UNKEYED rows, the fallback class the
+// dedupKey lookup cannot reach.
+function venueSlug(name: string, city: string) {
+  const value = `${name}-${city}`
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  return `venue-${value}`;
+}
+
+// Point one show at the venue row the catalog actually uses, id AND
+// denormalised strings together — never one without the other, which is the
+// state that makes a residency read as two rooms.
+export const attachToVenue = mutation({
+  args: { showJambaseId: v.string(), venueId: v.id("venues") },
+  handler: async (ctx, args) => {
+    const show = await ctx.db
+      .query("shows")
+      .withIndex("by_jambase", (q) => q.eq("jambaseId", args.showJambaseId))
+      .unique();
+    if (!show) throw new Error("Show not found");
+    const venue = await ctx.db.get(args.venueId);
+    if (!venue) throw new Error("Venue not found");
+
+    const strayId = show.venueId;
+    await ctx.db.patch(show._id, {
+      venueId: venue._id,
+      venueName: venue.name,
+      city: venue.city,
+      // The stage defaulted to the venue name it was imported under.
+      stage: show.stage === show.venueName ? venue.name : show.stage,
+    });
+
+    // The row the import may have just minted. Reported, never deleted: a row
+    // with shows on it is somebody else's data, and deleting rows is L1's
+    // sweep with its own dry run and its own human.
+    if (!strayId || strayId === venue._id) return { repointed: true, stray: null };
+    const stray = await ctx.db.get(strayId);
+    // No show count: `shows` has no by_venue index, and adding one during L1's
+    // dedup sweep is a schema change in their path, not mine. The id and the
+    // name are enough for their worklist to pick it up.
+    return {
+      repointed: true,
+      stray: stray ? { id: strayId, name: stray.name, city: stray.city } : null,
+    };
   },
 });
 
@@ -288,6 +355,22 @@ export const approve = action({
         },
       ],
     });
+
+    // If the canonical row's id disagrees with its own name, the import just
+    // created a twin under the name-derived id — but only for an unkeyed row:
+    // keyed rows are found by their normalized name + city on import, spelling
+    // aside. Repoint the show onto the row the catalog actually uses — id and
+    // strings in one write.
+    if (
+      existingVenue &&
+      !existingVenue.dedupKey &&
+      existingVenue.jambaseId !== venueSlug(existingVenue.name, existingVenue.city ?? "")
+    ) {
+      await ctx.runMutation(api.catalogGap.attachToVenue, {
+        showJambaseId: jambaseId,
+        venueId: existingVenue.id,
+      });
+    }
 
     return ctx.runMutation(api.catalogGap.markApproved, { proposalId: args.proposalId, jambaseId });
   },
