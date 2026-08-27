@@ -18,7 +18,15 @@ export default defineSchema({
     // today; it exists so a tag's confidence can be judged later, since a
     // web-searched genre is weaker evidence than a Spotify one.
     genreSource: v.optional(v.string()),
-  }).index("by_jambase", ["jambaseId"]),
+    // Normalized name (dedupUtils.artistKey). Ingest looks here BEFORE
+    // inserting: every sync used to dedup on jambaseId alone, so the same act
+    // arrived as "tm-attraction:…", "jambase:…" and "artist-<slug>" and was
+    // stored three times. Optional because rows written before the sweep have
+    // not been keyed yet.
+    nameKey: v.optional(v.string()),
+  })
+    .index("by_jambase", ["jambaseId"])
+    .index("by_name_key", ["nameKey"]),
 
   venues: defineTable({
     jambaseId: v.string(),
@@ -31,7 +39,11 @@ export default defineSchema({
     description: v.optional(v.string()),
     website: v.optional(v.string()),
     jambaseUrl: v.optional(v.string()),
-  }).index("by_jambase", ["jambaseId"]),
+    // Normalized name + city (dedupUtils.venueKey).
+    dedupKey: v.optional(v.string()),
+  })
+    .index("by_jambase", ["jambaseId"])
+    .index("by_dedup_key", ["dedupKey"]),
 
   shows: defineTable({
     jambaseId: v.string(),
@@ -54,7 +66,11 @@ export default defineSchema({
     artistNames: v.array(v.string()), // denormalized
     artistJambaseIds: v.optional(v.array(v.string())),
     jambaseUrl: v.optional(v.string()),
+    // date | venue | headliner | startTime (dedupUtils.showKey). Start time is
+    // part of it on purpose: an 8:30 and a 10:30 set are two ticketed events.
+    dedupKey: v.optional(v.string()),
   })
+    .index("by_dedup_key", ["dedupKey"])
     .index("by_festival", ["festivalId"])
     .index("by_date", ["date"])
     .index("by_city_date", ["city", "date"])
