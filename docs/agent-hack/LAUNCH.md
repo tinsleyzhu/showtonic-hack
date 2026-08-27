@@ -308,3 +308,43 @@ deploy — the coordinator owns it and renders every UI change. Push,
 `gh pr create --fill --base main`, message the coordinator, and say in the PR
 what you have NOT been able to see for yourself.
 ```
+
+---
+
+# CONCIERGE WAVE — paste one per terminal (L3, L5, L6)
+
+## L3 — taste (paste in a terminal at ../st-taste)
+
+You are L3, the taste lane, in the worktree ../st-taste on branch lane/taste. Pull main first — your kickoff landed there. Read docs/agent-hack/CONCIERGE.md and the contract app/briefing.ts (coordinator-owned — never edit it; shape requests go in TEAM.md), then read convex/tasteMath.js and convex/taste.ts because you are REUSING that taste model, not inventing a second one.
+
+Build, pure-function-first with tests, in convex/briefingLogic.js + .d.ts:
+1. scoreFinds(shows, tasteInputs) → AgentFind[]: taste-score upcoming shows. Every find carries human-checkable evidence rows ("4 nights at this venue rated ≥4★"). NO EVIDENCE, NO CARD — same refusal posture as the matcher. Cap 5.
+2. narrateBeliefs(logs, shows) → TasteBelief[]: 2–4 narrated beliefs with their basis. A belief you cannot state a basis for does not ship.
+3. deriveActivity(candidates, squadTranscripts, logs) → AgentActivityItem[]: derived from EXISTING tables, no schema change. Refusals are first-class items with a mandatory why.
+Then a thin query convex/briefing.ts: forUser(userId, today) returning exactly the Briefing type.
+
+Ground rules: you CANNOT deploy or run npx convex dev (it silently rewires .env.local to an empty local backend — see TEAM.md). Prove everything with unit tests on fixtures. Atomic commits, tsc --noEmit + npm test + npm run lint before every push, PR to main with gh pr create --fill, coordinator merges and deploys. Post status to TEAM.md under "L3 taste". Wave-1 PR target: 3 hours. If blocked, write property tests for tasteMath edge cases. Stay alive after your PR — respond to review and iterate.
+
+## L6 — surface (paste in a terminal at ../st-surface)
+
+You are L6, the surface lane, in the worktree ../st-surface on branch lane/surface. Pull main first. Read docs/agent-hack/CONCIERGE.md and app/briefing.ts (coordinator-owned, do not edit). You own BriefingView.tsx, TabBar.tsx, and nav wiring. Nobody else touches those files; you touch nothing in convex/ or worker/.
+
+Build app/views/BriefingView.tsx as the new home surface, four sections in this order (your own rule: a decision you owe outranks a summary of what you have already done):
+① Decisions you owe — compose the existing PendingCandidates and SquadPlan cards.
+② What your agent found — render BRIEFING_FIXTURE.finds for now; evidence rows reuse your PendingCandidates "Why this match" pattern; verbs are Yes (existing watchlist/attendance mutation), No (dismiss), Why (expand evidence). One-line note when empty: what the agent needs before it can scout.
+③ While you were away — import { AgentActivity } from "./AgentActivity" (a stub now; L5 replaces it — treat its props as frozen).
+④ What it believes — beliefs with their basis visible.
+Rewire navigation so Briefing is home; the Discover browse grid remains one tap away, demoted not deleted. Empty-room rule everywhere. Keep your focus-visible and live-region standards.
+
+You can render against the real backend: npm run dev works read-only in your worktree. NEVER run npx convex dev (see TEAM.md — it silently breaks your env). Atomic commits, tsc + test + lint gates, PR to main, coordinator merges. Post status to TEAM.md under "L6 surface". Wave-1 PR: 3 hours, on fixtures. When the coordinator posts that briefing.forUser is deployed, flip fixtures → useQuery(api.briefing.forUser) as its own tiny PR. Stay alive and iterate.
+
+## L5 — share (paste in a terminal at ../st-share)
+
+You are L5, the share lane, in the worktree ../st-share on branch lane/share. Commit or stash your 4 dirty files first, then pull main. Read docs/agent-hack/CONCIERGE.md and app/briefing.ts (coordinator-owned, do not edit). You own AgentAccess.tsx, AgentActivity.tsx, and the recap voice pass. Nothing in convex/ or worker/.
+
+Two deliverables:
+1. AgentAccess.tsx becomes THE EMPLOYMENT CONTRACT. The mint screen currently reads as a developer surface; reframe it as hiring your concierge: each scope in plain language ("Can plan nights", "Can write your diary — only after you confirm"), pay visually fenced as the one line that is never default. The technical truths (hashed at the edge, scopes frozen at mint, revoke) stay visible — they are the trust story, told in product voice instead of protocol voice.
+2. Replace the stub app/views/AgentActivity.tsx wholesale (props are frozen: { items: AgentActivityItem[] }). Newest first. Refusals are the signature move: style them as integrity — the agent explaining its restraint ("Declined to guess your set at Hardly Strictly — I know the night, not the set") — visually distinct from work done, never styled as errors.
+Then, if time: one voice pass so Recap, contract, and activity read as the same concierge — first person, plain, never breathless.
+
+You can render read-only via npm run dev; NEVER run npx convex dev (see TEAM.md). Atomic commits, tsc + test + lint gates, PR to main, coordinator merges. Post status to TEAM.md under "L5 share". Wave-1 PR: 3 hours. Your a11y standards apply to everything you touch. Stay alive and iterate.
