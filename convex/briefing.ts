@@ -151,6 +151,9 @@ export const forUser = query({
       venueName: show.venueName,
       city: show.city,
       image: show.image,
+      // Two sources disagree about who headlines a bill; they agree about when
+      // the doors are. The start time is what tells one party from two.
+      startTime: show.startTime ?? show.time,
       artistNames: show.artistNames,
       genres: [...new Set(show.artistIds.flatMap((artistId) => genresByArtist.get(artistId) ?? []))],
     }));

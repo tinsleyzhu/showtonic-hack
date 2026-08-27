@@ -2487,3 +2487,40 @@ DECIDED (coordinator): @tinsley's best night repointing to the Outside Lands
 row (94 artists, "Open show" lands on a festival page) STANDS for the demo —
 the night genuinely was a festival night and recap:build reads the log's own
 fields, so the stage line is unaffected. Post-hack: a per-set landing.
+
+### L3 taste · 2026-08-27T13:10Z
+state:    shipped
+now:      both presenter items from L5's walk — one party once, two nights per room max
+shipped:  PR to follow (429/429 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**1. One party, two headliners.** Caught on the EVENT rather than the key, as
+specified: same room, same date, same start time, and at least one artist in
+common. All four conditions, because two of them alone would overreach — an
+early set and a late set share a room and a date and are genuinely two
+nights, and a support act playing two nights running is not a duplicate.
+Both of those are tests, next to the Midway one.
+
+This needed `startTime` plumbed from `shows` into the find shape. It is
+internal and **stripped before the card leaves**, next to `billArtists` — the
+contract does not gain a field, and the existing "the bill never leaks into
+the contract" test now guards both.
+
+**2. Two finds per venue.** Not zero-tolerance: two lets a residency someone
+clearly likes keep a foothold, five is the catalog talking about itself. The
+freed slots go to the next-best venue, which is asserted rather than assumed.
+
+**A note on why the fixtures needed changing to prove this**, since it is the
+same lesson again: my slate tests all used one default venue, so the venue
+ceiling would have cut them to two and I would have "discovered" a bug in my
+own new rule. Fixing them meant giving each act its own room — and then they
+all went to ZERO finds, because with every show carrying the same genre the
+rarity weighting correctly says that genre separates nobody, so nothing had
+evidence. The tests only became honest once the fixture catalog had a genre
+mix. A fixture that is uniform in the dimension your model reasons about
+cannot exercise the model.
+
+Sanity-checked against the New York fixture after the change: still five
+distinct acts, still led by Smoke Jazz at 0.91, no room appearing more than
+twice.
