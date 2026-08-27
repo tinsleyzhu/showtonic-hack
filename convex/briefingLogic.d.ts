@@ -73,3 +73,17 @@ export function deriveActivity(
   logs?: readonly BriefingLog[],
   options?: { limit?: number; userId?: string },
 ): AgentActivityItem[];
+
+export type BeliefFeedback = {
+  statement: string;
+  verdict: "right" | "wrong";
+  /** The basis sentence as it read when they corrected it. */
+  basisAtTime?: string;
+};
+
+/** Suppresses corrected beliefs until their evidence genuinely changes; pins confirmed ones. */
+export function applyBeliefFeedback(
+  beliefs?: readonly TasteBelief[],
+  feedback?: readonly BeliefFeedback[],
+  options?: { limit?: number },
+): TasteBelief[];

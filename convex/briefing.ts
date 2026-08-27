@@ -1,8 +1,13 @@
-import { query } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { deriveActivity, narrateBeliefs, scoreFinds } from "./briefingLogic.js";
+import {
+  applyBeliefFeedback,
+  deriveActivity,
+  narrateBeliefs,
+  scoreFinds,
+} from "./briefingLogic.js";
 // Type-only, so it is erased before anything is bundled for Convex: the
 // coordinator-owned contract checks this query's shape at compile time. If
 // app/briefing.ts changes, this file stops compiling — which is the point.
@@ -63,7 +68,7 @@ export const forUser = query({
       return { decisionsOwed: 0, finds: [], beliefs: [], activity: [] };
     }
 
-    const [logs, attendance, candidates, follows] = await Promise.all([
+    const [logs, attendance, candidates, follows, feedback] = await Promise.all([
       ctx.db.query("logs").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
       ctx.db.query("attendance").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect(),
       ctx.db
@@ -72,6 +77,10 @@ export const forUser = query({
         .collect(),
       ctx.db
         .query("artistFollows")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .collect(),
+      ctx.db
+        .query("beliefFeedback")
         .withIndex("by_user", (q) => q.eq("userId", args.userId))
         .collect(),
     ]);
@@ -183,7 +192,14 @@ export const forUser = query({
     return {
       decisionsOwed: pendingCandidates + openInvites,
       finds,
-      beliefs: narrateBeliefs(briefingLogs, shows),
+      beliefs: applyBeliefFeedback(
+        narrateBeliefs(briefingLogs, shows),
+        feedback.map((entry) => ({
+          statement: entry.statement,
+          verdict: entry.verdict,
+          basisAtTime: entry.basisAtTime,
+        })),
+      ),
       activity: deriveActivity(
         recentCandidates.map((candidate) => ({
           clusterDate: candidate.clusterDate,
@@ -303,3 +319,45 @@ async function peersGoingTo(
   }
   return peersGoing;
 }
+
+// "That's wrong" / "That's right" on a belief.
+//
+// The only write in the briefing, and it writes what the member SAID rather
+// than a conclusion drawn from it: no score is adjusted, no taste vector is
+// nudged. What their answer changes is whether we keep saying the sentence —
+// see `applyBeliefFeedback` for the rule. Upserted, so tapping twice is the
+// same as tapping once, and switching your mind replaces rather than stacks.
+export const correctBelief = mutation({
+  args: {
+    userId: v.id("users"),
+    statement: v.string(),
+    verdict: v.union(v.literal("right"), v.literal("wrong")),
+    basisAtTime: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const statement = args.statement.replace(/\s+/g, " ").trim();
+    if (!statement) return { ok: false, reason: "empty_statement" as const };
+
+    const existing = await ctx.db
+      .query("beliefFeedback")
+      .withIndex("by_user_statement", (q) =>
+        q.eq("userId", args.userId).eq("statement", statement),
+      )
+      .first();
+
+    const row = {
+      userId: args.userId,
+      statement,
+      verdict: args.verdict,
+      basisAtTime: args.basisAtTime,
+      createdAt: Date.now(),
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, row);
+      return { ok: true, updated: true };
+    }
+    await ctx.db.insert("beliefFeedback", row);
+    return { ok: true, updated: false };
+  },
+});

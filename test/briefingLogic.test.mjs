@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveActivity, narrateBeliefs, scoreFinds } from "../convex/briefingLogic.js";
+import {
+  applyBeliefFeedback,
+  deriveActivity,
+  narrateBeliefs,
+  scoreFinds,
+} from "../convex/briefingLogic.js";
 import { LOW_SIGNAL_SHOWS } from "../convex/tasteMath.js";
 
 function log(overrides = {}) {
@@ -313,4 +318,80 @@ test("the bill never leaks into the contract", () => {
     Object.keys(find).sort(),
     ["city", "date", "evidence", "score", "showId", "title", "venueName"],
   );
+});
+
+// --- belief corrections ------------------------------------------------------
+
+const BELIEF = {
+  statement: "Saturday is your night",
+  basis: "6 of 12 logged shows fell on a Saturday",
+  strength: "forming",
+};
+
+test("a belief you called wrong does not come back next week", () => {
+  const kept = applyBeliefFeedback(
+    [BELIEF],
+    [{ statement: "Saturday is your night", verdict: "wrong", basisAtTime: BELIEF.basis }],
+  );
+  assert.deepEqual(kept, []);
+});
+
+test("it comes back only when the evidence actually changed, and says so", () => {
+  const grown = { ...BELIEF, basis: "9 of 20 logged shows fell on a Saturday" };
+  const [returned] = applyBeliefFeedback(
+    [grown],
+    [{ statement: "Saturday is your night", verdict: "wrong", basisAtTime: BELIEF.basis }],
+  );
+
+  assert.ok(returned, "half again as much evidence brings it back");
+  assert.equal(returned.basis, "9 of 20 logged shows fell on a Saturday — you told me this was wrong when it was 6");
+
+  // One more night is not new evidence, it is the same claim repeated.
+  const barely = { ...BELIEF, basis: "7 of 13 logged shows fell on a Saturday" };
+  assert.deepEqual(
+    applyBeliefFeedback([barely], [{ statement: "Saturday is your night", verdict: "wrong", basisAtTime: BELIEF.basis }]),
+    [],
+  );
+});
+
+test("agreeing with us pins a belief but does not make it stronger", () => {
+  const others = [
+    { statement: "You keep going back to The Chapel", basis: "5 nights there", strength: "strong" },
+    { statement: "Punk is the thread through your diary", basis: "7 of 12 nights", strength: "strong" },
+    { statement: "You only log the nights that were worth it", basis: "12 rated nights average 4.4★", strength: "strong" },
+  ];
+
+  const kept = applyBeliefFeedback(
+    [...others, BELIEF],
+    [{ statement: "Saturday is your night", verdict: "right", basisAtTime: BELIEF.basis }],
+  );
+
+  assert.equal(kept[0].statement, "Saturday is your night", "confirmed beliefs lead");
+  // Strength is derived from counts. Someone agreeing with us is not more
+  // nights in the diary.
+  assert.equal(kept[0].strength, "forming");
+  assert.match(kept[0].basis, /and you confirmed it$/);
+});
+
+test("a suppressed belief frees its slot", () => {
+  const five = Array.from({ length: 5 }, (_, index) => ({
+    statement: `Belief ${index}`,
+    basis: `${index + 3} of 12 nights`,
+    strength: "forming",
+  }));
+
+  const kept = applyBeliefFeedback(five, [
+    { statement: "Belief 0", verdict: "wrong", basisAtTime: "3 of 12 nights" },
+  ]);
+
+  assert.equal(kept.length, 4);
+  assert.ok(!kept.some((belief) => belief.statement === "Belief 0"));
+});
+
+test("corrections match on the statement, whatever its spacing or case", () => {
+  const kept = applyBeliefFeedback(
+    [BELIEF],
+    [{ statement: "  saturday IS your   night ", verdict: "wrong", basisAtTime: BELIEF.basis }],
+  );
+  assert.deepEqual(kept, []);
 });
