@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rankCompatiblePeers, tasteScore } from "../convex/tasteMath.js";
+import { genreWeights, rankCompatiblePeers, tasteScore } from "../convex/tasteMath.js";
 
 function profile(overrides = {}) {
   return {
@@ -65,6 +65,70 @@ test("tasteScore never lets a one-sided missing signal zero out another signal",
   });
 
   assert.ok(score > 0);
+});
+
+test("genreWeights gives a genre everybody has no weight, and a rare one full weight", () => {
+  // Jazz is on every profile; noise is on one. This is the SF catalog's actual
+  // shape — jazz sits on well over half the enriched artists.
+  const weights = genreWeights([
+    ["jazz"],
+    ["jazz"],
+    ["jazz"],
+    ["jazz", "noise"],
+  ]);
+
+  assert.equal(weights.jazz, 0);
+  assert.equal(weights.noise, 1);
+});
+
+test("genreWeights declines to weight a population too small to have a shape", () => {
+  assert.deepEqual(genreWeights([["jazz"]]), {});
+  assert.deepEqual(genreWeights([]), {});
+});
+
+test("a shared rare genre beats a shared ubiquitous one", () => {
+  const weights = genreWeights([["jazz"], ["jazz"], ["jazz"], ["jazz", "noise"]]);
+  const shared = (genre) =>
+    tasteScore(["A"], ["B"], 0, { genresA: [genre], genresB: [genre], genreWeights: weights });
+
+  assert.ok(shared("noise") > shared("jazz"));
+});
+
+test("a genre everybody shares falls back to artists rather than scoring a zero", () => {
+  // Weighted union is 0, so there is no genre signal at all — the score must
+  // reduce to the artist-only formula, not be dragged down by an empty one.
+  const weights = { jazz: 0 };
+  const everyoneLikesJazz = tasteScore(["A", "B"], ["A", "C"], 0, {
+    genresA: ["jazz"],
+    genresB: ["jazz"],
+    genreWeights: weights,
+  });
+
+  assert.equal(everyoneLikesJazz, tasteScore(["A", "B"], ["A", "C"], 0));
+});
+
+test("omitting genreWeights counts every genre the same", () => {
+  const unweighted = tasteScore(["A"], ["B"], 0, { genresA: ["jazz"], genresB: ["jazz"] });
+  const explicitlyEqual = tasteScore(["A"], ["B"], 0, {
+    genresA: ["jazz"],
+    genresB: ["jazz"],
+    genreWeights: { jazz: 1 },
+  });
+
+  assert.equal(unweighted, explicitlyEqual);
+});
+
+test("peer ranking prefers the rare shared genre over the ubiquitous one", () => {
+  const me = profile({ artistNames: ["A"], genres: ["jazz", "noise"], logCount: 6 });
+  const peers = [
+    profile({ handle: "jazzhead", artistNames: ["Z"], genres: ["jazz"] }),
+    profile({ handle: "noisehead", artistNames: ["Z"], genres: ["jazz", "noise"] }),
+    profile({ handle: "another-jazzhead", artistNames: ["Z"], genres: ["jazz"] }),
+  ];
+
+  const { matches } = rankCompatiblePeers(me, peers);
+
+  assert.equal(matches[0].handle, "noisehead");
 });
 
 test("rankCompatiblePeers refuses to rank strangers off a thin diary", () => {

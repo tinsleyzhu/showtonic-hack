@@ -59,6 +59,7 @@ export function Onboarding({
   const [homeCity, setHomeCity] = useState(initialProfile.homeCity);
   const [citySearch, setCitySearch] = useState("");
   const [locating, setLocating] = useState(false);
+  const [genreFilter, setGenreFilter] = useState("");
   const [stepError, setStepError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
 
@@ -71,6 +72,18 @@ export function Onboarding({
       : "skip",
   );
   const catalogArtists = useQuery(api.artists.forOnboarding, step === "taste" ? { limit: 18 } : "skip");
+  // Genre-first: the picker leads with what is actually playing near you soon,
+  // family-capped so a jazz-heavy city cannot fill every slot with jazz.
+  const onboardingGenres = useQuery(
+    api.taste.genresForOnboarding,
+    step === "taste" ? { today: todayIso(), homeCity, limit: 10 } : "skip",
+  );
+  const genreArtists = useQuery(
+    api.taste.artistsForGenre,
+    step === "taste" && genreFilter
+      ? { genre: genreFilter, today: todayIso(), homeCity, limit: 18 }
+      : "skip",
+  );
   const cityStats = useQuery(
     api.discovery.cityStats,
     step === "homebase" ? { today: todayIso() } : "skip",
@@ -82,15 +95,19 @@ export function Onboarding({
   }
 
   const tasteChoices = useMemo(() => {
-    if (catalogArtists?.length) {
-      return catalogArtists.map((artist) => ({
+    const source = genreFilter ? genreArtists : catalogArtists;
+    if (source?.length) {
+      return source.map((artist) => ({
         name: artist.name,
         image: artist.image,
         genre: artist.genres[0] ?? "Live artist",
       }));
     }
+    // A genre with nothing upcoming shows an empty grid rather than silently
+    // falling back to the general list, which would look like a broken filter.
+    if (genreFilter) return [];
     return ONBOARDING_ARTISTS.map((name) => ({ name, image: undefined, genre: "Live artist" }));
-  }, [catalogArtists]);
+  }, [catalogArtists, genreArtists, genreFilter]);
 
   const wizardSteps = ONBOARDING_STEPS.filter((item) => item !== "welcome");
   const stepNumber = Math.max(onboardingStepIndex(step as OnboardingStep), 1);
@@ -337,6 +354,32 @@ export function Onboarding({
             <p className="mt-3 text-sm leading-6 text-[#8A8177]">
               Pick at least {TASTE_SEED_MIN}. This makes Discover useful before your history is ready.
             </p>
+            {!!onboardingGenres?.length && (
+              <div className="hide-scrollbar mt-6 flex gap-2 overflow-x-auto">
+                <button
+                  className={`shrink-0 border px-4 py-2 text-xs font-bold ${genreFilter ? "border-[#2A2521] text-[#C9C1B4]" : "border-[#FF7A50] bg-[#FF7A50] text-black"}`}
+                  onClick={() => setGenreFilter("")}
+                  type="button"
+                >
+                  Most seen
+                </button>
+                {onboardingGenres.map((entry) => (
+                  <button
+                    className={`shrink-0 border px-4 py-2 text-xs font-bold capitalize ${genreFilter === entry.genre ? "border-[#FF7A50] bg-[#FF7A50] text-black" : "border-[#2A2521] text-[#C9C1B4]"}`}
+                    key={entry.genre}
+                    onClick={() => setGenreFilter(entry.genre === genreFilter ? "" : entry.genre)}
+                    type="button"
+                  >
+                    {entry.genre}
+                  </button>
+                ))}
+              </div>
+            )}
+            {genreFilter && genreArtists?.length === 0 && (
+              <p className="mt-4 border-l-2 border-[#6FBCD3] pl-3 text-xs leading-5 text-[#8A8177]">
+                Nothing upcoming in {genreFilter} yet — try another, or go back to most seen.
+              </p>
+            )}
             <div className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5">
               {tasteChoices.map((artist) => {
                 const selected = favorites.includes(artist.name);

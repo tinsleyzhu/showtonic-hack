@@ -139,6 +139,151 @@ test("refuses when there are not enough agents to be a squad", () => {
   assert.equal(result.reason, "too_few_agents");
 });
 
+test("a member with nothing better to do stays neutral instead of blocking", () => {
+  // ana wants the show; ben's human has no history at all, so there is no
+  // "somewhere I'd rather be" — an opinion-less agent must not veto.
+  const squad = [agent("ana", { lovedArtists: ["Jamie xx"] }), agent("ben")];
+  const slate = [show("s1", ["Jamie xx"]), show("s2", ["Nobody"])];
+
+  const { plans } = negotiate(squad, slate);
+  const ben = plans[0].votes.find((vote) => vote.member.taste.handle === "ben");
+
+  assert.equal(ben.stance, "neutral");
+});
+
+test("a raised floor can turn a consensus into a refusal", () => {
+  // "seen before" is worth 3; a floor of 4 means only a loved artist counts.
+  const squad = [
+    agent("ana", { topArtists: [{ name: "Jamie xx" }] }),
+    agent("ben", { topArtists: [{ name: "Jamie xx" }] }),
+  ];
+  const slate = [show("s1", ["Jamie xx"])];
+
+  assert.equal(negotiate(squad, slate, { floor: 3 }).outcome, "consensus");
+  assert.equal(negotiate(squad, slate, { floor: 4 }).outcome, "refused");
+});
+
+test("a thin diary can fall under the floor its damping puts it below", () => {
+  // A loved artist is 5 points, halved to 2.5 for a thin diary. At floor 3
+  // the confident agent clears and the thin one does not.
+  const taste = { lovedArtists: ["Jamie xx"] };
+  const confident = [agent("ana", taste), agent("ben", taste)];
+  const thin = [
+    agent("ana", { ...taste, lowSignal: true }),
+    agent("ben", { ...taste, lowSignal: true }),
+  ];
+  const slate = [show("s1", ["Jamie xx"])];
+
+  assert.equal(negotiate(confident, slate, { floor: 3 }).outcome, "consensus");
+  assert.equal(negotiate(thin, slate, { floor: 3 }).outcome, "refused");
+});
+
+test("minGroup refuses a split that would be smaller than the group is allowed to be", () => {
+  const squad = [
+    agent("ana", { lovedArtists: ["Jamie xx"] }),
+    agent("ben", { lovedArtists: ["Big Thief"] }),
+    agent("cy", { lovedArtists: ["Big Thief"] }),
+  ];
+  const slate = [show("s1", ["Jamie xx"]), show("s2", ["Big Thief"])];
+
+  // ben + cy can go without ana...
+  assert.equal(negotiate(squad, slate, { minGroup: 2 }).outcome, "split");
+  // ...but not if a plan has to carry all three.
+  assert.equal(negotiate(squad, slate, { minGroup: 3 }).outcome, "refused");
+});
+
+test("a split takes the largest workable group, not the most enthusiastic one", () => {
+  // dee alone would score higher on s2, but three people can go to s1.
+  const squad = [
+    agent("ana", { lovedArtists: ["Jamie xx"] }),
+    agent("ben", { lovedArtists: ["Jamie xx"] }),
+    agent("cy", { lovedArtists: ["Jamie xx"] }),
+    agent("dee", { lovedArtists: ["Big Thief", "Big Thief II"] }),
+  ];
+  const slate = [show("s1", ["Jamie xx"]), show("s2", ["Big Thief", "Big Thief II"])];
+
+  const result = negotiate(squad, slate);
+
+  assert.equal(result.outcome, "split");
+  assert.equal(result.plans[0].group.length, 3);
+  assert.equal(result.plans[0].show.showId, "s1");
+});
+
+test("a squad past the power-set bound still negotiates", () => {
+  // 12 agents — candidateGroups switches to whole-group plus drop-one rather
+  // than enumerating 4,096 subsets.
+  const squad = Array.from({ length: 12 }, (_, index) =>
+    agent(`m${index}`, { lovedArtists: ["Jamie xx"] }),
+  );
+  const slate = [show("s1", ["Jamie xx"])];
+
+  const result = negotiate(squad, slate);
+
+  assert.equal(result.outcome, "consensus");
+  assert.equal(result.plans[0].group.length, 12);
+});
+
+test("a large squad splits by dropping the members who would rather be elsewhere", () => {
+  const squad = [
+    ...Array.from({ length: 11 }, (_, index) =>
+      agent(`m${index}`, { lovedArtists: ["Jamie xx"] }),
+    ),
+    agent("holdout", { lovedArtists: ["Big Thief"] }),
+  ];
+  const slate = [show("s1", ["Jamie xx"]), show("s2", ["Big Thief"])];
+
+  const result = negotiate(squad, slate);
+
+  assert.equal(result.outcome, "split");
+  assert.deepEqual(
+    result.plans[0].excluded.map((member) => member.taste.handle),
+    ["holdout"],
+  );
+});
+
+test("shows missing artists or a venue are scored, not crashed on", () => {
+  const squad = [agent("ana", { lovedArtists: ["Jamie xx"] }), agent("ben")];
+  const slate = [
+    { showId: "bare", title: "bare", date: "2026-09-01" },
+    show("s1", ["Jamie xx"]),
+  ];
+
+  const result = negotiate(squad, slate);
+
+  assert.equal(result.outcome, "consensus");
+  assert.equal(result.plans[0].show.showId, "s1");
+});
+
+test("venue affinity alone can carry a night nobody's artists are on", () => {
+  const taste = { topVenues: [{ name: "The Fillmore" }] };
+  const squad = [agent("ana", taste), agent("ben", taste)];
+  const slate = [show("s1", ["Nobody"], "The Fillmore")];
+
+  const result = negotiate(squad, slate);
+
+  assert.equal(result.outcome, "consensus");
+  assert.match(result.plans[0].votes[0].because[0], /keep going back to/);
+});
+
+test("negotiating twice over the same inputs gives the same answer", () => {
+  const squad = [
+    agent("ana", { lovedArtists: ["Jamie xx"] }),
+    agent("ben", { topArtists: [{ name: "Jamie xx" }] }),
+    agent("cy", { lovedArtists: ["Big Thief"] }),
+  ];
+  const slate = [show("s1", ["Jamie xx"]), show("s2", ["Big Thief"])];
+
+  const first = negotiate(squad, slate);
+  const second = negotiate(squad, slate);
+
+  assert.equal(first.outcome, second.outcome);
+  assert.equal(first.plans[0].show.showId, second.plans[0].show.showId);
+  assert.deepEqual(
+    first.plans[0].group.map((member) => member.taste.handle),
+    second.plans[0].group.map((member) => member.taste.handle),
+  );
+});
+
 test("every member of a consensus plan gets a recorded stance", () => {
   const squad = [
     agent("ana", { lovedArtists: ["Jamie xx"] }),

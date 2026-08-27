@@ -1,6 +1,8 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
-import { LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
+import type { Id } from "./_generated/dataModel";
+import { genreWeights, LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
+import { rankOnboardingGenres } from "./onboardingGenres.js";
 
 function unique(values: string[]) {
   return [...new Set(values)];
@@ -41,7 +43,7 @@ export const matchDetail = query({
     otherUserId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const [me, other, myLogs, otherLogs] = await Promise.all([
+    const [me, other, myLogs, otherLogs, allLogs] = await Promise.all([
       ctx.db.get(args.userId),
       ctx.db.get(args.otherUserId),
       ctx.db
@@ -52,11 +54,22 @@ export const matchDetail = query({
         .query("logs")
         .withIndex("by_user", (q) => q.eq("userId", args.otherUserId))
         .collect(),
+      // Genre rarity has to be measured against the same population `similar`
+      // uses, or the list and this page would show two different percentages
+      // for one pair of people, which reads as broken.
+      ctx.db.query("logs").collect(),
     ]);
     if (!me || !other) return null;
 
     const myProfile = buildProfile(myLogs);
     const otherProfile = buildProfile(otherLogs);
+    const genresByUser = new Map<string, string[]>();
+    for (const log of allLogs) {
+      const bucket = genresByUser.get(log.userId) ?? [];
+      bucket.push(...(log.artistGenres ?? []));
+      genresByUser.set(log.userId, bucket);
+    }
+    const weights = genreWeights([...genresByUser.values()]);
     const sharedShowIds = new Set(
       myProfile.showIds.filter((showId) => otherProfile.showIds.includes(showId)),
     );
@@ -116,6 +129,7 @@ export const matchDetail = query({
             genresB: otherProfile.genres,
             venuesA: myProfile.venueNames,
             venuesB: otherProfile.venueNames,
+            genreWeights: weights,
           }) * 100,
         ),
         99,
@@ -156,11 +170,23 @@ export const similar = query({
       logsByUser.set(log.userId, bucket);
     }
 
+    const otherProfiles = new Map(
+      allUsers
+        .filter((user) => user._id !== args.userId)
+        .map((user) => [user._id, buildProfile(logsByUser.get(user._id) ?? [])]),
+    );
+    // The SF catalog is jazz-heavy, so "you both like jazz" is close to "you
+    // both like music". Weight each shared genre by how rare it is in this
+    // population instead of counting them all the same.
+    const weights = genreWeights([
+      targetProfile.genres,
+      ...[...otherProfiles.values()].map((profile) => profile.genres),
+    ]);
+
     const matches = allUsers
       .filter((user) => user._id !== args.userId)
       .map((user) => {
-        const userLogs = logsByUser.get(user._id) ?? [];
-        const profile = buildProfile(userLogs);
+        const profile = otherProfiles.get(user._id)!;
         const sharedArtists = targetProfile.artistNames.filter((artist) =>
           profile.artistNames.includes(artist),
         );
@@ -175,6 +201,7 @@ export const similar = query({
             genresB: profile.genres,
             venuesA: targetProfile.venueNames,
             venuesB: profile.venueNames,
+            genreWeights: weights,
           }),
           sharedArtistNames: sharedArtists,
           sharedShowCount: sharedShows.length,
@@ -241,5 +268,100 @@ export const compatiblePeers = query({
         })),
       args.limit,
     );
+  },
+});
+
+// Genre-first onboarding (design 04's taste step, genre variant).
+//
+// Ranking by raw catalog counts would offer a San Franciscan twelve flavours
+// of jazz, which is a fact about the city rather than a question about them.
+// This asks the narrower, more useful question — what could you go and see
+// soon, near you — and caps how many slots one genre family may take. The
+// ranking itself is pure and tested in convex/onboardingGenres.js.
+export const genresForOnboarding = query({
+  args: {
+    homeCity: v.optional(v.string()),
+    today: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const upcoming = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", args.today))
+      .take(4000);
+
+    // Shows denormalize artist names but not genres, so join once per artist
+    // rather than once per show.
+    const artistIds = [...new Set(upcoming.flatMap((show) => show.artistIds))];
+    const artists = await Promise.all(artistIds.map((artistId) => ctx.db.get(artistId)));
+    const genresByArtist = new Map(
+      artists.filter(Boolean).map((artist) => [artist!._id, artist!.genres ?? []]),
+    );
+
+    return rankOnboardingGenres(
+      upcoming.map((show) => ({
+        date: show.date,
+        city: show.city,
+        genres: show.artistIds.flatMap((artistId) => genresByArtist.get(artistId) ?? []),
+      })),
+      {
+        homeCity: args.homeCity ?? "",
+        today: args.today,
+        limit: args.limit ?? 12,
+      },
+    );
+  },
+});
+
+// The other half of genre-first onboarding: you tap "house", you get house
+// artists you could actually go and see. Ranked by upcoming appearances rather
+// than catalog totals, for the same reason the genre list is.
+export const artistsForGenre = query({
+  args: {
+    genre: v.string(),
+    today: v.string(),
+    homeCity: v.optional(v.string()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const genre = args.genre.trim().toLowerCase();
+    if (!genre) return [];
+
+    const upcoming = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", args.today))
+      .take(4000);
+
+    const city = (args.homeCity ?? "").trim().toLowerCase();
+    const weightByArtist = new Map<Id<"artists">, number>();
+    for (const show of upcoming) {
+      const weight = city && show.city.toLowerCase() === city ? 4 : 1;
+      for (const artistId of show.artistIds) {
+        weightByArtist.set(artistId, (weightByArtist.get(artistId) ?? 0) + weight);
+      }
+    }
+
+    const artists = await Promise.all(
+      [...weightByArtist.keys()].map((artistId) => ctx.db.get(artistId)),
+    );
+
+    return artists
+      .filter(
+        (artist): artist is NonNullable<typeof artist> =>
+          artist !== null &&
+          (artist.genres ?? []).some((value) => value.trim().toLowerCase() === genre),
+      )
+      .map((artist) => ({
+        _id: artist._id,
+        name: artist.name,
+        image: artist.image,
+        genres: artist.genres ?? [],
+        upcomingWeight: weightByArtist.get(artist._id) ?? 0,
+      }))
+      .sort(
+        (left, right) =>
+          right.upcomingWeight - left.upcomingWeight || left.name.localeCompare(right.name),
+      )
+      .slice(0, Math.min(args.limit ?? 18, 48));
   },
 });
