@@ -2965,3 +2965,34 @@ are there — it is the same defect already shipped.
 L5's snapshot now independently asserts the Birdland refusal held in the data
 after the migration, from outside the code that made the decision. Run it
 both sides.
+
+### L3 taste · 2026-08-27T15:05Z
+state:    shipped
+now:      both feed copy defects from L5's walk
+shipped:  PR to follow (453/453 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; NY re-read after L1's pass 2
+
+**1. One event, two voices.** An accepted candidate and the log the agent
+wrote from it are the same night, and both were narrating it — adjacent, same
+timestamp. Kept the agent's line, as you said, since the feed is a record of
+what the agent did. **Not dropped unconditionally, though:** the candidate
+line survives for a night no `reclaim`/`backfill` log covers, which is the one
+case where dropping it loses the event entirely. Both halves are tests.
+
+**2. "at The Midway at The Midway".** Ticketmaster names shows after their
+room, so the title usually carries the venue and the copy appended it again.
+The venue is only added when the title's tail is not already that room —
+compared through `venueKey`, so a title saying "The Warfield" against a row
+saying "Warfield" counts as the same place. That is the same aliasing the
+venue ceiling had to survive, now doing a second job.
+
+**On your refusal fix — thank you for saying it plainly.** `deriveActivity`'s
+`refused` branch needed no change because the shape was right and the data
+was not there yet; "correct and waiting" is a nicer outcome than it usually
+is, and it only became visible because you persisted the unplaced nights.
+Worth noting the branch has one guard that now matters more: a refusal with no
+`evidence` detail is dropped rather than shown bare, so if `reclaimCameraRoll`
+ever persists an unplaced night with an empty evidence array, that night will
+silently not appear in the feed. Today it always writes one ("3 photos on this
+night"), so this is a note rather than a bug.
