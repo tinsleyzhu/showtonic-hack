@@ -2503,3 +2503,54 @@ five). A one-line venue diversity rule in the finds list would fix the optics.
 consequence is inferred from the data, not seen. Coordinator, it is a ten-second
 look: Browse → Past Shows → venue dropdown → search "Bimbo". Everything else
 above is verified server-side or read from the rendered DOM before the tab froze.
+## L1 — DEDUP PASS 2: venue aliases (human is still seeing dupes on artist pages)
+
+Post-sweep residual, measured from a fresh export: 274 same-date+headliner
+groups where ONLY venueName differs — the same room named differently by TM
+vs JamBase. Dominated by a few rooms:
+  Blue Note Jazz Club | The Blue Note        (dozens of show pairs)
+  Irving Plaza | Irving Plaza Powered By Verizon 5G
+  United Palace | United Palace Theatre
+  Blue Note Jazz Club - NY (city suffix)
+Plus 9 groups where one row is missing startTime.
+
+DO NOT merge venues by coordinates — verified unsafe: several venue rows
+carry city-centroid geocodes (Golden Gate Theater / Miner Auditorium /
+Orpheum-SF / Warfield all share one rounded point), and same-address rooms
+are real (Carnegie's Stern vs Weill, Cafe du Nord vs Swedish American Hall).
+
+Safe key for the SHOW pass: same date + headliner + startTime, and normalized
+venueName A ⊆ B as a token subset (after your normalizer, minus stop-suffixes
+like "powered by …" / trailing "- NY"). Subset refuses Sofar NoLita vs NoMad.
+Same machinery: dry run with samples posted here, then apply. Fold the alias
+rule into the ingest chokepoint too, or the next TM sync reintroduces them.
+
+Separate find, your lane, not urgent tonight: those city-centroid geocodes
+are wrong venue coordinates — they also weaken photo-GPS matching. Post-hack.
+
+## COORDINATOR · pass-2 addendum + two L3 items from L5's walk
+
+L1, two additions to DEDUP PASS 2, both verified in the browser: the Browse
+venue dropdown still lists Bimbo's/Bimbo's (straight/curly), Cafe Du/du Nord,
+Feinstein's twins — the venues TABLE merged but the denormalised
+show.venueName strings did not get rewritten, and the dropdown is built from
+them. Pass 2 must rewrite show.venueName to the canonical spelling wherever
+it touches a row, and sweep the remaining string twins even where no show
+merge happens.
+
+L3, two presenter-side items in briefingLogic, both cheap and both on
+@tinsley's demo screen:
+1. One party, two headliners: The Midway 2026-09-05 15:00 appears TWICE in
+   section ② ("Purple Disco Machine at The Midway" and "Electroluxx Pride
+   Party"), same three artists — two sources disagreeing about the headliner.
+   Not fixable in the dedup key (headliner must stay in it). In the FINDS
+   list: skip a find whose venue+date+startTime already appears above it
+   with an overlapping bill.
+2. Midway monoculture: 4 of 5 finds are at The Midway, fits 26/25/25/25/25.
+   Cap finds at 2 per venue before filling remaining slots — a concierge that
+   recommends one bar five ways isn't scouting.
+
+DECIDED (coordinator): @tinsley's best night repointing to the Outside Lands
+row (94 artists, "Open show" lands on a festival page) STANDS for the demo —
+the night genuinely was a festival night and recap:build reads the log's own
+fields, so the stage line is unaffected. Post-hack: a per-set landing.
