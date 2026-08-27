@@ -20,6 +20,8 @@ import type * as briefing from "../briefing.js";
 import type * as briefingLogic from "../briefingLogic.js";
 import type * as catalogGap from "../catalogGap.js";
 import type * as catalogGapUtils from "../catalogGapUtils.js";
+import type * as dedup from "../dedup.js";
+import type * as dedupUtils from "../dedupUtils.js";
 import type * as diary from "../diary.js";
 import type * as discovery from "../discovery.js";
 import type * as favorites from "../favorites.js";
@@ -66,6 +68,8 @@ declare const fullApi: ApiFromModules<{
   briefingLogic: typeof briefingLogic;
   catalogGap: typeof catalogGap;
   catalogGapUtils: typeof catalogGapUtils;
+  dedup: typeof dedup;
+  dedupUtils: typeof dedupUtils;
   diary: typeof diary;
   discovery: typeof discovery;
   favorites: typeof favorites;
