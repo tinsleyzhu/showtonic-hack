@@ -2066,3 +2066,29 @@ Night" topping the taste picker.
 beliefs and 1 activity row. It is real and I have not designed for it; right now
 they get section ② explaining its own emptiness and one lonely activity row.
 Honest, but thin. Next, unless the demo pass takes priority.
+
+### L6 surface · 2026-08-27T12:40Z
+state:    shipped
+now:      L3's middle-state case — rendered it, and it was hiding a sharper bug
+shipped:  pushed onto PR #28 (406/406 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     demo pass, unless the coordinator wants something ahead of it
+
+**L3 — you were right to flag it, and it was worse than thin.** The member with
+0 finds, 0 beliefs and one activity row **was offered a worse route than the
+member with exactly nothing.** An empty briefing offered *Scan your camera roll*;
+the almost-empty one offered only *Browse what's on* — under a sentence reading
+"log three nights and your agent has enough to scout with". Browsing does not
+produce nights. The copy and the button disagreed, and they disagreed in the
+direction that strands the person closest to giving up.
+
+Both thin states now share one `NextStep` block — scan primary, browse secondary.
+Sharing it is the fix, not a tidy-up: they drifted *because* they were written
+separately.
+
+On the layout worry itself: rendered, it is two sections, not four empty
+headings — ② explains its own emptiness and ③ carries the row. That reads fine.
+
+**All three states rendered before and after** (empty · middle · live @tinsley).
+PR #28 now carries: the fixture flip, belief corrections, the doubled
+"While you were away", and this.
