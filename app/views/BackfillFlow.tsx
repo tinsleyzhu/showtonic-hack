@@ -323,6 +323,32 @@ export function BackfillFlow({
               Choose photos to scan
               <input accept="image/*" className="sr-only" multiple onChange={(event) => void scanFiles(event.target.files)} type="file" />
             </label>
+            <label className="mt-3 block w-full cursor-pointer border border-[#2A2521] px-5 py-4 text-center text-sm font-black">
+              Scan a whole folder
+              {/* webkitdirectory hands over EVERYTHING in the folder — .DS_Store,
+                  videos, sidecar files — so filter to images by extension here
+                  rather than trusting `accept`, which directory pickers ignore.
+                  This is the path for a camera roll exported from Photos.app or
+                  Image Capture: one click on the exported folder, no Cmd+A. */}
+              <input
+                className="sr-only"
+                multiple
+                onChange={(event) => {
+                  const all = Array.from(event.target.files ?? []);
+                  const images = all.filter((file) =>
+                    /\.(jpe?g|heic|heif|png|tiff?|webp|dng|avif)$/i.test(file.name),
+                  );
+                  if (images.length) {
+                    const list = new DataTransfer();
+                    for (const file of images) list.items.add(file);
+                    void scanFiles(list.files);
+                  }
+                }}
+                type="file"
+                // @ts-expect-error non-standard but universal in the browsers we ship to
+                webkitdirectory=""
+              />
+            </label>
             <button className="mt-3 w-full border border-[#2A2521] px-5 py-4 text-sm font-black" onClick={() => void runScan(buildDemoCameraRoll(shows, { today, limit: 6 }))} type="button">
               Use the demo camera roll
             </button>
