@@ -5,6 +5,7 @@ import { Sparkles, Star } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { resolveShowImage } from "../liveData.js";
+import { RecapExport } from "./RecapExport";
 import { EmptyLine, formatDate, SectionTitle } from "./shared";
 
 // The recap card. The generating happens in `convex/recap.ts` and is reachable
@@ -76,6 +77,8 @@ export function RecapCard({ userId }: { userId: Id<"users"> }) {
               {recap.reclaimed} of these came back from your camera roll rather than being typed in.
             </p>
           )}
+
+          <RecapExport recap={{ ...recap, heroImage: hero }} />
 
           {recap.lowSignal && (
             <p className="mt-3 text-xs leading-5 text-[#8A8177]">
