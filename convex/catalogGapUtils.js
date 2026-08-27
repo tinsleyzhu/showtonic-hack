@@ -39,6 +39,10 @@ const MAX_VENUE_ANCHORS = 3;
 // Domains that publish event listings with dates. Presence is a small boost,
 // absence is not a penalty — a venue's own site is often the best source and
 // will never be on a list like this.
+// A social page can confirm a night that a listing already named, but it may
+// never be the only source: its titles are captions, not billings.
+const SOCIAL_DOMAINS = ["facebook.com", "instagram.com", "tiktok.com", "x.com", "twitter.com"];
+
 const TICKETING_DOMAINS = [
   "ticketmaster.com",
   "livenation.com",
@@ -90,6 +94,27 @@ const NOISE_WORDS = new Set([
   "for",
 ]);
 
+// Social posts are promotional prose, not listings: "Register for presale now
+// 〰️ themidwaysf.com + galantis Block Party szn is in full bloom". The clean
+// fixtures never produced anything like it; the first real 28-night sweep
+// proposed one as an artist name. A name has to look like a name.
+const PROMO_PHRASES =
+  /\b(register|presale|pre-?sale|on sale|sold out|rsvp|announce|announcing|lineup drop|full bloom|link in bio|swipe|szn|giveaway|doors at|tickets? (?:are |now )?(?:live|available|on sale))\b/i;
+
+function looksLikePromoProse(value) {
+  const text = String(value ?? "");
+  if (PROMO_PHRASES.test(text)) return true;
+  // A domain inside the "artist name" means the title was marketing copy.
+  if (/\b[a-z0-9-]+\s*\.\s*(?:com|net|org|co|fm|live|io)\b/i.test(text)) return true;
+  // Emoji and dingbats belong to social captions, never to a billed act.
+  if (/[\u2190-\u2BFF\u2600-\u27BF\uFE0F\u{1F000}-\u{1FAFF}]/u.test(text)) return true;
+  // Real bills are short. Six words is already generous for one act.
+  if (text.trim().split(/\s+/).length > 6) return true;
+  // A truncated snippet is not a name.
+  if (/(?:\.\.\.|…)$/.test(text.trim())) return true;
+  return false;
+}
+
 function isTitleNoise(value) {
   const words = normalizeText(value)
     .replace(/[^a-z0-9\s]/g, " ")
@@ -97,6 +122,16 @@ function isTitleNoise(value) {
     .filter(Boolean);
   return words.length > 0 && words.every((word) => NOISE_WORDS.has(word));
 }
+
+const WEEKDAYS = [
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+];
 
 const MONTHS = [
   "january",
@@ -174,22 +209,63 @@ function dateNeedles(isoDate) {
   const monthName = MONTHS[monthIndex] ?? "";
   const abbreviation = monthName.slice(0, 3);
   const shortYear = year.slice(2);
+  // Both the padded and unpadded day, for the month-name forms as well as the
+  // numeric ones. Listings write "May 2, 2026" and "May 02, 2026" about equally
+  // often, and missing the padded form threw away nights whose answer was
+  // sitting in the result title.
   return [
     `${year}-${month}-${day}`,
     `${year}/${month}/${day}`,
     `${year}${month}${day}`,
     `${monthName} ${dayNumber}, ${year}`,
     `${monthName} ${dayNumber} ${year}`,
+    `${monthName} ${day}, ${year}`,
+    `${monthName} ${day} ${year}`,
     `${abbreviation} ${dayNumber}, ${year}`,
     `${abbreviation} ${dayNumber} ${year}`,
+    `${abbreviation} ${day}, ${year}`,
+    `${abbreviation} ${day} ${year}`,
     `${dayNumber} ${monthName} ${year}`,
     `${dayNumber} ${abbreviation} ${year}`,
+    `${day} ${monthName} ${year}`,
+    `${day} ${abbreviation} ${year}`,
     `${Number(month)}/${dayNumber}/${year}`,
     `${month}/${day}/${year}`,
     `${Number(month)}/${dayNumber}/${shortYear}`,
     `${month}/${day}/${shortYear}`,
     `${Number(month)}-${dayNumber}-${year}`,
   ].map((needle) => needle.toLowerCase());
+}
+
+// Listings very often write "Saturday, May 9" with no year at all, and
+// requiring the year threw those nights away — it was the single biggest
+// source of refusals in the first real history sweep.
+//
+// Relaxing the year outright would resurrect exactly the failure the year check
+// exists to prevent: last year's show at the same venue. The weekday is the way
+// out. "May 9" is a Saturday only in particular years, so weekday + month + day
+// pins the year on its own — and the search window is already bounded to
+// [date-400, date+30], which removes every other candidate year.
+function weekdayDateNeedles(isoDate) {
+  const parts = splitIsoDate(isoDate);
+  if (!parts) return [];
+  const { year, day, monthIndex, dayNumber } = parts;
+  const stamp = new Date(Date.UTC(Number(year), monthIndex, dayNumber));
+  const weekday = WEEKDAYS[stamp.getUTCDay()];
+  if (!weekday) return [];
+  const monthName = MONTHS[monthIndex] ?? "";
+  const abbreviation = monthName.slice(0, 3);
+  const shortDay = weekday.slice(0, 3);
+  const needles = [];
+  for (const dayLabel of [weekday, shortDay]) {
+    for (const monthLabel of [monthName, abbreviation]) {
+      for (const number of [String(dayNumber), day]) {
+        needles.push(`${dayLabel}, ${monthLabel} ${number}`);
+        needles.push(`${dayLabel} ${monthLabel} ${number}`);
+      }
+    }
+  }
+  return needles;
 }
 
 function normalizeText(value) {
@@ -201,7 +277,55 @@ function normalizeText(value) {
 
 function mentionsDate(isoDate, ...texts) {
   const haystack = texts.map(normalizeText).join("   ");
-  return dateNeedles(isoDate).some((needle) => haystack.includes(needle));
+  if (dateNeedles(isoDate).some((needle) => haystack.includes(needle))) return true;
+  return weekdayDateNeedles(isoDate).some((needle) => haystack.includes(needle));
+}
+
+// ---------------------------------------------------------------------------
+// History sweeps — nights the catalog is missing, not nights someone photographed
+// ---------------------------------------------------------------------------
+
+// Ticketmaster sells no past events and Setlist.fm needs a key we do not have,
+// so the catalog has almost no history — and backfill matches against PAST
+// shows. The same search that explains one unmatched night can walk a venue's
+// calendar backwards and propose what it finds.
+//
+// The claim being made changes, and that is worth being precise about: a
+// reclaim proposal says "you were probably here"; a history proposal says only
+// "this show probably happened". Weaker claim, same evidence bar — a fabricated
+// past show becomes catalog, and then other people's photos match against it.
+
+// Tavily bills per search. `advanced` depth costs 2; the exact figure matters
+// less than the fact that a caller can see the bill before agreeing to it.
+const CREDITS_PER_ADVANCED_SEARCH = 2;
+
+function eachNightInRange(from, to) {
+  const start = splitIsoDate(from);
+  const end = splitIsoDate(to);
+  if (!start || !end || from > to) return [];
+  const nights = [];
+  const cursor = new Date(`${from}T12:00:00Z`);
+  const last = new Date(`${to}T12:00:00Z`);
+  while (cursor <= last) {
+    nights.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return nights;
+}
+
+// The catalog's holes for one venue. A date the catalog already explains is
+// left alone — this is for filling gaps, never for second-guessing rows that
+// came from a first-party source.
+function nightsMissingFromCatalog(from, to, datesWithShows) {
+  const known = new Set(datesWithShows ?? []);
+  return eachNightInRange(from, to).filter((night) => !known.has(night));
+}
+
+// What a sweep will cost before it runs. Tavily credits are finite and expire
+// with the event, so a batch job that cannot say what it is about to spend is
+// not one anybody should approve.
+function estimateSweepCredits(nightCount, queriesPerNight = 1) {
+  return Math.max(0, nightCount) * Math.max(1, queriesPerNight) * CREDITS_PER_ADVANCED_SEARCH;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,9 +372,23 @@ function stripTrailingNoise(value) {
 // names on the bill, which is exactly what `shows.artistNames` holds.
 function splitLineup(value) {
   return String(value ?? "")
-    .split(/\s*(?:,|\/|\+|&|\bb2b\b|\bvs\.?\b|\bwith\b|\bw\/)\s*/i)
+    // Splitting a bill wrongly invents an artist, so the separators are
+    // deliberately conservative:
+    //   · "+" only when spaced, and not before an article — "Overmono + Salute"
+    //     is two acts, "Bolly+House" is one compound, "Florence + the Machine"
+    //     is one band.
+    //   · "&" never. "Above & Beyond" and "Hall & Oates" are single names, and
+    //     bills that use "&" also tend to use a comma somewhere.
+    //   · b2b / vs / with / w-slash / comma / slash are unambiguous.
+    .split(/(?:\s*,\s*|\s+\+\s+(?!the\s)|\s*\/\s*|\s+b2b\s+|\s+vs\.?\s+|\s+with\s+|\s+w\/\s*)/i)
     .map(stripTrailingNoise)
-    .filter((name) => name.length >= 2 && name.length <= 60 && !isTitleNoise(name));
+    .filter(
+      (name) =>
+        name.length >= 2 &&
+        name.length <= 60 &&
+        !isTitleNoise(name) &&
+        !looksLikePromoProse(name),
+    );
 }
 
 // Titles in the wild: "Peggy Gou at 1015 Folsom - Jun 27, 2026 | Tickets",
@@ -287,6 +425,37 @@ function isTicketingDomain(url) {
   return TICKETING_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
 }
 
+function isSocialDomain(url) {
+  const host = hostOf(url);
+  return SOCIAL_DOMAINS.some((domain) => host === domain || host.endsWith(`.${domain}`));
+}
+
+// Venues are written half a dozen ways: "The Midway", "Midway", "The Midway SF",
+// "Midway San Francisco". Requiring the catalog's exact string threw away
+// nights whose listing was real and correctly dated — the second biggest source
+// of refusals in the first real sweep, after the missing year.
+//
+// Only the leading article and a trailing city/state tag are stripped. The core
+// name must still appear, and must be long enough not to collide by accident.
+const VENUE_CORE_MIN_LENGTH = 5;
+
+function venueCore(venueName) {
+  return normalizeText(venueName)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/^the\s+/, "")
+    .replace(/\s+(sf|nyc|ny|ca|san francisco|new york|brooklyn)$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function mentionsVenue(text, venueName) {
+  const haystack = normalizeText(text).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ");
+  const full = normalizeText(venueName);
+  if (full && haystack.includes(full)) return true;
+  const core = venueCore(venueName);
+  return core.length >= VENUE_CORE_MIN_LENGTH && haystack.includes(core);
+}
+
 function lineupKey(names) {
   return names.map(normalizeText).sort().join("|");
 }
@@ -318,9 +487,7 @@ function proposeFromResults(gap, results, options = {}) {
       continue;
     }
     const venueConfirmed = anchorVenue
-      ? normalizeText(`${title} ${content} ${url.replace(/[-/]/g, " ")}`).includes(
-          normalizeText(anchorVenue),
-        )
+      ? mentionsVenue(`${title} ${content} ${url.replace(/[-/]/g, " ")}`, anchorVenue)
       : false;
     if (anchorVenue && !venueConfirmed) {
       rejected.push({ url, reason: `page does not name ${anchorVenue}` });
@@ -339,11 +506,13 @@ function proposeFromResults(gap, results, options = {}) {
       hosts: new Set(),
       venueConfirmed: false,
       ticketing: false,
+      nonSocialSources: 0,
     };
     group.sources.push({ url, title });
     group.hosts.add(hostOf(url));
     group.venueConfirmed = group.venueConfirmed || venueConfirmed;
     group.ticketing = group.ticketing || isTicketingDomain(url);
+    group.nonSocialSources = (group.nonSocialSources ?? 0) + (isSocialDomain(url) ? 0 : 1);
     groups.set(key, group);
   }
 
@@ -393,13 +562,17 @@ function proposeFromResults(gap, results, options = {}) {
     return { ...group, hosts: [...group.hosts], evidence, confidence };
   });
 
+  // A lineup known only from social captions is not a listing. It may
+  // corroborate a night some real listing already named; it may not carry one.
+  const admissible = considered.filter((group) => group.nonSocialSources > 0);
+  admissible.sort((left, right) => right.confidence - left.confidence);
   considered.sort((left, right) => right.confidence - left.confidence);
-  const best = considered[0] ?? null;
+  const best = admissible[0] ?? null;
 
   // Two different lineups both clearing the bar means the web disagrees with
   // itself about this night. Proposing either one would be a coin flip wearing
   // a source URL, so we propose neither.
-  const contested = considered.length > 1 && considered[1].confidence >= minConfidence;
+  const contested = admissible.length > 1 && admissible[1].confidence >= minConfidence;
 
   if (!best || best.confidence < minConfidence || contested) {
     return {
@@ -407,7 +580,9 @@ function proposeFromResults(gap, results, options = {}) {
       considered,
       rejected,
       declineReason: !best
-        ? "no result named both the date and a lineup"
+        ? considered.length
+          ? "only social posts named a lineup, which is a caption not a listing"
+          : "no result named both the date and a lineup"
         : contested
           ? "sources disagree about who played"
           : `best confidence ${best.confidence.toFixed(2)} below ${minConfidence}`,
@@ -441,6 +616,7 @@ function describeProposal(proposal) {
 }
 
 export {
+  CREDITS_PER_ADVANCED_SEARCH,
   DELTA_CORROBORATED,
   DELTA_DATE_CONFIRMED,
   DELTA_NO_VENUE_ANCHOR,
@@ -453,12 +629,18 @@ export {
   buildGapQueries,
   dateNeedles,
   describeProposal,
+  weekdayDateNeedles,
+  eachNightInRange,
+  estimateSweepCredits,
   extractArtistNames,
   hostOf,
+  isSocialDomain,
   isTicketingDomain,
   longDate,
   mentionsDate,
+  mentionsVenue,
   nearestVenues,
+  nightsMissingFromCatalog,
   proposeFromResults,
   splitLineup,
 };

@@ -2,7 +2,14 @@ import { action, mutation, query, type ActionCtx } from "./_generated/server";
 import { api } from "./_generated/api";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { buildGapQueries, nearestVenues, proposeFromResults } from "./catalogGapUtils.js";
+import {
+  CREDITS_PER_ADVANCED_SEARCH,
+  buildGapQueries,
+  estimateSweepCredits,
+  nearestVenues,
+  nightsMissingFromCatalog,
+  proposeFromResults,
+} from "./catalogGapUtils.js";
 
 // Catalog-gap agent — the I/O half. All judgement lives in
 // `catalogGapUtils.js`; this file only fetches, stores, and refuses.
@@ -28,7 +35,9 @@ const MAX_NIGHTS_PER_RUN = 8;
 
 type TavilyResult = { title?: string; url?: string; content?: string };
 
-async function tavilySearch(query: string, clusterDate: string): Promise<TavilyResult[]> {
+type TavilyResponse = { results: TavilyResult[]; credits: number };
+
+async function tavilySearch(query: string, clusterDate: string): Promise<TavilyResponse> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) throw new Error("Missing TAVILY_API_KEY environment variable");
 
@@ -47,6 +56,9 @@ async function tavilySearch(query: string, clusterDate: string): Promise<TavilyR
       // is cheaper than rejecting the same wrong-year pages in the parser.
       start_date: shiftDate(clusterDate, -400),
       end_date: shiftDate(clusterDate, 30),
+      // Credits are finite, event-coded, and expire with the event. A batch job
+      // that cannot say what it spent is not one anybody should approve twice.
+      include_usage: true,
     }),
   });
 
@@ -54,8 +66,14 @@ async function tavilySearch(query: string, clusterDate: string): Promise<TavilyR
     const detail = await response.text().catch(() => "");
     throw new Error(`Tavily search failed with status ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
   }
-  const payload = (await response.json()) as { results?: TavilyResult[] };
-  return Array.isArray(payload.results) ? payload.results : [];
+  const payload = (await response.json()) as {
+    results?: TavilyResult[];
+    usage?: { credits?: number };
+  };
+  return {
+    results: Array.isArray(payload.results) ? payload.results : [],
+    credits: payload.usage?.credits ?? CREDITS_PER_ADVANCED_SEARCH,
+  };
 }
 
 function shiftDate(isoDate: string, days: number) {
@@ -277,7 +295,7 @@ export const search = action({
       for (const { query, anchorVenue } of queries) {
         let results: TavilyResult[];
         try {
-          results = await tavilySearch(query, night.clusterDate);
+          ({ results } = await tavilySearch(query, night.clusterDate));
         } catch (error) {
           // One night's failed search must not abort the rest of the queue.
           lastReason = error instanceof Error ? error.message : "search failed";
@@ -330,6 +348,267 @@ export const search = action({
       proposals: proposed,
       declined,
       note: "Proposals are claims with a source URL, not catalog entries. Approve one to turn it into a show.",
+    };
+  },
+});
+
+// --- History sweeps ---------------------------------------------------------
+//
+// Everything above is triggered by a person's photos. Everything below is
+// triggered by a hole in the catalog.
+//
+// Why this exists: backfill matches against PAST shows, Ticketmaster sells no
+// past events, and Setlist.fm needs a key we do not have. So the catalog has
+// almost no history, and the same search that explains one unmatched night can
+// walk a venue's calendar backwards.
+//
+// The claim changes and the bar does not. A reclaim proposal says "you were
+// probably here" and the human judges it next to their own photos. A history
+// proposal says only "this show probably happened" — and nobody is looking at
+// it with any context at all. A fabricated past show just becomes catalog, and
+// then other people's photos match against it. So the evidence gate is
+// unchanged, and an ambiguous night is left empty.
+
+// Dates this venue already has shows on, so a sweep fills holes and never
+// second-guesses a row that came from a first-party source.
+export const venueShowDates = query({
+  args: { venueName: v.string(), from: v.string(), to: v.string() },
+  handler: async (ctx, args) => {
+    const shows = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", args.from).lte("date", args.to))
+      .collect();
+    const wanted = args.venueName.trim().toLowerCase();
+    return shows
+      .filter((show) => (show.venueName ?? "").trim().toLowerCase() === wanted)
+      .map((show) => show.date);
+  },
+});
+
+// One (venue, night) pair, on demand. The building block — and the thing to
+// call when you want to check the agent's judgement on a night you know.
+export const searchNight = action({
+  args: {
+    venueName: v.string(),
+    city: v.optional(v.string()),
+    date: v.string(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    date: string;
+    venueName: string;
+    proposed: boolean;
+    proposalId?: Id<"catalogProposals">;
+    artistNames?: string[];
+    sourceUrl?: string;
+    confidence?: number;
+    declineReason?: string;
+    creditsSpent: number;
+    rejected?: { url: string; reason: string }[];
+  }> => {
+    if (!process.env.TAVILY_API_KEY) {
+      return {
+        date: args.date,
+        venueName: args.venueName,
+        proposed: false,
+        declineReason: "TAVILY_API_KEY is not set",
+        creditsSpent: 0,
+      };
+    }
+
+    const [{ query }] = buildGapQueries({
+      clusterDate: args.date,
+      city: args.city ?? null,
+      venues: [{ name: args.venueName }],
+    });
+
+    // A dry run reports the question and the bill without paying it.
+    if (args.dryRun) {
+      return {
+        date: args.date,
+        venueName: args.venueName,
+        proposed: false,
+        declineReason: `dry run — would search: ${query}`,
+        creditsSpent: 0,
+      };
+    }
+
+    const { results, credits } = await tavilySearch(query, args.date);
+    const { proposal, declineReason, rejected } = proposeFromResults(
+      { clusterDate: args.date, city: args.city ?? null, anchorVenue: args.venueName },
+      results,
+    );
+
+    if (!proposal) {
+      return {
+        date: args.date,
+        venueName: args.venueName,
+        proposed: false,
+        declineReason: declineReason ?? "no result cleared the bar",
+        creditsSpent: credits,
+        rejected,
+      };
+    }
+
+    // Note the absent requestedByUserId: a history proposal is attached to no
+    // one's night, and claims nothing about attendance.
+    const saved = await ctx.runMutation(api.catalogGap.record, {
+      clusterDate: proposal.clusterDate,
+      venueName: proposal.venueName ?? undefined,
+      city: proposal.city ?? undefined,
+      artistNames: proposal.artistNames,
+      sourceUrl: proposal.sourceUrl,
+      sourceTitle: proposal.sourceTitle,
+      corroboratingUrls: proposal.corroboratingUrls,
+      confidence: proposal.confidence,
+      evidence: proposal.evidence,
+    });
+
+    return {
+      date: args.date,
+      venueName: args.venueName,
+      proposed: saved.created,
+      proposalId: saved.proposalId,
+      artistNames: proposal.artistNames,
+      sourceUrl: proposal.sourceUrl,
+      confidence: proposal.confidence,
+      declineReason: saved.created ? undefined : `already proposed (${saved.status})`,
+      creditsSpent: credits,
+    };
+  },
+});
+
+// Tavily's free tier is ~2 requests/second. One night at a time with a pause
+// between is slower than it could be and cannot get us rate-limited mid-sweep.
+const SWEEP_PAUSE_MS = 600;
+
+// The whole budget we have is event-coded and expires with the event, so a
+// single sweep may never be able to eat it. The caller can lower this; it
+// cannot raise it.
+const MAX_SWEEP_NIGHTS = 60;
+
+export const sweepVenueHistory = action({
+  args: {
+    venueName: v.string(),
+    city: v.optional(v.string()),
+    from: v.string(),
+    to: v.string(),
+    maxNights: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    venueName: string;
+    range: { from: string; to: string };
+    nightsInRange: number;
+    alreadyInCatalog: number;
+    nightsWalked: number;
+    nightsSkippedByCap: number;
+    proposed: number;
+    declined: number;
+    creditsSpent: number;
+    estimatedCredits: number;
+    proposals: { date: string; artistNames: string[]; sourceUrl: string; confidence: number }[];
+    declines: { date: string; reason: string }[];
+    dryRun: boolean;
+    note: string;
+  }> => {
+    const known: string[] = await ctx.runQuery(api.catalogGap.venueShowDates, {
+      venueName: args.venueName,
+      from: args.from,
+      to: args.to,
+    });
+    const missing = nightsMissingFromCatalog(args.from, args.to, known);
+    const cap = Math.min(args.maxNights ?? MAX_SWEEP_NIGHTS, MAX_SWEEP_NIGHTS);
+    const walking = missing.slice(0, cap);
+    const estimatedCredits = estimateSweepCredits(walking.length, 1);
+
+    const base = {
+      venueName: args.venueName,
+      range: { from: args.from, to: args.to },
+      nightsInRange: missing.length + known.length,
+      alreadyInCatalog: known.length,
+      nightsSkippedByCap: missing.length - walking.length,
+      estimatedCredits,
+    };
+
+    if (args.dryRun) {
+      return {
+        ...base,
+        nightsWalked: 0,
+        proposed: 0,
+        declined: 0,
+        creditsSpent: 0,
+        proposals: [],
+        declines: [],
+        dryRun: true,
+        note: `Would search ${walking.length} nights for about ${estimatedCredits} Tavily credits.`,
+      };
+    }
+    if (!process.env.TAVILY_API_KEY) {
+      return {
+        ...base,
+        nightsWalked: 0,
+        proposed: 0,
+        declined: 0,
+        creditsSpent: 0,
+        proposals: [],
+        declines: [],
+        dryRun: false,
+        note: "TAVILY_API_KEY is not set — nothing searched.",
+      };
+    }
+
+    const proposals: { date: string; artistNames: string[]; sourceUrl: string; confidence: number }[] = [];
+    const declines: { date: string; reason: string }[] = [];
+    let creditsSpent = 0;
+    let walked = 0;
+
+    for (const date of walking) {
+      if (walked) await new Promise((resolve) => setTimeout(resolve, SWEEP_PAUSE_MS));
+      walked += 1;
+      let outcome;
+      try {
+        outcome = await ctx.runAction(api.catalogGap.searchNight, {
+          venueName: args.venueName,
+          city: args.city,
+          date,
+        });
+      } catch (error) {
+        // One bad night must not end the sweep, and it must not be silent.
+        declines.push({ date, reason: error instanceof Error ? error.message : "search failed" });
+        continue;
+      }
+      creditsSpent += outcome.creditsSpent;
+      if (outcome.proposed && outcome.artistNames && outcome.sourceUrl) {
+        proposals.push({
+          date,
+          artistNames: outcome.artistNames,
+          sourceUrl: outcome.sourceUrl,
+          confidence: outcome.confidence ?? 0,
+        });
+      } else {
+        declines.push({ date, reason: outcome.declineReason ?? "declined" });
+      }
+    }
+
+    return {
+      ...base,
+      nightsWalked: walked,
+      proposed: proposals.length,
+      declined: declines.length,
+      creditsSpent,
+      proposals,
+      declines,
+      dryRun: false,
+      note:
+        "Every proposal is pending and claims only that the show happened — not that anyone attended it. " +
+        "A sweep never auto-approves, however confident.",
     };
   },
 });

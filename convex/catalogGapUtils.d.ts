@@ -21,7 +21,9 @@ export type VenueAnchor = {
 export type GapNight = {
   clusterDate: string;
   city?: string | null;
-  venues?: readonly VenueAnchor[];
+  // Only the name is read — a caller that already knows the venue (a history
+  // sweep) does not have to invent a distance to pass one in.
+  venues?: readonly { name: string }[];
   anchorVenue?: string | null;
 };
 
@@ -59,6 +61,7 @@ export type ProposalOutcome = {
 };
 
 export const MIN_PROPOSAL_CONFIDENCE: number;
+export const CREDITS_PER_ADVANCED_SEARCH: number;
 export const VENUE_ANCHOR_METERS: number;
 export const MAX_VENUE_ANCHORS: number;
 export const DELTA_DATE_CONFIRMED: number;
@@ -74,6 +77,13 @@ export function nearestVenues(
   options?: { radiusMeters?: number; limit?: number },
 ): VenueAnchor[];
 export function buildGapQueries(gap: GapNight): GapQuery[];
+export function eachNightInRange(from: string, to: string): string[];
+export function nightsMissingFromCatalog(
+  from: string,
+  to: string,
+  datesWithShows: readonly string[] | null | undefined,
+): string[];
+export function estimateSweepCredits(nightCount: number, queriesPerNight?: number): number;
 export function dateNeedles(isoDate: string): string[];
 export function longDate(isoDate: string): string;
 export function mentionsDate(isoDate: string, ...texts: (string | undefined)[]): boolean;
@@ -81,6 +91,9 @@ export function extractArtistNames(title: string, venueName?: string | null): st
 export function splitLineup(value: string): string[];
 export function hostOf(url: string): string;
 export function isTicketingDomain(url: string): boolean;
+export function isSocialDomain(url: string): boolean;
+export function mentionsVenue(text: string, venueName: string): boolean;
+export function weekdayDateNeedles(isoDate: string): string[];
 export function describeProposal(proposal: CatalogProposal | null): string;
 export function proposeFromResults(
   gap: GapNight,
