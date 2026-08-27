@@ -39,3 +39,9 @@ export function drawRecap(
     images?: Map<string, CanvasImageSource & { width: number; height: number }>;
   },
 ): RecapShape;
+
+export function describeShareFailure(error: unknown): {
+  fallback: boolean;
+  failed: boolean;
+  message: string;
+};

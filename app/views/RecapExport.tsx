@@ -6,6 +6,7 @@ import { Copy, Download, ImageDown, Share2, Wand2 } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  describeShareFailure,
   drawRecap,
   RECAP_FORMATS,
   recapFilename,
@@ -67,6 +68,19 @@ async function renderRecap(recap: ExportRecap, format: RecapFormat) {
   return { blob, skipped };
 }
 
+// Extracted so the share-sheet refusal path can reach it too.
+function download(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  // Revoked on a later turn, not this one: the download starts asynchronously
+  // and revoking in the same tick can pull the blob out from under it —
+  // silently, which is exactly the outcome this feature exists to avoid.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export function RecapExport({ recap, userId }: { recap: ExportRecap; userId: Id<"users"> }) {
   const [busy, setBusy] = useState<RecapFormat | null>(null);
   const [status, setStatus] = useState("");
@@ -108,20 +122,25 @@ export function RecapExport({ recap, userId }: { recap: ExportRecap; userId: Id<
       // The share sheet where the browser has one; a download where it does
       // not. Either way the human is the one who posts it.
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], text: recap.shareText });
-        setStatus(`Handed to your share sheet${note}.`);
-        return;
+        try {
+          await navigator.share({ files: [file], text: recap.shareText });
+          setStatus(`Handed to your share sheet${note}.`);
+          return;
+        } catch (error) {
+          // A share that rejects used to surface the raw DOM message and no
+          // image at all — the exact silent-ish dead end this feature exists to
+          // avoid. Cancel stops here; a refusal falls through to the download.
+          const outcome = describeShareFailure(error);
+          if (!outcome.fallback) {
+            setStatus(outcome.message);
+            return;
+          }
+          download(blob, filename);
+          setStatus(`${outcome.message}: ${filename}${note}.`);
+          return;
+        }
       }
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = filename;
-      anchor.click();
-      // Revoked on a later turn, not this one: the download starts
-      // asynchronously and revoking in the same tick can pull the blob out from
-      // under it — silently, which is exactly the outcome this feature exists to
-      // avoid.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      download(blob, filename);
       setStatus(`Saved ${filename}${note}.`);
     } catch (error) {
       // Say which step failed. A silent no-op button is the thing this whole
