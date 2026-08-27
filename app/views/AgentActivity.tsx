@@ -133,9 +133,14 @@ export function AgentActivity({ items }: { items: AgentActivityItem[] }) {
     <div className="surface-settle">
       <p className="max-w-xl text-sm leading-6 text-[#8A8177]">
         {ordered.length} {ordered.length === 1 ? "thing" : "things"}, newest first.{" "}
-        {held > 0
-          ? "Everything I did on my own, including the parts where I stopped. I would rather leave a night blank than fill it with a guess."
-          : "Everything I did on my own. None of it touched your diary without you."}
+        {held === 0
+          ? "Everything I did on my own. None of it touched your diary without you."
+          : held === 1
+            // One refusal is "the part", not "the parts". The first real refusal
+            // to reach this feed was a single row, and the line was written for
+            // a plural that had never existed.
+            ? "Everything I did on my own, including the part where I stopped. I would rather leave a night blank than fill it with a guess."
+            : "Everything I did on my own, including the parts where I stopped. I would rather leave a night blank than fill it with a guess."}
       </p>
       <ol aria-label="What your agent did while you were away" className="mt-5 space-y-3">
         {ordered.map((item) => (
