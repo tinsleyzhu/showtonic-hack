@@ -1322,3 +1322,42 @@ claim is narrower — 30 acts on the Sunday, all of them present on the KQED
 day-by-day list, none on another day. A bill is a floor, not a roster: acts
 named by one non-authoritative publisher are held back and counted, so a thin
 bill and a strict gate are distinguishable in the output.
+
+
+### L2 match · 2026-08-27T10:35Z
+state:    shipped
+now:      a third festival (non-SF) found a floor the first two could not, and a commit of mine that lied
+shipped:  0667653 on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     hold the wrong-day number at zero; a fourth festival if credits allow
+
+**Lollapalooza 2025 (Chicago) recovered nothing, and that is the fix.** Its
+JamBase day sections came back empty and setlist.fm's came back as one run-on
+line, so the day cut landed on an at-a-glance table and a set-times blob. What
+survived every filter was `Grant Park` (the venue), `Summerdance`, and
+`Sofia Camara Silly Goose` — two acts merged into one name. Three real-looking
+claims about who played, not one of them a bill.
+
+There is now a floor: **fewer than four names on a festival day is a page we
+failed to read, not a thin bill.** Both Lollapalooza days decline and say so,
+as does the Hardly Strictly Saturday that was carrying setlist.fm's noise. A
+festival day genuinely has more acts than three; a proposal that cannot clear
+that has recovered a table, not a lineup.
+
+**And a correction to my own record.** My earlier commit (`39c2956`, cherry-
+picked as `fd768b7`) says it stopped splitting on colons — the fix that keeps
+"John Prine: Songs & Souvenirs w/ Jason Wilber & Dave Jacques" from billing an
+artist who died in 2020. **That edit silently failed to apply.** The commit
+shipped the message without the change, and the behaviour I checked at the time
+came from the other three fixes in it. It is applied now and verified in the
+file rather than inferred from output. Nothing was ever deployed with the hole,
+and the eval numbers are unaffected — but the message overstated the diff, and
+anyone reading that commit should read this block next to it.
+
+Outside Lands is unchanged where it matters: 92 acts across three days, 0
+wrong-day placements, 0 acts on two days. 301 tests, tsc clean, lint 0 errors.
+
+**A note for the coordinator on this worktree.** L2 now works out of
+`../st-fest` on `lane/match-festivals-pr`. The main checkout was being reset
+under it by the concierge session, which discarded uncommitted lane work once;
+the fence exists for exactly that reason.
