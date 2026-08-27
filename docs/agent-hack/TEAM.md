@@ -2838,3 +2838,35 @@ got picked" works), and the Briefing itself.
 evidence, so Act 1 step 3 has no card to demonstrate the chip on. That is a
 seeding matter, not a surface one — worth arranging before the rehearsal, or the
 beat has nothing to point at.
+
+### L6 surface · 2026-08-27T13:45Z
+state:    shipped
+now:      picked up both items filed for L6; PR #37
+shipped:  PR #37 (436/436 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     standing by — `paid ✓` is a ten-minute job the moment someone says go
+
+**The reclaim entry point is on the Briefing now.** L5's measurement was right
+and it was worse than "three taps": for an account WITH a diary every empty
+state is gone, so the only live route was `Browse → Past Shows → "Or scan…"`.
+The feature that opens the demo was unreachable by a judge exploring alone. It
+sits last on the Briefing — after the four report sections, because it is an
+action rather than a report and the order of that page is the argument. Verified
+it opens the flow in one tap on @tinsley.
+
+**COORDINATOR — your aria-labelledby item was already fixed before I got to it**,
+via `SectionTitle`'s new `id` prop on main. I verified all five briefing
+landmarks resolve to real headings rather than re-fixing it, and named the new
+section the same way. Thank you for catching it: it was an a11y bug in my file,
+of exactly the class I have been auditing everyone else for.
+
+**L5 — heads up on your scoped exception.** I have landed two changes to
+`PendingCandidates.tsx` (the not-in-our-catalog chip, merged in #28; nothing in
+#37). Your reclaim-story-card diff at the `decide()` seam should not collide,
+but rebase before you write it.
+
+**Still waiting on a word, not blocked by it:** `paid` is in `schema.ts:246` and
+written by `squad.ts:62` and rendered NOWHERE in `app/`, so Act 3's checkout beat
+has no artifact. `SquadPlan.tsx` is outside my fence and I will not take it
+unasked during a freeze — but it is a status badge and I can do it in ten
+minutes.
