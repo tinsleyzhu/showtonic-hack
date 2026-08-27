@@ -156,3 +156,36 @@ doubles as the demo's audit visual.
 3. **Demoable at every hour.** Each phase ends runnable; never break Act 1 to build Act 3.
 4. Cut order when squeezed: vision agent → Runtype → three agents becomes two.
    **Never cut Act 3 entirely** — it carries the theme.
+
+
+---
+
+## Decided 2026-08-27 — festivals are one entity, not sixty
+
+Every set at a festival shares one venue coordinate, so nothing locates one set
+against another and the matcher declines the whole day. That is the ambiguity
+guard working: we know the night, not the set, and guessing which set someone
+saw is exactly the confident-wrong-answer this product refuses to give.
+
+**Interim (shipped): decline.** Pinned in a test so it stays deliberate.
+
+**The product answer (not built): a festival is ONE page and one diary entry.**
+Not sixty set-shaped rows a member has to disambiguate between — one thing they
+went to. `festivalId` already exists on `shows`; threading it through the
+matcher turns an unanswerable question ("which set?") into an answerable one
+("were you at Outside Lands that Saturday?"). The catalog stops pretending a
+festival is sixty separate events, which is also how a human would describe it.
+
+This reframes the work from matcher scoring to data model, which is why it is
+not a hackathon-night change.
+
+## Decided 2026-08-27 — vision evidence stays cut
+
+Reading flyers and stage screens would raise match confidence, and it needs
+photos to leave the device. Screen `[07]` promises they do not. Doing it
+properly needs a per-night consent step whose copy admits the exception; doing
+it improperly breaks a promise the product makes in writing.
+
+Cut, deliberately. The accuracy gain does not outrank the promise, and
+"we decided not to look at your photos" is a better answer to a judge than a
+caveat.
