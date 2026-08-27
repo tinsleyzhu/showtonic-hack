@@ -1239,3 +1239,85 @@ is the right call. What I changed:
    about 3.3:1 and under the AA floor. Now the muted token at ~5.2:1.
 
 Say the word if you disagree with any of them and I will revert that one.
+
+### L6 surface · 2026-08-27T10:15Z
+state:    shipped
+now:      wave-1 Briefing on fixtures, and the first render this lane has ever done
+shipped:  5 commits on lane/surface (292/292 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     flip fixtures → useQuery when briefing.forUser deploys; wave 2
+
+**The Briefing is home.** Four sections in the order the rule demands — a
+decision you owe outranks a summary of what you have already done. ① composes
+the existing PendingCandidates and SquadPlanCard rather than reimplementing
+them (both already self-empty, so they compose for free); ② renders finds with
+Yes / No / Why and evidence rows in the PendingCandidates pattern; ③ is L5's
+`AgentActivity` stub; ④ is beliefs with their basis visible. Discover survives
+as **Browse**, demoted not deleted, with a test asserting the tab still exists
+so a later pass cannot quietly drop it.
+
+**The flip is genuinely one line.** `BRIEFING_FIXTURE` is the *default value* of
+the `briefing` prop, not a hardcoding inside the component. When
+`briefing.forUser` deploys, page.tsx passes `briefing={useQuery(...)}` and
+nothing inside BriefingView.tsx changes.
+
+⚠️ **I RENDERED IT.** After six iterations of shipping unseen, this lane finally
+has eyes. Everything above was walked in a browser against the real backend.
+Four things I had previously only argued for are now observed:
+
+1. **The focus ring works.** Every input and select on Discover resolves
+   `solid 2px #ff7a50` at 2px offset, and buttons inside scroll containers take
+   the documented −2px inset variant. The unlayered-beats-layered cascade
+   argument was correct; I have now watched it win.
+2. **Skeletons hold the layout.** All five detail views render them; no jump.
+3. The a11y tree tool under-reports names on buttons with nested block content
+   — the onboarding city buttons look nameless in it and are not. **I nearly
+   filed that as a bug. Verify in the DOM before believing the tree.**
+4. The Briefing renders clean, no hydration errors, no console errors.
+
+**Two real defects found by rendering, both outside my fence — handing them
+over rather than reaching into `convex/`.**
+
+**① The onboarding taste grid offers the same artist twice.** Nine of the top
+forty-eight San Francisco names are doubled: one row from JamBase, one from
+Ticketmaster, different photos, same band. It is worse than cosmetic — selection
+is keyed by NAME while the grid is keyed by ID, so tapping one copy lights up
+both, and tapping both toggles your own pick back off. Diagnosis, real query
+output and a tested fix are in
+`docs/agent-hack/handoff/L6-found-duplicate-artists.patch` (on main).
+
+⚠️ **`convex/onboardingArtists.d.ts` on main now declares `mergeArtistDuplicates`
+with "counts summed". Please reconsider: summing double-counts.** The two rows
+frequently describe the very same concerts under two ids, so adding 8 + 8 = 16
+invents eight shows nobody can attend and pushes that artist up a ranking that
+is literally "how present are they in your city". My patch merges by MAX, which
+claims only "at least this many" — the strongest claim the data supports. Take
+whichever you prefer, but the sum is wrong.
+
+**② "Karaoke Tuesday" and "Open Mic Night" are the #1 and #2 artists offered to
+a San Franciscan**, under the heading "Start with artists you'd cross town to
+see." They rank first because ranking is by upcoming show count and a weekly
+residency has 13 dates while a touring band has one. **I tried to fix it and
+stopped**: the obvious discriminator is "no real genre", and the data kills it
+— Alex G, Buzzcocks and Galactic also have empty genres, so that filter hides
+three real artists to hide two listings. A name blocklist would be fragile and
+dishonest. This needs either an ingest-time "attraction vs artist" flag (L1 —
+Ticketmaster's API distinguishes them) or a ranking change (L3). Not mine to
+pick at this hour, but it is the first screen of the demo.
+
+**For L5 — `AgentActivity` props are frozen as `{ items, now }`.** `now` is a
+prop rather than a `Date.now()` inside the component on purpose: reading the
+clock during render makes the server and client output differ and hydrates as a
+React error on the home screen. Please keep it. The one thing I settled rather
+than left to you is that a refusal renders as integrity — accent colour, full
+weight, detail never collapsed, because for a refusal the reason IS the content.
+
+**For the coordinator — two contract notes, neither a shape change.**
+- `BRIEFING_FIXTURE.activity[].at` values are epoch times in **August 2025**, so
+  the live app renders "365d ago" under a heading that says "While you were
+  away". Please rebase them relative to now.
+- `decisionsOwed: 1` in the fixture, but section ① composes the real
+  `backfill.pending` / `squad.latest` queries, which are empty for a fresh
+  account — so the count promises a decision the section cannot show. It
+  resolves itself the moment `briefing.forUser` is live and both come from the
+  same source; flagging so it is not mistaken for a rendering bug before then.
