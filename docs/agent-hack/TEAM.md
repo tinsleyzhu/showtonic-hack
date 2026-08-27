@@ -1321,3 +1321,86 @@ data. First deploy is worth thirty seconds on a member with a real diary —
 the shape I would doubt first is `finds` coming back empty because
 `excludeShowIds` is over-broad (it excludes anything with an attendance row,
 including "interested").
+
+## Proposals — L3: belief corrections (wave 2)
+
+**Keyed on the statement, so the contract does not have to change.** A belief
+is derived, not stored, so a correction needs something stable to attach to.
+`TasteBelief.statement` already is that: the sentences are count-free ("You
+keep going back to Rickshaw Stop"), the counts live in `basis`, and the UI
+already has the string in hand when someone taps. If a statement's wording
+later changes, its old feedback stops applying — which is right, because a
+different sentence is a different claim.
+
+```
+taste.correctBelief   mutation
+  args: { userId, statement, verdict: "right" | "wrong" }
+  writes: beliefFeedback { userId, statement, verdict, basisAtTime, createdAt }
+          index by_user, by_user_statement  — upsert, so tapping twice is idempotent
+```
+
+**One new table, no change to any existing one.** Coordinator: this is the
+only schema change wave 2 needs, and it is additive.
+
+Behaviour, in `briefingLogic.applyBeliefFeedback(beliefs, feedback)` — pure,
+so the rule is testable and the query stays thin:
+
+- **"That's wrong" suppresses the belief.** Not for a cooling-off period: the
+  member said the claim is false, and re-asserting it next week because a
+  timer expired would be the app arguing with them. It returns only if the
+  evidence genuinely changes — the basis count growing by half again — and
+  when it does it says so rather than reappearing silently.
+- **"That's right" pins it** to the top of the four and marks it confirmed. It
+  does NOT promote `forming` to `strong`: strength is derived from counts, and
+  a member agreeing with us is not more nights in the diary. Confirmation is
+  its own fact, not a louder version of ours.
+- A suppressed belief frees its slot, so the section still renders four.
+
+Building this now unless another lane flags a conflict.
+
+### L3 taste · 2026-08-27T08:35Z
+state:    shipped
+now:      three follow-up commits on lane/taste, all found by running against live data
+shipped:  PR to follow (311/311 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     wave 2 belief corrections, per the proposal above
+
+**Coordinator: the deployed briefing has a defect my merged PR did not fix,
+and it is on the demo path.** Ran `briefing:forUser` against the live
+deployment for the seeded member. Five finds, three acts:
+
+```
+0.30  Portola                              Pier 80 Warehouse   2026-09-26
+0.25  Lily Allen at Madison Square Garden  Madison Square Garden
+0.25  Lily Allen at Chase Center           Chase Center
+0.24  Osees at The Chapel                  The Chapel  2026-08-27
+0.24  Osees at The Chapel                  The Chapel  2026-08-28
+```
+
+Three things wrong, all fixed on the branch:
+
+1. **A residency eats the slate.** An act playing consecutive nights gets a
+   card per night, and the catalog often holds each night twice. Five slots,
+   one or two recommendations. One card per act now; the first night of a run
+   wins.
+2. **Madison Square Garden, for a San Francisco member.** She has no
+   `homeCity` — onboarding was never run for the seeded users — so the query
+   fell through to the global catalog. It now falls back to the city her diary
+   is in, which is the one thing we do know about her.
+3. **One belief where the contract asks for two to four.** The thresholds were
+   written for a diary twice the size of a real one. Six nights now yields
+   three, each still carrying its own arithmetic. Verified against her real
+   logs, not fixtures.
+
+Also added property tests for `tasteMath` — it now backs the profile screen,
+the MCP taste tool, peer discovery, the squad negotiator and the briefing's
+finds, so its edge cases are five surfaces' edge cases.
+
+**One finding outside my lane, worth someone's attention before the demo:**
+`artists.get` takes **over two minutes** on the live deployment. It
+`.collect()`s the entire `shows` table AND the entire `logs` table, then
+filters in JS — 8,000+ rows for one artist page. `artists.forOnboarding` does
+the same and now has no callers. Tapping an artist is on the demo path; this
+is the same class of problem as the 3,798-read onboarding warning, one order
+of magnitude worse. `convex/artists.ts` is not mine to change — say the word
+and I will take it, or hand it to L1.
