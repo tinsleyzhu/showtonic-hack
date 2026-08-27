@@ -107,8 +107,14 @@ export function Onboarding({
     // A genre with nothing upcoming shows an empty grid rather than silently
     // falling back to the general list, which would look like a broken filter.
     if (genreFilter) return [];
+    // Same rule once a city is known and the query has answered: an empty
+    // result means nothing is playing there, and the hardcoded seed list would
+    // put artists three thousand miles away back on the screen — the exact bug
+    // the city gate exists to prevent. The seed list is only honest as a
+    // "catalog has not loaded yet" fallback.
+    if (homeCity && onboardingArtists) return [];
     return ONBOARDING_ARTISTS.map((name) => ({ name, image: undefined, genre: "Live artist" }));
-  }, [onboardingArtists, genreFilter]);
+  }, [onboardingArtists, genreFilter, homeCity]);
 
   const wizardSteps = ONBOARDING_STEPS.filter((item) => item !== "welcome");
   const stepNumber = Math.max(onboardingStepIndex(step as OnboardingStep), 1);
@@ -377,9 +383,11 @@ export function Onboarding({
                 ))}
               </div>
             )}
-            {genreFilter && onboardingArtists?.length === 0 && (
+            {onboardingArtists?.length === 0 && (
               <p className="mt-4 border-l-2 border-[#6FBCD3] pl-3 text-xs leading-5 text-[#8A8177]">
-                Nothing upcoming in {genreFilter} yet — try another, or go back to most seen.
+                {genreFilter
+                  ? `Nothing upcoming in ${genreFilter}${homeCity ? ` near ${homeCity}` : ""} yet — try another, or go back to most seen.`
+                  : `Nothing upcoming near ${homeCity} yet. Go back and pick another home base, or skip it to see artists from everywhere.`}
               </p>
             )}
             <div className="mt-6 grid grid-cols-3 gap-x-3 gap-y-5">

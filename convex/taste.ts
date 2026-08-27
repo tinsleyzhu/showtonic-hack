@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { genreWeights, LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
 import { rankOnboardingGenres } from "./onboardingGenres.js";
+import { rankOnboardingArtists } from "./onboardingArtists.js";
 
 function unique(values: string[]) {
   return [...new Set(values)];
@@ -341,38 +342,39 @@ export const artistsForOnboarding = query({
       .withIndex("by_date", (q) => q.gte("date", args.today))
       .take(4000);
 
+    // Counted separately rather than blended into one weight: presence in the
+    // member's city is a gate, and a gate cannot be built from a number that
+    // has already had "somewhere else" mixed into it.
     const city = (args.homeCity ?? "").trim().toLowerCase();
-    const weightByArtist = new Map<Id<"artists">, number>();
+    const homeShows = new Map<Id<"artists">, number>();
+    const otherShows = new Map<Id<"artists">, number>();
     for (const show of upcoming) {
-      const weight = city && show.city.toLowerCase() === city ? 4 : 1;
+      const tally = city && show.city.toLowerCase() === city ? homeShows : otherShows;
       for (const artistId of show.artistIds) {
-        weightByArtist.set(artistId, (weightByArtist.get(artistId) ?? 0) + weight);
+        tally.set(artistId, (tally.get(artistId) ?? 0) + 1);
       }
     }
 
-    const artists = await Promise.all(
-      [...weightByArtist.keys()].map((artistId) => ctx.db.get(artistId)),
-    );
+    const artistIds = [...new Set([...homeShows.keys(), ...otherShows.keys()])];
+    const artists = await Promise.all(artistIds.map((artistId) => ctx.db.get(artistId)));
 
-    return artists
-      .filter(
-        (artist): artist is NonNullable<typeof artist> =>
-          artist !== null &&
-          // No genre means the unfiltered grid: every artist with something
-          // upcoming, still city-weighted.
-          (!genre || (artist.genres ?? []).some((value) => value.trim().toLowerCase() === genre)),
-      )
-      .map((artist) => ({
-        _id: artist._id,
-        name: artist.name,
-        image: artist.image,
-        genres: artist.genres ?? [],
-        upcomingWeight: weightByArtist.get(artist._id) ?? 0,
-      }))
-      .sort(
-        (left, right) =>
-          right.upcomingWeight - left.upcomingWeight || left.name.localeCompare(right.name),
-      )
-      .slice(0, Math.min(args.limit ?? 18, 48));
+    return rankOnboardingArtists(
+      artists
+        .filter(
+          (artist): artist is NonNullable<typeof artist> =>
+            artist !== null &&
+            // No genre means the unfiltered grid: every reachable artist.
+            (!genre || (artist.genres ?? []).some((value) => value.trim().toLowerCase() === genre)),
+        )
+        .map((artist) => ({
+          _id: artist._id,
+          name: artist.name,
+          image: artist.image,
+          genres: artist.genres ?? [],
+          homeCityShows: homeShows.get(artist._id) ?? 0,
+          otherCityShows: otherShows.get(artist._id) ?? 0,
+        })),
+      { homeCity: args.homeCity ?? "", limit: args.limit ?? 18 },
+    );
   },
 });
