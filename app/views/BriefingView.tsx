@@ -342,9 +342,20 @@ export function BriefingView({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
+      {/* An h1, not the SectionTitle h2 it used to be. The home screen had no
+          page heading of its own: the only h1 in the document was the SHOWTONIC
+          wordmark in the header, which names the SITE, not the page. Someone
+          navigating by heading landed on the wordmark and learned nothing about
+          where they were.
+          The wordmark itself is still an h1 and still should not be — see my
+          TEAM.md note; that fix touches a view outside this lane, so it is filed
+          rather than half-done. When it lands, this page is already correct. */}
       <div className="flex items-center gap-2">
         <Bot aria-hidden className="h-5 w-5 text-[#FF7A50]" />
-        <SectionTitle eyebrow={`@${handle}`} title="Your briefing" />
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]">@{handle}</p>
+          <h1 className="font-display mt-1 text-2xl">Your briefing</h1>
+        </div>
       </div>
 
       {nothingYet ? (
