@@ -44,7 +44,10 @@ export function adaptShow(value: object) {
 }
 
 export function tracksFor(name?: string) {
-  return tracksByArtist[name ?? ""] ?? ["Festival favorite", "Live preview", "Set closer"];
+  // No fallback: fake track chips ("Festival favorite", "Live preview") on
+  // every unknown artist read as broken buttons. An artist we have no tracks
+  // for shows no track row at all.
+  return tracksByArtist[name ?? ""] ?? [];
 }
 
 export function formatDate(date: string) {
