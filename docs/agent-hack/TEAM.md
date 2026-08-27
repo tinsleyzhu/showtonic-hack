@@ -787,6 +787,58 @@ next:     coordinator: merge + deploy, then
           true before the batch proved the rate.
 credits:  25 of 1500 spent, 1475 remaining.
 
+
+### L1 enrich+catalog · 2026-08-27T (iteration 8)
+state:    building — WRITE STEP NEEDS A HUMAN YES
+now:      took the dedup sweep. Reproduced your key exactly (2,284 groups /
+          2,581 excess, to the row) and then found it would have deleted real
+          shows, so read this before anyone runs it.
+
+          **THE KEY IS MISSING START TIME.** A jazz club plays an 8:30 and a
+          10:30 set: two separately ticketed events, same date, same room, same
+          headliner. Ron Carter at Birdland on 2026-10-09 is four rows that look
+          like one show x4 and are actually TWO SHOWS x2 — each set ingested
+          once from Ticketmaster and once from JamBase. Of your 2,581 excess
+          rows, **1,652 are real, distinct, differently-timed events.**
+          Not a judgement call: inside those groups 1,433 of 1,453 time gaps
+          are >=90 minutes (early/late set spacing) against 20 gaps of an hour
+          or less, which is the only band where door-time vs stage-time could
+          be one show reported twice. Exact start time under-merges by at most
+          ~20 groups and over-deletes by none. Leaving a duplicate is
+          recoverable; deleting a show is not.
+
+          **DRY RUN — corrected key, run against your snapshot, nothing written:**
+          | table | rows | groups | excess | after |
+          |---|---|---|---|---|
+          | shows | 11,580 | 1,110 | **1,144 (9.9%)** | 10,436 |
+          | artists | 9,162 | 1,322 | **1,347 (14.7%)** | 7,815 |
+          | venues | 298 | 8 | **8 (2.7%)** | 290 |
+          Merging ADDS as well as removes: 1,093 survivors gain support acts,
+          117 gain genres, 33 gain a real image. That last one because 3,650 of
+          9,162 artists carry JamBase's default silhouette — counting it as
+          "has an image" let a placeholder outrank a real photograph.
+
+          **Your reference list is short four entries.** favorites.showId,
+          catalogProposals.showId, squadPlans.showId and users.tasteArtistIds
+          all point at rows this deletes. watchlist is the awkward one: it
+          stores its target as a bare string for all three entity types, so it
+          cannot be found by index. All covered.
+
+          Ingest fixed at the one chokepoint — every sync funnels through
+          shows.importUpcoming — with three indexed normalized keys, so the
+          next Ticketmaster run cannot re-insert what the sweep removed.
+shipped:  on lane/enrich, added to PR #17 (425 tests green, tsc + eslint clean)
+blocked:  **the write step is not mine to authorise.** `runDedup` defaults to
+          apply:false. Deleting 2,499 rows from the live deployment needs a
+          human yes, and the snapshot is the only rollback.
+next:     order when the yes comes: shows -> artists -> venues, each dry run
+          first, then apply with maxGroups small (25) and re-read before
+          widening.
+SCHEMA:   three optional fields + three indexes (artists.nameKey,
+          venues.dedupKey, shows.dedupKey). L2 also edits schema.ts. I hand-
+          edited _generated/api.d.ts again to register convex/dedup.ts —
+          regenerate on your side.
+
 ---
 
 ### L2 match · 2026-08-27T03:10Z
