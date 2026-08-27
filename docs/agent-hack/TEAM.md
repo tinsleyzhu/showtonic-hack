@@ -878,6 +878,7 @@ bugs above.
 | interaction feedback: BackfillFlow accept, ShowView attendance/watchlist, AgentAccess revoke, ActivityView like/save | L6 | 07:35Z |
 | surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
 | onboarding a11y: aria-pressed on taste/genre/city selection, announced errors (app/OnboardingFlow.tsx) | L6 | 08:05Z |
+| festival lineup recovery (catalogGapUtils + catalogGap + festival eval) | L2 | 06:50Z |
 | app/views/PendingCandidates.tsx — NEW: human review surface for agent-created candidates | L6 | 08:25Z |
 | surface pass over L5's RecapExport.tsx (status/copy feedback, contrast, blob revoke) | L6 | 09:00Z |
 
@@ -1239,3 +1240,85 @@ is the right call. What I changed:
    about 3.3:1 and under the AA floor. Now the muted token at ~5.2:1.
 
 Say the word if you disagree with any of them and I will revert that one.
+
+### L2 match · 2026-08-27T09:40Z
+state:    shipped
+now:      festival lineups through the gap mechanism — one bill per DAY, measured on two real festivals
+shipped:  d4e689d, 03f9f9e, b6a5aee, 3631faa, 39c2956 on lane/match-festivals — PR to follow
+blocked:  -
+next:     more festivals for the eval (a non-SF one), and holding the wrong-day number at zero
+
+**A festival is the other hole in the catalog, and it fails differently.** A
+venue night has one bill and the danger is inventing it. A festival page has
+sixty acts across three days and every name on it is REAL — the mistake is
+filing one under the wrong day. That claim arrives sourced, plausible, and
+uncatchable by the human approving it, which makes it worse than an invention.
+
+So the unit is a festival **day**: one proposal per day carrying that day's
+bill, titled by the day, keyed by `festivalId`. That is deliberately the row
+SPEC.md's "a festival is one thing, not sixty" asks the catalog for — approving
+one creates a single festival-day show, so the sixty-rows-per-festival shape is
+never created and nothing here has to be undone when the data model lands.
+
+**THE NUMBER.** Outside Lands 2026, three days, 12 Tavily credits, against the
+festival's own daily-lineup announcement as the answer key:
+
+| strategy | acts | headliner recall | wrong day | act on two days |
+|---|---|---|---|---|
+| whole-page (no day model) | 568 | 15/15 | **24** | **143** |
+| day-gated (shipped) | 93 | 14/15 | **0** | **0** |
+
+Reading the lineup page whole finds every headliner and also puts nine of them
+on Friday, ten on Saturday and five on Sunday. Six times fewer acts is the
+price of zero wrong-day claims. The one headliner missed is a known shape: a
+page that writes its day AFTER the list ("…and Dijon on Saturday") is read from
+the label forward.
+
+**The fixtures are real pages this time, kept whole** — footers, ads, set-time
+tables, range-only pages and social captions. The venue-night eval reported
+100% precision right up until production handed it a Facebook caption, and that
+lesson is now built into how this one is constructed. `npm run eval` prints it;
+`test/festivalEval.test.mjs` fails the build on any wrong-day placement.
+
+**Ten failures found by pointing it at real festivals, all fixed.** Six from
+Outside Lands: pages state a festival as a RUN ("Aug 7 - 9, 2026") which the
+single-day gate rejected outright; a page names its day three times and only
+one of them is followed by the bill; a day's list ends at the next heading, not
+just the next day (without that, Sunday ran into JamBase's footer and proposed
+"Ticket Finder" as an act); set-time pages write "3:05 pm — Grace Ives"; the
+comma rule was dropping "The Strokes, The xx" as one ambiguous name; and
+jambase.com now counts as authoritative, because the app's own catalog IS
+JamBase rows.
+
+Four more from a second festival with a different publisher mix — Hardly
+Strictly Bluegrass 2025, on setlist.fm and KQED rather than JamBase. **One of
+them billed a dead artist.** "John Prine: Songs & Souvenirs w/ Jason Wilber &
+Dave Jacques" is a tribute set; split on its colon it claims John Prine, who
+died in 2020, played a 2025 Sunday. The colon is no longer a separator and a
+billing we cannot parse is dropped whole. The other three were setlist.fm's
+statistics riding on real names ("Albert Lee. 14", "625 attendances by 114
+users"), site chrome billed as acts ("Report festival"), and one act billed
+twice on one day because two publishers used different apostrophes.
+
+**Reusable, no deployment needed:** `node scripts/sweep-festival.mjs
+"<festival>" "<city>" <from> <to> [--venue "<grounds>"] [--dry-run]
+[--verbose]`. It prints the bill per day, what it spent, and every act claimed
+on two days — the failure that is visible without any answer key.
+
+**Tavily spend: ~40 credits** for both festivals including the re-measurement
+runs (~222 total for L2). Two searches per day, pooled before scoring, because
+two searches that each find one publisher are exactly the corroboration the
+per-act bar wants.
+
+**For the coordinator at deploy:** `catalogProposals` gains two optional fields
+(`festivalId`, `title`) — backward compatible, existing rows and readers
+unaffected, needs a schema push. Missing `TAVILY_API_KEY` stays a deliberate
+no-op. Nothing auto-approves.
+
+**Honest limits, stated before anybody quotes this on stage.** Ground truth
+exists for Outside Lands only, because its organiser published a day-by-day
+announcement that is not one of the pages being parsed; for Hardly Strictly the
+claim is narrower — 30 acts on the Sunday, all of them present on the KQED
+day-by-day list, none on another day. A bill is a floor, not a roster: acts
+named by one non-authoritative publisher are held back and counted, so a thin
+bill and a strict gate are distinguishable in the output.
