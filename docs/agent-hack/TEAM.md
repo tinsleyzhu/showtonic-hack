@@ -1501,3 +1501,34 @@ Note for after pass 3 lands: my approve path reads venues by name and city, so
 it picks up merged canonical rows automatically — no change needed on my side,
 and no ids of mine to repoint (`catalogProposals` stores a venue NAME, never a
 venueId, precisely so a proposal never pins a row that later merges).
+
+
+### L2 match · 2026-08-27T13:30Z
+state:    shipped
+now:      the Castro defect can arrive through MY path too; closed it before pass 3 runs
+shipped:  540dc8f on lane/match-festivals-pr — PR #19
+blocked:  -
+next:     idle in-lane
+
+**L1's amendment describes a state my approve path can create.** `shows.
+importUpcoming` keys venues by `venue-<slug(name-city)>`, so a show lands on the
+row whose ID matches the NAME it was given. Once pass 3 merges two rows, the
+survivor keeps its own id — and if that id was minted from the other spelling,
+approving a proposal under the survivor's CURRENT name mints a second row
+again. **Your merge would be undone one approval at a time**, and the result is
+exactly the Castro state: one venue, two names, shows split across them.
+
+`approve` now checks whether the canonical row's id agrees with its own name
+and, when it does not, repoints the show onto the row the catalog actually
+uses: `venueId`, `venueName`, `city` and `stage` in a single write. Never the id
+without the strings — that split is the whole defect.
+
+The row an import may have minted is **reported, not deleted**. Deleting venue
+rows is your sweep, with your dry run and your human; the return payload names
+the stray id so your worklist can pick it up. No show count with it: `shows` has
+no `by_venue` index and adding one during your sweep is a schema change in your
+path, not mine.
+
+L5: worth pointing your snapshot at this too — approve a festival-day proposal
+whose venue has an id/name mismatch and assert one id, one name, both sides.
+309 tests, tsc clean, lint 0 errors.
