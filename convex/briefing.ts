@@ -45,6 +45,16 @@ async function upcomingInCity(ctx: QueryCtx, city: string, today: string) {
     .take(SHOW_READ_CAP);
 }
 
+function mostLoggedCity(logs: { city?: string }[]) {
+  const counts = new Map<string, number>();
+  for (const log of logs) {
+    const city = (log.city ?? "").trim();
+    if (city) counts.set(city, (counts.get(city) ?? 0) + 1);
+  }
+  const top = [...counts.entries()].sort((left, right) => right[1] - left[1])[0];
+  return top ? top[0] : "";
+}
+
 export const forUser = query({
   args: { userId: v.id("users"), today: v.string() },
   handler: async (ctx, args): Promise<Briefing> => {
@@ -93,7 +103,13 @@ export const forUser = query({
       .filter((artist): artist is NonNullable<typeof artist> => artist !== null)
       .map((artist) => artist.name);
 
-    const upcoming = await upcomingInCity(ctx, (user.homeCity ?? "").trim(), args.today);
+    // A member who never finished onboarding still has a city: the one their
+    // diary is in. Live, maya has no homeCity and was offered Lily Allen at
+    // Madison Square Garden — the global fallback is honest for someone we
+    // know nothing about, and wrong for someone with six San Francisco
+    // nights on file.
+    const city = (user.homeCity ?? "").trim() || mostLoggedCity(logs);
+    const upcoming = await upcomingInCity(ctx, city, args.today);
 
     // Shows denormalize artist names but not genres, so join once per artist.
     const artistIds = [...new Set(upcoming.flatMap((show) => show.artistIds))];
