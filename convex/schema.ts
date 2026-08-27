@@ -192,6 +192,12 @@ export default defineSchema({
   catalogProposals: defineTable({
     clusterDate: v.string(), // ISO date of the night that had no match
     venueName: v.optional(v.string()), // absent when the night carried no GPS
+    // Set only on festival-day proposals: one row per DAY, whose artistNames is
+    // that day's bill. SPEC.md "a festival is one thing, not sixty" asks the
+    // catalog for exactly this row, so recovering a lineup now does not have to
+    // be undone when the data model lands.
+    festivalId: v.optional(v.string()),
+    title: v.optional(v.string()), // "Outside Lands — Saturday"; artists otherwise
     city: v.optional(v.string()),
     artistNames: v.array(v.string()),
     sourceUrl: v.string(), // the receipt — always shown next to the claim
@@ -274,6 +280,25 @@ export default defineSchema({
     .index("by_log", ["logId"])
     .index("by_show", ["showId"])
     .index("by_user", ["userId"]),
+
+  // A member telling us we are wrong about them.
+  //
+  // Beliefs are DERIVED, never stored — the briefing recomputes them from the
+  // diary every time — so a correction attaches to the sentence they were
+  // shown. Statements are count-free ("You keep going back to Rickshaw Stop")
+  // and the counts live in the basis, so the key stays stable while the
+  // evidence moves. `basisAtTime` is kept because a suppressed belief may only
+  // return when the evidence genuinely changed, and that comparison needs the
+  // number they were looking at when they said no.
+  beliefFeedback: defineTable({
+    userId: v.id("users"),
+    statement: v.string(),
+    verdict: v.union(v.literal("right"), v.literal("wrong")),
+    basisAtTime: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_statement", ["userId", "statement"]),
 
   // Metered third-party search credits, counted so a budget is enforced rather
   // than merely intended. Tavily credits are shared between consumers and

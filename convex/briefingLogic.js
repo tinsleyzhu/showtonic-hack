@@ -297,11 +297,20 @@ export function scoreFinds(shows, taste = {}) {
   return slate;
 }
 
-// What makes two cards the same recommendation: the act, not the row. The
-// title is the fallback for a bill the catalog never named an artist for.
+// What makes two cards the same recommendation: the HEADLINER, not the row.
+//
+// Keying on the whole bill was not enough, and the live catalog showed why.
+// Osees play The Chapel three nights and every night exists twice with a
+// different support list — "Osees, Traps PS, Brigid Dawson" against "Osees,
+// Brigid Dawson" — so the bills differ, the keys differed, and two cards
+// reading "Osees at The Chapel" landed next to each other. The card shows the
+// headliner, so the headliner is what makes two cards look the same.
+//
+// The title is the fallback for a bill the catalog never named an artist for,
+// which is how festivals arrive.
 function billKey(find) {
-  const artists = (find.evidence ?? []).length > 0 ? find.billArtists ?? [] : [];
-  if (artists.length > 0) return artists.map(normalize).sort().join("|");
+  const [headliner] = find.billArtists ?? [];
+  if (headliner) return normalize(headliner);
   return normalize(find.title).replace(/\s*\(.*\)$/, "").replace(/ at .*$/, "");
 }
 
@@ -464,6 +473,70 @@ function describeDrift(logs) {
     basis: `${nowCount} of your last ${recent.length} nights were ${best.genre}, against ${beforeCount} of the ${older.length} before`,
     strength: best.delta >= 0.4 ? "strong" : "forming",
   };
+}
+
+// The first count in a basis sentence — "6 of your 19 logged nights…" — which
+// is what "the evidence genuinely changed" is measured against.
+function basisCount(basis) {
+  const match = /\d+/.exec(String(basis ?? ""));
+  return match ? Number(match[0]) : null;
+}
+
+/**
+ * Apply a member's corrections to the beliefs we would otherwise show.
+ *
+ * "That's wrong" suppresses the belief — not for a cooling-off period. They
+ * said the claim is false; re-asserting it next week because a timer expired
+ * is the app arguing with someone about their own life. It comes back only
+ * when the evidence genuinely changed (the count behind it grew by half
+ * again), and when it does it SAYS it was corrected rather than reappearing
+ * as if nothing happened.
+ *
+ * "That's right" pins the belief and marks it confirmed. It does not promote
+ * `forming` to `strong`: strength is derived from counts, and a member
+ * agreeing with us is not more nights in the diary. Their agreement is its own
+ * fact, not a louder version of ours.
+ */
+export function applyBeliefFeedback(beliefs = [], feedback = [], options = {}) {
+  const { limit = 4 } = options;
+  const byStatement = new Map(
+    feedback.map((entry) => [normalize(entry.statement), entry]),
+  );
+
+  const kept = [];
+  for (const belief of beliefs) {
+    const correction = byStatement.get(normalize(belief.statement));
+    if (!correction) {
+      kept.push({ belief, pinned: false });
+      continue;
+    }
+
+    if (correction.verdict === "right") {
+      kept.push({
+        belief: { ...belief, basis: `${belief.basis} — and you confirmed it` },
+        pinned: true,
+      });
+      continue;
+    }
+
+    const then = basisCount(correction.basisAtTime);
+    const now = basisCount(belief.basis);
+    const evidenceChanged = then !== null && now !== null && now >= Math.ceil(then * 1.5);
+    if (!evidenceChanged) continue;
+
+    kept.push({
+      belief: {
+        ...belief,
+        basis: `${belief.basis} — you told me this was wrong when it was ${then}`,
+      },
+      pinned: false,
+    });
+  }
+
+  return kept
+    .sort((left, right) => Number(right.pinned) - Number(left.pinned))
+    .slice(0, Math.max(1, Math.min(limit, 4)))
+    .map((entry) => entry.belief);
 }
 
 // ---------------------------------------------------------------------------

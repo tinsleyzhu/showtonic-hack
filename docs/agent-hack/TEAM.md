@@ -745,6 +745,48 @@ against PAST shows, so history still rests on Setlist.fm (key still unset — it
 is now the highest-value missing key, above Spotify) and L2's catalog-gap
 agent.**
 
+
+### L1 enrich+catalog · 2026-08-27T (iteration 7)
+state:    building
+now:      the Tavily identifier RAN, and it works. dryRun first (queries read
+          correctly, anchored on room + city), then the live batch of 25 you
+          asked for: **21 of 25 identified, 25 credits spent, 1,475 left.**
+          Spot-checking the reasons, the two-independent-domains rule is doing
+          what it was built for — LUCKI came back hip hop/rap/trap corroborated
+          by wikipedia + shazam + four ticketing sites, David Rawlings came back
+          bluegrass alone rather than a pile of adjectives, and the four
+          declines wrote nothing rather than guessing.
+          COVERAGE MOVED: upcoming SF 803/1890 (42.5%) -> 824/1890 (43.6%);
+          global 1981 -> 2002 / 9162 (21.9%). Note how far the catalog work
+          already carried this: 7.2% upcoming at iteration 4, 43.6% now.
+          Then built the thing that makes the rest reachable. 1,066 upcoming SF
+          artists still have no genre, which is 43 hand-run batches;
+          `identifyArtistsContinuously` walks them on Convex's scheduler.
+          Caps are per RUN (`maxCredits`, default 200) with `searchBudget` as
+          the absolute ceiling underneath, so an accidental drain is impossible.
+          All of it decided by a pure planner, 12 cases, so the arithmetic that
+          spends money is tested without spending any. The two distinctions
+          worth naming: a batch that BROKE mid-page is retried, never mistaken
+          for an empty backlog (that is how a drain stalls silently), and a
+          partial grant reads budgetRemaining instead of inferring emptiness
+          from a short page — identical shapes, opposite meanings.
+shipped:  6634d95, 1402101 on lane/enrich — PR #17 (291 green, tsc + eslint
+          clean). The second one is the reason the first is safe to run: the
+          candidate query collected every show AND every artist on every call,
+          which at 9,162 artists is near Convex's read ceiling — a call with
+          limit 1 timed out on me mid-batch — and the drain calls it 43 times.
+          Now indexed on date and hydrating only the anchored artists, a chunk
+          at a time, stopping when the page is full.
+blocked:  -
+next:     coordinator: merge + deploy, then
+          `npx convex run artistSearch:identifyArtistsContinuously
+          '{"city":"San Francisco","maxCredits":200}'` and read the outcome.
+          At the observed 84% hit rate that is ~168 more artists for 200
+          credits. If the rate holds, the remaining 1,066 cost ~1,066 of the
+          1,475 left — the whole upcoming SF gap is affordable, which was not
+          true before the batch proved the rate.
+credits:  25 of 1500 spent, 1475 remaining.
+
 ---
 
 ### L2 match · 2026-08-27T03:10Z
@@ -878,6 +920,7 @@ bugs above.
 | interaction feedback: BackfillFlow accept, ShowView attendance/watchlist, AgentAccess revoke, ActivityView like/save | L6 | 07:35Z |
 | surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
 | onboarding a11y: aria-pressed on taste/genre/city selection, announced errors (app/OnboardingFlow.tsx) | L6 | 08:05Z |
+| festival lineup recovery (catalogGapUtils + catalogGap + festival eval) | L2 | 06:50Z |
 | app/views/PendingCandidates.tsx — NEW: human review surface for agent-created candidates | L6 | 08:25Z |
 | surface pass over L5's RecapExport.tsx (status/copy feedback, contrast, blob revoke) | L6 | 09:00Z |
 
@@ -1662,6 +1705,96 @@ resolve:candidates now exists, deployed and proven live: a write:candidates
 token calling resolve_candidate is refused by name with its granted scopes
 listed. Proposing and accepting are separate grants — an agent must not
 approve its own work. L5: the honest copy can go in.
+### L3 taste · 2026-08-27T09:20Z
+state:    shipped
+now:      wave 2 belief corrections (PR #23) + artists.ts, and a correction to my own number
+shipped:  PR #23, and a second PR to follow for artists.ts
+blocked:  both need merge + deploy; #23 adds a table
+next:     discovery.home / listShowSummaries — scoped here first, per your instruction
+
+**Retracting my own figure.** I said `artists.get` takes "over two minutes".
+It does not. That run was `npx convex run … | head`, and the pipe — not the
+query — is what hung. Measured properly from the linked worktree, three runs:
+**2.06s, 0.99s, 1.04s wall including CLI startup**, which sits either side of
+your 2.6s in the app. The mechanism is real and the fix is worth making; the
+number I quoted was an artifact of how I measured it, and I should have
+noticed that a query that "times out" and then returns complete data was
+telling me something about my pipe.
+
+**And a correction that runs the other way — the onboarding number was
+right, for a reason I had not verified when I claimed it.** Convex's limits:
+`db.get`/`db.query` CALLS are capped at **4,096**, documents scanned at
+32,000, data read at 16 MiB. The onboarding warning was counting CALLS —
+`artistsForOnboarding` issued one `ctx.db.get` per unique artist in the
+upcoming catalog, 3,798 of them, against a hard 4,096. That one really would
+have thrown, and the city-scoped read is what fixes it.
+
+It also means `discovery.cityStats` collecting 9,000 shows is *one call* and
+in no danger from that ceiling — a whole-table `.collect()` is cheap in calls
+and expensive in scan and bytes. Two different failure modes, and I had been
+treating them as one.
+
+**`artists.get`, rewritten (my lane now, per your call).** `shows` has no
+index that can answer "which shows list this artist" — `artistIds` is an
+array and Convex indexes scalars — so the complete fix is a `showArtists`
+join table: a schema change plus a backfill of the whole catalog, which is
+not a thing to do hours before a demo. Bounded instead: two indexed `by_date`
+ranges around today (730 days back, 400 forward, 3,000 cap), logs and photos
+read per show through `by_show` instead of two whole-table scans, and each
+reviewer fetched once rather than once per review. **Behaviour change worth
+knowing: a show more than two years old no longer appears on an artist page.**
+`artists.forOnboarding` is deleted — no callers since the grid moved to
+`taste.artistsForOnboarding`, and it did the same collect-everything scan.
+
+**Wave 2 is built and PR'd (#23)**, with both refusals stated in the PR in
+the terms you asked for. One additive table, no contract change.
+
+**Scope note, as instructed — `discovery.home` and `listShowSummaries`.** I
+have looked and not touched. `home` already bounds itself (±400/210 days,
+4,000 cap) and its own comment explains why, so it is in better shape than
+`artists.get` was; what it still does is `.collect()` `logs` and `attendance`
+whole-table alongside. That is scan-and-bytes, not calls, so it is a latency
+question rather than a ceiling one. Front door, separate PR, only if you want
+it before the freeze — say the word and I will take it on its own.
+
+**Still unrendered by me:** the briefing, the corrections and the artist page
+all need your deploy. The one I would look at first is the artist page — the
+window bound is the only change in any of this that can make something
+disappear rather than appear.
+
+### L3 taste · 2026-08-27T10:05Z
+state:    shipped
+now:      section ② proven against New York's catalog, not just San Francisco's
+shipped:  PR to follow (342/342 tests, tsc clean, lint 0 errors)
+blocked:  needs merge — no deploy required, tests and fixtures only
+next:     idle in-lane; hardening
+
+**Took the New York fixture set.** `test/briefingFixturesNewYork.mjs` is a
+real slice of the live NY catalog pulled today — real ids, real titles, real
+venues, and **deliberately not tidied**, because the duplication is the
+adversary. Arturo Sandoval appears four times on a single date across "The
+Blue Note" and "Blue Note Jazz Club"; that is exactly the shape that filled
+the whole slate with one act last round.
+
+Seven tests. The one worth reading is the rarity assertion, because it is the
+first time that model has been checked against a real catalog rather than a
+constructed one: **nine of this member's ten nights are jazz, and the jazz row
+still earns about a twentieth of the card**, because nearly every bill in the
+New York catalog is jazz too — so the fact separates nobody. The same diary
+against a catalog where jazz is rare makes it the strongest row on the card.
+That is the whole argument for rarity weighting, demonstrated on live data in
+one test, and it is a good thing to be able to point at on stage.
+
+The NY slate comes out as five distinct acts, all New York, all explained,
+every card's evidence summing to its score, led by the room the member keeps
+returning to. Beliefs behave: four, each counted, and the thin-diary refusal
+holds identically in both cities.
+
+One fixture note, since it is the kind of thing that quietly invalidates a
+test: my first draft spaced the diary evenly from a Friday, so all ten nights
+landed on a Friday and the weekday belief read "10 of 10". The fixture was
+validating its own arithmetic rather than the code's. Dates are irregular
+now and it reads 6 of 10.
 
 ### L5 share · 2026-08-27T11:20Z
 state:    shipped
@@ -1711,3 +1844,168 @@ cards are verified by real-metric geometry, real PNG encodes (150KB / 170KB,
 both shapes) and unit tests — not by a human looking at them. If anyone has a
 working screenshot path, the reclaim card at the end of the demo camera-roll
 flow is the one shot worth taking before we go on stage.
+### L3 taste · 2026-08-27T10:45Z
+state:    shipped
+now:      seam check against the DEPLOYED briefing; one duplicate slipped my own fix
+shipped:  PR to follow (344/344 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; watching for L6's flip
+
+**My one-card-per-act rule was keyed on the wrong thing, and the live
+briefing shows it.** Ran `briefing:forUser` against the deployment for all
+three seeded members. maya's slate: five finds, four acts — "Osees at The
+Chapel" twice, 27th and 28th.
+
+The catalog explains it. Osees play The Chapel three nights and **every night
+exists twice with a different support list** — `["Osees", "Traps PS",
+"Brigid Dawson"]` against `["Osees", "Brigid Dawson"]`. I keyed on the whole
+bill, so those were different keys and both cards shipped. The card shows the
+*headliner*, so the headliner is what makes two cards look the same to the
+person reading them. Keyed on that now, with the title as the fallback for a
+bill the catalog never named artists for — which is how festivals arrive, so
+Portola dedupes too. Both cases are tests, drawn from those exact rows.
+
+**Seam notes for L6, from reading PR #21 against what the query actually
+returns:**
+
+1. `briefingSurface.visibleFinds` filters unevidenced finds — belt and braces,
+   since the query cannot emit one, and I would keep it exactly as it is.
+2. `briefingIsEmpty` matches what a missing user returns from `forUser`
+   (`{decisionsOwed: 0, finds: [], beliefs: [], activity: []}`), so that path
+   is right. **But there is a real middle state to design for:** the second
+   seeded member returns 0 finds, 0 beliefs and 1 activity item — not empty,
+   and not a full briefing either. A page that renders one lonely activity row
+   under four headings is the case to look at.
+3. `timeAgo(at, now)` is safe against my `at` values — every source column
+   (`backfillCandidates.createdAt`, `logs.createdAt`, `squadPlans.createdAt`)
+   is required by the schema, so the `?? 0` fallbacks in `deriveActivity`
+   never fire in practice. If one ever did you would see "20692d ago", which
+   is at least loud rather than subtle.
+4. **The correction verbs are not in PR #21** — it predates wave 2. When you
+   wire them: `briefing.correctBelief({ userId, statement, basisAtTime, verdict })`
+   where `basisAtTime` is `belief.basis` **as displayed**, because the
+   "only comes back when the evidence changed" comparison needs the number the
+   member was actually looking at.
+5. ⚠️ **Your branch reintroduces the old `app/briefing.ts`** including the
+   "under 500 cap" belief the coordinator replaced after I flagged it as
+   underivable. That is a merge artifact of branching before the contract
+   landed — worth resolving toward main's version rather than yours.
+### L6 surface · 2026-08-27T10:15Z
+state:    shipped
+now:      wave-1 Briefing on fixtures, and the first render this lane has ever done
+shipped:  5 commits on lane/surface (292/292 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     flip fixtures → useQuery when briefing.forUser deploys; wave 2
+
+**The Briefing is home.** Four sections in the order the rule demands — a
+decision you owe outranks a summary of what you have already done. ① composes
+the existing PendingCandidates and SquadPlanCard rather than reimplementing
+them (both already self-empty, so they compose for free); ② renders finds with
+Yes / No / Why and evidence rows in the PendingCandidates pattern; ③ is L5's
+`AgentActivity` stub; ④ is beliefs with their basis visible. Discover survives
+as **Browse**, demoted not deleted, with a test asserting the tab still exists
+so a later pass cannot quietly drop it.
+
+**The flip is genuinely one line.** `BRIEFING_FIXTURE` is the *default value* of
+the `briefing` prop, not a hardcoding inside the component. When
+`briefing.forUser` deploys, page.tsx passes `briefing={useQuery(...)}` and
+nothing inside BriefingView.tsx changes.
+
+⚠️ **I RENDERED IT.** After six iterations of shipping unseen, this lane finally
+has eyes. Everything above was walked in a browser against the real backend.
+Four things I had previously only argued for are now observed:
+
+1. **The focus ring works.** Every input and select on Discover resolves
+   `solid 2px #ff7a50` at 2px offset, and buttons inside scroll containers take
+   the documented −2px inset variant. The unlayered-beats-layered cascade
+   argument was correct; I have now watched it win.
+2. **Skeletons hold the layout.** All five detail views render them; no jump.
+3. The a11y tree tool under-reports names on buttons with nested block content
+   — the onboarding city buttons look nameless in it and are not. **I nearly
+   filed that as a bug. Verify in the DOM before believing the tree.**
+4. The Briefing renders clean, no hydration errors, no console errors.
+
+**Two real defects found by rendering, both outside my fence — handing them
+over rather than reaching into `convex/`.**
+
+**① The onboarding taste grid offers the same artist twice.** Nine of the top
+forty-eight San Francisco names are doubled: one row from JamBase, one from
+Ticketmaster, different photos, same band. It is worse than cosmetic — selection
+is keyed by NAME while the grid is keyed by ID, so tapping one copy lights up
+both, and tapping both toggles your own pick back off. Diagnosis, real query
+output and a tested fix are in
+`docs/agent-hack/handoff/L6-found-duplicate-artists.patch` (on main).
+
+⚠️ **`convex/onboardingArtists.d.ts` on main now declares `mergeArtistDuplicates`
+with "counts summed". Please reconsider: summing double-counts.** The two rows
+frequently describe the very same concerts under two ids, so adding 8 + 8 = 16
+invents eight shows nobody can attend and pushes that artist up a ranking that
+is literally "how present are they in your city". My patch merges by MAX, which
+claims only "at least this many" — the strongest claim the data supports. Take
+whichever you prefer, but the sum is wrong.
+
+**② "Karaoke Tuesday" and "Open Mic Night" are the #1 and #2 artists offered to
+a San Franciscan**, under the heading "Start with artists you'd cross town to
+see." They rank first because ranking is by upcoming show count and a weekly
+residency has 13 dates while a touring band has one. **I tried to fix it and
+stopped**: the obvious discriminator is "no real genre", and the data kills it
+— Alex G, Buzzcocks and Galactic also have empty genres, so that filter hides
+three real artists to hide two listings. A name blocklist would be fragile and
+dishonest. This needs either an ingest-time "attraction vs artist" flag (L1 —
+Ticketmaster's API distinguishes them) or a ranking change (L3). Not mine to
+pick at this hour, but it is the first screen of the demo.
+
+**For L5 — `AgentActivity` props are frozen as `{ items, now }`.** `now` is a
+prop rather than a `Date.now()` inside the component on purpose: reading the
+clock during render makes the server and client output differ and hydrates as a
+React error on the home screen. Please keep it. The one thing I settled rather
+than left to you is that a refusal renders as integrity — accent colour, full
+weight, detail never collapsed, because for a refusal the reason IS the content.
+
+**For the coordinator — two contract notes, neither a shape change.**
+- `BRIEFING_FIXTURE.activity[].at` values are epoch times in **August 2025**, so
+  the live app renders "365d ago" under a heading that says "While you were
+  away". Please rebase them relative to now.
+- `decisionsOwed: 1` in the fixture, but section ① composes the real
+  `backfill.pending` / `squad.latest` queries, which are empty for a fresh
+  account — so the count promises a decision the section cannot show. It
+  resolves itself the moment `briefing.forUser` is live and both come from the
+  same source; flagging so it is not mistaken for a rendering bug before then.
+
+### L2 match · 2026-08-27T10:35Z
+state:    shipped
+now:      a third festival (non-SF) found a floor the first two could not, and a commit of mine that lied
+shipped:  0667653 on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     hold the wrong-day number at zero; a fourth festival if credits allow
+
+**Lollapalooza 2025 (Chicago) recovered nothing, and that is the fix.** Its
+JamBase day sections came back empty and setlist.fm's came back as one run-on
+line, so the day cut landed on an at-a-glance table and a set-times blob. What
+survived every filter was `Grant Park` (the venue), `Summerdance`, and
+`Sofia Camara Silly Goose` — two acts merged into one name. Three real-looking
+claims about who played, not one of them a bill.
+
+There is now a floor: **fewer than four names on a festival day is a page we
+failed to read, not a thin bill.** Both Lollapalooza days decline and say so,
+as does the Hardly Strictly Saturday that was carrying setlist.fm's noise. A
+festival day genuinely has more acts than three; a proposal that cannot clear
+that has recovered a table, not a lineup.
+
+**And a correction to my own record.** My earlier commit (`39c2956`, cherry-
+picked as `fd768b7`) says it stopped splitting on colons — the fix that keeps
+"John Prine: Songs & Souvenirs w/ Jason Wilber & Dave Jacques" from billing an
+artist who died in 2020. **That edit silently failed to apply.** The commit
+shipped the message without the change, and the behaviour I checked at the time
+came from the other three fixes in it. It is applied now and verified in the
+file rather than inferred from output. Nothing was ever deployed with the hole,
+and the eval numbers are unaffected — but the message overstated the diff, and
+anyone reading that commit should read this block next to it.
+
+Outside Lands is unchanged where it matters: 92 acts across three days, 0
+wrong-day placements, 0 acts on two days. 301 tests, tsc clean, lint 0 errors.
+
+**A note for the coordinator on this worktree.** L2 now works out of
+`../st-fest` on `lane/match-festivals-pr`. The main checkout was being reset
+under it by the concierge session, which discarded uncommitted lane work once;
+the fence exists for exactly that reason.

@@ -1,7 +1,12 @@
 import { action, mutation, query, type ActionCtx } from "./_generated/server";
 import { api } from "./_generated/api";
 import { v } from "convex/values";
-import { buildArtistSearchQuery, decideArtistGenres } from "./artistSearchUtils.js";
+import type { Id } from "./_generated/dataModel";
+import {
+  buildArtistSearchQuery,
+  decideArtistGenres,
+  planNextIdentifyBatch,
+} from "./artistSearchUtils.js";
 import type { SearchResult } from "./artistSearchUtils.js";
 
 // Last-resort artist identification by web search, after Ticketmaster
@@ -123,17 +128,23 @@ export const listUpcomingArtistsNeedingIdentity = query({
     const today = args.today ?? new Date(Date.now()).toISOString().slice(0, 10);
     const cityNeedle = args.city?.trim().toLowerCase();
 
-    const [artists, shows] = await Promise.all([
-      ctx.db.query("artists").collect(),
-      ctx.db.query("shows").collect(),
-    ]);
+    // Read the upcoming slice by index rather than collecting every show: the
+    // driver calls this once per batch, and a full scan of both tables is what
+    // made a single call time out. Past shows can never anchor a query here —
+    // the point is an artist someone can still go and see.
+    const shows = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", today))
+      .collect();
 
     // Best anchor per artist: the soonest upcoming show, whose venue and city
     // are what make the query specific enough to trust.
     const anchor = new Map<string, { date: string; venueName: string; city: string }>();
     const weight = new Map<string, number>();
     for (const show of shows) {
-      if (show.date < today) continue;
+      // City is matched case-insensitively in JS rather than through
+      // by_city_date, because an exact-case index miss would return an empty
+      // page and the driver would read that as "backlog empty" and stop.
       if (cityNeedle && show.city.toLowerCase() !== cityNeedle) continue;
       for (const artistId of show.artistIds) {
         weight.set(artistId, (weight.get(artistId) ?? 0) + 1);
@@ -144,17 +155,36 @@ export const listUpcomingArtistsNeedingIdentity = query({
       }
     }
 
-    return artists
-      .filter((artist) => (artist.genres ?? []).length === 0)
-      .filter((artist) => anchor.has(artist._id))
-      .sort((left, right) => (weight.get(right._id) ?? 0) - (weight.get(left._id) ?? 0))
-      .slice(0, limit)
-      .map((artist) => ({
-        _id: artist._id,
-        name: artist.name,
-        venueName: anchor.get(artist._id)!.venueName,
-        city: anchor.get(artist._id)!.city,
-      }));
+    // Hydrate only the artists an upcoming show actually anchors — not the
+    // whole table. Every one of them is fetched (not just the first page)
+    // because a bounded scan that runs out mid-page returns a short page, and
+    // a short page is the driver's signal that the backlog is empty. Cheap
+    // ranking first, then the reads.
+    const ranked = [...anchor.keys()].sort(
+      (left, right) => (weight.get(right) ?? 0) - (weight.get(left) ?? 0),
+    );
+
+    // Fetched a chunk at a time so a tail pass over ~1,900 anchored artists is
+    // not 1,900 sequential round trips, and stopping as soon as the page is
+    // full so the common case reads barely more than `limit` documents.
+    const CHUNK = 50;
+    const candidates: { _id: Id<"artists">; name: string; venueName: string; city: string }[] = [];
+    for (let start = 0; start < ranked.length && candidates.length < limit; start += CHUNK) {
+      const chunk = await Promise.all(
+        ranked.slice(start, start + CHUNK).map((artistId) => ctx.db.get(artistId as Id<"artists">)),
+      );
+      for (const artist of chunk) {
+        if (candidates.length >= limit) break;
+        if (!artist || (artist.genres ?? []).length > 0) continue;
+        candidates.push({
+          _id: artist._id,
+          name: artist.name,
+          venueName: anchor.get(artist._id)!.venueName,
+          city: anchor.get(artist._id)!.city,
+        });
+      }
+    }
+    return candidates;
   },
 });
 
@@ -197,6 +227,7 @@ export const identifyArtistsWithSearch = action({
     args,
   ): Promise<{
     searched: number;
+    requested: number;
     identified: number;
     declined: number;
     creditsSpent: number;
@@ -220,6 +251,7 @@ export const identifyArtistsWithSearch = action({
       const budget = await ctx.runQuery(api.artistSearch.searchBudgetStatus, {});
       return {
         searched: 0,
+        requested: candidates.length,
         identified: 0,
         declined: 0,
         creditsSpent: 0,
@@ -238,6 +270,7 @@ export const identifyArtistsWithSearch = action({
       const budget = await ctx.runQuery(api.artistSearch.searchBudgetStatus, {});
       return {
         searched: 0,
+        requested: candidates.length,
         identified: 0,
         declined: 0,
         creditsSpent: 0,
@@ -255,6 +288,7 @@ export const identifyArtistsWithSearch = action({
     if (reservation.granted === 0) {
       return {
         searched: 0,
+        requested: candidates.length,
         identified: 0,
         declined: 0,
         creditsSpent: 0,
@@ -317,11 +351,125 @@ export const identifyArtistsWithSearch = action({
     const budget = await ctx.runQuery(api.artistSearch.searchBudgetStatus, {});
     return {
       searched,
+      requested: Math.min(candidates.length, reservation.granted),
       identified,
       declined: searched - identified,
       creditsSpent: searched,
       budget: { spent: budget.spent, limit: budget.limit, remaining: budget.remaining },
       outcomes,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// The driver
+// ---------------------------------------------------------------------------
+//
+// 1,066 upcoming SF artists still have no genre and each one costs a credit, so
+// draining the backlog by hand is 43 invocations of the batch above. This walks
+// it with one call and then gets out of the way: run a batch, ask the pure
+// planner what to do, reschedule or stop.
+//
+// The caps are per RUN, not per lifetime: `maxCredits` bounds what a single
+// call can spend so an accidental drain is impossible, while `searchBudget`
+// remains the absolute ceiling underneath it. Interrupting is safe — an artist
+// that was not reached is still reported as missing, so calling this again
+// resumes rather than repeats.
+
+export const identifyArtistsContinuously = action({
+  args: {
+    limit: v.optional(v.number()),
+    city: v.optional(v.string()),
+    today: v.optional(v.string()),
+    minDomains: v.optional(v.number()),
+    maxCredits: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    // Chain state — callers leave these alone.
+    batchIndex: v.optional(v.number()),
+    creditsSpent: v.optional(v.number()),
+    failures: v.optional(v.number()),
+  },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    batchIndex: number;
+    searched: number;
+    identified: number;
+    creditsSpentThisRun: number;
+    done: boolean;
+    stopped: boolean;
+    reason: string;
+  }> => {
+    const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+    const maxCredits = Math.max(args.maxCredits ?? 200, 1);
+    const maxBatches = Math.max(args.maxBatches ?? 100, 1);
+    const batchIndex = args.batchIndex ?? 0;
+    const creditsSpent = args.creditsSpent ?? 0;
+    const failures = args.failures ?? 0;
+
+    // Never ask for more than the run has left to spend.
+    const batchLimit = Math.max(1, Math.min(limit, maxCredits - creditsSpent));
+
+    let result: {
+      searched: number;
+      requested: number;
+      identified: number;
+      skipped?: string;
+      budget: { remaining: number };
+    } | null = null;
+    try {
+      result = await ctx.runAction(api.artistSearch.identifyArtistsWithSearch, {
+        limit: batchLimit,
+        city: args.city,
+        today: args.today,
+        minDomains: args.minDomains,
+      });
+    } catch {
+      result = null;
+    }
+
+    const plan = planNextIdentifyBatch({
+      limit,
+      maxCredits,
+      creditsSpent,
+      batchIndex,
+      maxBatches,
+      failures,
+      last:
+        result === null
+          ? null
+          : {
+              searched: result.searched,
+              requested: result.requested,
+              identified: result.identified,
+              skipped: result.skipped,
+              budgetRemaining: result.budget.remaining,
+            },
+    });
+
+    if (!plan.stop && plan.delayMs !== null) {
+      await ctx.scheduler.runAfter(plan.delayMs, api.artistSearch.identifyArtistsContinuously, {
+        limit: plan.nextLimit,
+        city: args.city,
+        today: args.today,
+        minDomains: args.minDomains,
+        maxCredits,
+        maxBatches,
+        batchIndex: batchIndex + 1,
+        creditsSpent: plan.creditsSpent,
+        failures: plan.failures,
+      });
+    }
+
+    return {
+      batchIndex,
+      searched: result?.searched ?? 0,
+      identified: result?.identified ?? 0,
+      creditsSpentThisRun: plan.creditsSpent,
+      done: plan.done,
+      stopped: plan.stop,
+      reason: plan.reason,
     };
   },
 });

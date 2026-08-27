@@ -1,12 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Bell, CircleUserRound, Library, Sparkles, SquarePlus } from "lucide-react";
+import { Bell, Bot, CircleUserRound, Library, Search, SquarePlus } from "lucide-react";
 import { activeTab, tabDestination, visibleTabs } from "../navigation.js";
 import type { CatalogMode, View } from "./shared";
 
 const tabIcons: Record<string, ReactNode> = {
-  discover: <Sparkles key="discover" />,
+  briefing: <Bot key="briefing" />,
+  discover: <Search key="discover" />,
   diary: <Library key="diary" />,
   log: <SquarePlus key="log" />,
   activity: <Bell key="activity" />,

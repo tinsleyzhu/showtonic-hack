@@ -9,6 +9,7 @@ import {
   genreEvidenceFromResults,
   corroboratedGenres,
   decideArtistGenres,
+  planNextIdentifyBatch,
 } from "../convex/artistSearchUtils.js";
 
 test("buildArtistSearchQuery anchors on the room and the city", () => {
@@ -126,4 +127,118 @@ test("decideArtistGenres accepts a genre two independent sources agree on", () =
 test("decideArtistGenres handles an empty or missing result set", () => {
   assert.deepEqual(decideArtistGenres([], { name: "Otha" }).genres, []);
   assert.deepEqual(decideArtistGenres(undefined, { name: "Otha" }).genres, []);
+});
+
+// ---------------------------------------------------------------------------
+// planNextIdentifyBatch — the arithmetic that decides whether to spend more.
+// ---------------------------------------------------------------------------
+
+const full = { searched: 25, requested: 25, identified: 21, budgetRemaining: 1000 };
+
+test("a full page under both caps keeps draining", () => {
+  const plan = planNextIdentifyBatch({ limit: 25, maxCredits: 200, creditsSpent: 0, last: full });
+  assert.equal(plan.stop, false);
+  assert.equal(plan.done, false);
+  assert.equal(plan.nextLimit, 25);
+  assert.equal(plan.creditsSpent, 25);
+});
+
+test("the run's credit cap is a ceiling, not a suggestion", () => {
+  const plan = planNextIdentifyBatch({ limit: 25, maxCredits: 25, creditsSpent: 0, last: full });
+  assert.equal(plan.stop, true);
+  assert.equal(plan.done, false); // the backlog is still there
+  assert.match(plan.reason, /credit cap/);
+  assert.equal(plan.delayMs, null);
+});
+
+test("the last partial batch is trimmed to what the cap leaves", () => {
+  const plan = planNextIdentifyBatch({ limit: 25, maxCredits: 60, creditsSpent: 25, last: full });
+  assert.equal(plan.stop, false);
+  assert.equal(plan.nextLimit, 10); // 60 - 50, not another full page
+});
+
+test("a short page means the backlog ran out — that is done, not stopped", () => {
+  const plan = planNextIdentifyBatch({
+    limit: 25,
+    maxCredits: 200,
+    last: { searched: 4, requested: 4, identified: 3, budgetRemaining: 900 },
+  });
+  assert.equal(plan.done, true);
+  assert.equal(plan.stop, true);
+  assert.match(plan.reason, /backlog empty/);
+});
+
+test("an exhausted search budget stops the chain but never reports done", () => {
+  const skipped = planNextIdentifyBatch({
+    limit: 25,
+    last: { searched: 0, requested: 25, identified: 0, skipped: "search budget exhausted" },
+  });
+  assert.equal(skipped.stop, true);
+  assert.equal(skipped.done, false);
+
+  // A partial grant spends the remainder and comes back empty-handed. A short
+  // page here must not be read as "nothing left to enrich".
+  const partial = planNextIdentifyBatch({
+    limit: 25,
+    last: { searched: 8, requested: 8, identified: 6, budgetRemaining: 0 },
+  });
+  assert.equal(partial.stop, true);
+  assert.equal(partial.done, false);
+  assert.match(partial.reason, /budget exhausted/);
+  assert.equal(partial.creditsSpent, 8);
+});
+
+test("a missing key stops the chain instead of looping on it", () => {
+  const plan = planNextIdentifyBatch({
+    limit: 25,
+    last: { searched: 0, requested: 25, skipped: "TAVILY_API_KEY is not set" },
+  });
+  assert.equal(plan.stop, true);
+  assert.equal(plan.done, false);
+  assert.match(plan.reason, /TAVILY_API_KEY/);
+});
+
+test("a thrown batch retries with a growing backoff, then gives up", () => {
+  const first = planNextIdentifyBatch({ limit: 25, failures: 0, last: null });
+  assert.equal(first.stop, false);
+  assert.equal(first.failures, 1);
+  assert.equal(first.delayMs, 5_000);
+
+  const second = planNextIdentifyBatch({ limit: 25, failures: 1, last: null });
+  assert.equal(second.delayMs, 10_000);
+
+  const last = planNextIdentifyBatch({ limit: 25, failures: 4, last: null });
+  assert.equal(last.stop, true);
+  assert.equal(last.done, false);
+  assert.match(last.reason, /gave up/);
+});
+
+test("a batch that broke early is retried, not mistaken for a finish line", () => {
+  const plan = planNextIdentifyBatch({
+    limit: 25,
+    maxCredits: 200,
+    last: { searched: 9, requested: 25, identified: 7, budgetRemaining: 900 },
+  });
+  assert.equal(plan.done, false);
+  assert.equal(plan.stop, false);
+  assert.equal(plan.failures, 1);
+  assert.equal(plan.creditsSpent, 9); // the nine it did spend still count
+  assert.match(plan.reason, /stopped early/);
+});
+
+test("one success clears the failure streak", () => {
+  const plan = planNextIdentifyBatch({ limit: 25, maxCredits: 200, failures: 3, last: full });
+  assert.equal(plan.failures, 0);
+});
+
+test("the batch cap bounds a single call independently of credits", () => {
+  const plan = planNextIdentifyBatch({
+    limit: 25,
+    maxCredits: 10_000,
+    maxBatches: 3,
+    batchIndex: 2,
+    last: full,
+  });
+  assert.equal(plan.stop, true);
+  assert.match(plan.reason, /batch cap/);
 });
