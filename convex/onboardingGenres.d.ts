@@ -18,5 +18,8 @@ export function rankOnboardingGenres(
     limit?: number;
     cityWeight?: number;
     perFamily?: number;
+    /** One genre array per ARTIST — used to learn subgenre relationships. */
+    genreSets?: readonly (readonly string[])[];
+    cooccurrenceThreshold?: number;
   },
 ): RankedOnboardingGenre[];
