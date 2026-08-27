@@ -692,6 +692,8 @@ agent.**
 | Hacker Bob scan | L4 | 2026-08-26T23:50Z |
 | app/globals.css + app/views/shared.tsx (design primitives) | L6 | 06:00Z |
 | focus visibility + live regions (globals.css only) | L6 | 06:00Z |
+| loading-state guards in ShowView/EntityViews/TasteMatchView/ProfileView (first 2 lines of each component only) | L6 | 06:40Z |
+| notice banner + boot copy in app/page.tsx | L6 | 06:40Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked

@@ -8,12 +8,13 @@ import {
   adaptShow,
   BackButton,
   collapseFestivalShows,
+  DetailSkeleton,
   EmptyLine,
+  InlinePanel,
   PageTitle,
   ReviewRow,
   SectionTitle,
   ShowRail,
-  StatusPanel,
   todayIso,
   tracksFor,
   type LiveState,
@@ -57,8 +58,8 @@ export function VenuesDirectoryView({ shows, openVenue, embedded = false }: { sh
 }
 
 export function ArtistView({ detail, onBack, openShow, onFollow }: { detail: LiveState["artistDetail"]; onBack: () => void; openShow: (id: string) => void; onFollow: (id: string) => Promise<unknown> }) {
-  if (detail === undefined) return <StatusPanel title="Loading artist" detail="Reading the seeded JamBase profile..." loading />;
-  if (!detail) return <StatusPanel title="Artist unavailable" detail="Return to the show and choose another artist." />;
+  if (detail === undefined) return <DetailSkeleton label="Loading this artist" />;
+  if (!detail) return <InlinePanel actionLabel="Go back" detail="We could not find a profile for them. Pick another artist from the show you came from." onAction={onBack} title="This artist page is empty" />;
   const artist = detail.artist;
   const shows = collapseFestivalShows(detail.shows.map((show) => adaptShow(show)));
   const upcoming = shows.filter((show) => show.date >= todayIso()).sort((a, b) => a.date.localeCompare(b.date));
@@ -79,8 +80,8 @@ export function ArtistView({ detail, onBack, openShow, onFollow }: { detail: Liv
 }
 
 export function VenueView({ detail, onBack, openShow, onFollow, onToggleWatchlist }: { detail: LiveState["venueDetail"]; onBack: () => void; openShow: (id: string) => void; onFollow: (id: string) => Promise<unknown>; onToggleWatchlist: (venueId: string) => Promise<unknown> }) {
-  if (detail === undefined) return <StatusPanel title="Loading venue" detail="Reading the venue archive..." loading />;
-  if (!detail) return <StatusPanel title="Venue unavailable" detail="Return to the show and choose another venue." />;
+  if (detail === undefined) return <DetailSkeleton label="Loading this venue" />;
+  if (!detail) return <InlinePanel actionLabel="Go back" detail="We could not find a page for it. Pick another venue from the show you came from." onAction={onBack} title="This venue page is empty" />;
   const venue = detail.venue;
   const shows = collapseFestivalShows(detail.shows.map((show) => adaptShow(show)));
   const upcoming = shows.filter((show) => show.date >= todayIso()).sort((a, b) => a.date.localeCompare(b.date));

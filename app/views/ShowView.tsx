@@ -8,7 +8,9 @@ import { resolveShowImage } from "../liveData.js";
 import {
   adaptShow,
   collapseFestivalShows,
+  DetailSkeleton,
   EmptyLine,
+  InlinePanel,
   RatingStars,
   ReviewRow,
   SectionTitle,
@@ -79,8 +81,8 @@ export function ShowView({
   submitLog: () => Promise<void>;
   currentUserId?: Id<"users">;
 }) {
-  if (detail === undefined) return <StatusPanel title="Loading show" detail="Pulling the live details from Convex..." loading />;
-  if (!detail) return <StatusPanel title="Show not found" detail="Choose another show from Discover." />;
+  if (detail === undefined) return <DetailSkeleton label="Loading this show" />;
+  if (!detail) return <InlinePanel actionLabel="Back to Discover" detail="It may have been removed from the catalog since you opened it." onAction={onBack} title="We could not open this show" />;
 
   const show = adaptShow({
     ...detail.show,

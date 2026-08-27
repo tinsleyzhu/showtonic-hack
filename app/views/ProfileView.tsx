@@ -7,13 +7,14 @@ import { SquadPlanCard } from "./SquadPlan";
 import { groupMemories, resolveShowImage, toMemory, type LiveMemory } from "../liveData.js";
 import {
   Avatar,
+  DetailSkeleton,
   EmptyLine,
   formatDate,
+  InlinePanel,
   LOW_N_THRESHOLD,
   PageTitle,
   SectionTitle,
   Stat,
-  StatusPanel,
   type DiaryFilter,
   type LiveState,
 } from "./shared";
@@ -23,8 +24,8 @@ export function ProfileView({ profile, memories, filter, onFilter, openShow, ope
   const [pinDraft, setPinDraft] = useState<string[]>([]);
   const [favoritesError, setFavoritesError] = useState("");
 
-  if (profile === undefined) return <StatusPanel title="Loading profile" detail="Calculating your live music stats..." loading />;
-  if (!profile) return <StatusPanel title="Profile unavailable" detail="Reload to retry your local identity." />;
+  if (profile === undefined) return <DetailSkeleton label="Loading your diary" />;
+  if (!profile) return <InlinePanel actionLabel="Reload" detail="Your diary lives against a local identity that did not load. Reloading usually brings it back." onAction={() => window.location.reload()} title="We could not open your diary" />;
 
   const lowN = profile.stats.shows < LOW_N_THRESHOLD;
 

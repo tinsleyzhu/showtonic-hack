@@ -132,6 +132,15 @@ export function StatusPanel({ title, detail, loading = false }: { title: string;
   return <main className="flex min-h-screen items-center justify-center bg-[#0A0908] px-6 text-[#F5F1E8]"><section aria-live="polite" className="max-w-xl border border-[#2A2521] bg-[#141210] p-8" role="status"><p className="text-xs font-black uppercase tracking-[0.2em] text-[#FF7A50]">{loading ? "Live sync" : "Showtonic"}</p><h1 className="font-display mt-3 text-3xl">{title}</h1><p className="mt-4 leading-7 text-[#C9C1B4]">{detail}</p>{loading && <div className="mt-6 h-1 overflow-hidden bg-[#2A2521]"><div className="h-full w-1/2 animate-pulse bg-[#FF7A50]" /></div>}</section></main>;
 }
 
+// The "we could not load this" case, rendered INSIDE the app layout. StatusPanel
+// emits its own <main class="min-h-screen">, which is right for the boot screens
+// in page.tsx and wrong here — nested inside the page's own <main> it is both a
+// duplicate landmark and a full viewport of empty space that shoves the content
+// you were reading off screen.
+export function InlinePanel({ title, detail, actionLabel, onAction }: { title: string; detail: string; actionLabel?: string; onAction?: () => void }) {
+  return <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6"><section aria-live="polite" className="border border-[#2A2521] bg-[#141210] p-8" role="status"><h1 className="font-display text-2xl">{title}</h1><p className="mt-3 leading-7 text-[#C9C1B4]">{detail}</p>{actionLabel && onAction && <button className="mt-6 bg-[#FF7A50] px-5 py-3 text-sm font-black text-black" onClick={onAction} type="button">{actionLabel}</button>}</section></div>;
+}
+
 export function SectionTitle({ title, eyebrow }: { title: string; eyebrow: string }) {
   return <div><p className="text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]">{eyebrow}</p><h2 className="font-display mt-1 text-2xl">{title}</h2></div>;
 }
