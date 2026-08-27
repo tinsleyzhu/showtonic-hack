@@ -31,6 +31,13 @@ const MCP_ORIGIN = process.env.SHOWTONIC_APP_URL ?? "https://showtonic-hack.show
 const MCP_TOKEN = process.env.SHOWTONIC_MCP_TOKEN ?? "";
 const MCP_HANDLE = process.env.SHOWTONIC_MCP_HANDLE ?? "walkthrough";
 const CITIES = ["San Francisco", "New York"];
+
+// Rooms that must stay APART. L1's venue merge folds aliases for one room
+// together; these two are a genuinely different pair at one address, and a
+// normalizer that folds them silently moves 1,537 shows into the wrong room.
+// L1 ships an enumerated list with this as its own refusal test — this is the
+// independent check that the refusal actually held in the data afterwards.
+const MUST_STAY_DISTINCT = [["Birdland Jazz Club", "Birdland Theater"]];
 const TODAY = process.env.SNAPSHOT_TODAY ?? new Date().toISOString().slice(0, 10);
 
 function readEnvUrl() {
@@ -165,7 +172,73 @@ async function snapshot() {
     out.cities[city] = stats?.__error ? stats : stats;
   }
 
+  out.venues = await venueIdentity();
+
   return out;
+}
+
+// Venue identity as the SHOW rows see it, which is the layer a person actually
+// reads: a residency split across two alias rows renders as an artist changing
+// rooms mid-run. Sampled over a forward window rather than counted exhaustively
+// — enough to catch a name that maps to several ids, an id that answers to
+// several names, or a show that lost its venue entirely.
+async function venueIdentity() {
+  const byName = new Map();
+  const byId = new Map();
+  let rows = 0;
+  let missingVenue = 0;
+
+  for (const city of CITIES) {
+    for (let chunk = 0; chunk < 6; chunk += 1) {
+      const from = shiftDays(TODAY, chunk * 45);
+      const to = shiftDays(TODAY, chunk * 45 + 44);
+      const shows = (await query("shows:listCatalog", { city, from, to, limit: 250 })) ?? [];
+      if (shows.__error) continue;
+      for (const show of shows) {
+        rows += 1;
+        const name = (show.venueName ?? "").trim();
+        const id = String(show.venueId ?? "");
+        if (!name || !id) {
+          missingVenue += 1;
+          continue;
+        }
+        if (!byName.has(name)) byName.set(name, new Set());
+        byName.get(name).add(id);
+        if (!byId.has(id)) byId.set(id, new Set());
+        byId.get(id).add(name);
+      }
+    }
+  }
+
+  const coverage = await query("venues:coordinateCoverage", {});
+  const splitNames = [...byName.entries()].filter(([, ids]) => ids.size > 1).map(([name, ids]) => `${name} -> ${ids.size} ids`);
+  const sharedIds = [...byId.entries()].filter(([, names]) => names.size > 1).map(([, names]) => [...names].sort().join(" = "));
+
+  // The refusal check. Same id for both rooms means the merge went too far.
+  const refusalsBroken = [];
+  for (const [a, b] of MUST_STAY_DISTINCT) {
+    const idsA = byName.get(a);
+    const idsB = byName.get(b);
+    if (!idsA || !idsB) continue;
+    const overlap = [...idsA].filter((id) => idsB.has(id));
+    if (overlap.length) refusalsBroken.push(`MERGED WRONGLY: ${a} + ${b}`);
+  }
+
+  return {
+    venueRowsTotal: coverage?.total,
+    showRowsSampled: rows,
+    showsWithNoVenue: missingVenue,
+    distinctNames: byName.size,
+    namesSplitAcrossIds: splitNames.sort(),
+    idsAnsweringToSeveralNames: sharedIds.sort(),
+    refusalsBroken,
+  };
+}
+
+function shiftDays(iso, days) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function flatten(value, prefix = "", into = {}) {
@@ -217,7 +290,9 @@ if (mode === "diff") {
   // Anything that looks like a broken reference is called out separately,
   // because a count that merely moved is fine and a dangling row never is.
   const alarms = changes.filter((c) =>
-    /dangling|missing|WithoutShow|WithoutEvidence|withoutReason|NO SHOW ROW|MISMATCH|__error|mcp\.error/i.test(`${c.key}${c.after}`),
+    /dangling|missing|WithoutShow|WithoutEvidence|withoutReason|NO SHOW ROW|MISMATCH|__error|mcp\.error|refusalsBroken|MERGED WRONGLY|showsWithNoVenue/i.test(
+      `${c.key}${c.after}`,
+    ),
   );
   if (alarms.length) {
     console.log(`\n!! ${alarms.length} of those look like BROKEN REFERENCES, not just moved numbers.`);
@@ -251,5 +326,13 @@ if (mode === "diff") {
     );
   } else {
     console.log("  MCP: skipped (set SHOWTONIC_MCP_TOKEN to include the agent surface)");
+  }
+  if (result.venues) {
+    const v = result.venues;
+    console.log(
+      `  venues: ${v.venueRowsTotal} rows, ${v.distinctNames} names over ${v.showRowsSampled} sampled shows, ` +
+        `${v.namesSplitAcrossIds.length} names split across ids, ${v.showsWithNoVenue} shows with no venue` +
+        `${v.refusalsBroken.length ? ` — ${v.refusalsBroken.join("; ")}` : ""}`,
+    );
   }
 }
