@@ -181,36 +181,32 @@ export const enrich = mutation({
 
 // Public taste-seed grid for onboarding step 2 (design 04): the catalog's most
 // booked artists, no identity required.
-export const forOnboarding = query({
-  args: { limit: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const limit = Math.min(args.limit ?? 18, 48);
-    const shows = await ctx.db.query("shows").collect();
-    const counts = new Map<Id<"artists">, number>();
-    for (const show of shows) {
-      for (const artistId of show.artistIds) {
-        counts.set(artistId, (counts.get(artistId) ?? 0) + 1);
-      }
-    }
-    const ranked = [...counts.entries()]
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, limit);
-    const artists = await Promise.all(
-      ranked.map(async ([artistId, showCount]) => {
-        const artist = await ctx.db.get(artistId);
-        if (!artist) return null;
-        return {
-          _id: artist._id,
-          name: artist.name,
-          image: artist.image,
-          genres: artist.genres,
-          showCount,
-        };
-      }),
-    );
-    return artists.filter((artist) => artist !== null);
-  },
-});
+// The artist page.
+//
+// This used to `.collect()` the entire `shows`, `logs` and `media` tables and
+// filter them in JavaScript — roughly 9,000 shows scanned to render one page,
+// growing every time L1 syncs. Convex's limits explain which wall it was
+// walking toward: `db.get`/`db.query` CALLS are capped at 4,096, and documents
+// scanned at 32,000 with 16 MiB of data. Three whole-table collects are only
+// three calls, so the call ceiling was never the problem — the scan and the
+// bytes were, and so was the latency a human feels on a tap.
+//
+// `shows` has no index that can answer "which shows list this artist" —
+// `artistIds` is an array, and Convex indexes scalars. The complete fix is a
+// `showArtists` join table, which is a schema change plus a backfill of every
+// show in the catalog; that is not a thing to do hours before a demo. So the
+// scan is BOUNDED instead: a window around today, read through `by_date`, in
+// two indexed ranges. An artist's page shows the nights you could still go to
+// and the recent past, which is what the window covers.
+const ARTIST_WINDOW_DAYS_BACK = 730;
+const ARTIST_WINDOW_DAYS_FORWARD = 400;
+const ARTIST_MAX_SHOWS = 3000;
+
+function shiftIsoDate(iso: string, days: number) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 export const get = query({
   args: {
@@ -223,12 +219,32 @@ export const get = query({
       return null;
     }
 
-    const allShows = await ctx.db.query("shows").collect();
-    const shows = allShows.filter((show) => show.artistIds.includes(args.artistId));
-    const showIds = new Set(shows.map((show) => show._id));
-    const [allLogs, allMedia, followers, currentFollow] = await Promise.all([
-      ctx.db.query("logs").collect(),
-      ctx.db.query("media").collect(),
+    const today = new Date().toISOString().slice(0, 10);
+    const scanned = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) =>
+        q
+          .gte("date", shiftIsoDate(today, -ARTIST_WINDOW_DAYS_BACK))
+          .lte("date", shiftIsoDate(today, ARTIST_WINDOW_DAYS_FORWARD)),
+      )
+      .take(ARTIST_MAX_SHOWS);
+    const shows = scanned.filter((show) => show.artistIds.includes(args.artistId));
+    const showIds = shows.map((show) => show._id);
+
+    // Indexed per show instead of reading every log and every photo in the
+    // database: a handful of small queries beats two whole-table scans, and
+    // both stay far inside the 4,096-call ceiling.
+    const [logsByShow, mediaByShow, followers, currentFollow] = await Promise.all([
+      Promise.all(
+        showIds.map((showId) =>
+          ctx.db.query("logs").withIndex("by_show", (q) => q.eq("showId", showId)).collect(),
+        ),
+      ),
+      Promise.all(
+        showIds.map((showId) =>
+          ctx.db.query("media").withIndex("by_show", (q) => q.eq("showId", showId)).collect(),
+        ),
+      ),
       ctx.db
         .query("artistFollows")
         .withIndex("by_artist", (q) => q.eq("artistId", args.artistId))
@@ -242,14 +258,20 @@ export const get = query({
             .unique()
         : null,
     ]);
-    const logs = allLogs.filter((log) => showIds.has(log.showId));
-    const media = allMedia.filter((item) => showIds.has(item.showId));
-    const [users, mediaWithUrls] = await Promise.all([
-      Promise.all(logs.map((log) => ctx.db.get(log.userId))),
+
+    const logs = logsByShow.flat();
+    const media = mediaByShow.flat();
+
+    // One read per distinct reviewer, not one per review: a member with six
+    // logs for this artist was fetched six times.
+    const reviewerIds = [...new Set(logs.map((log) => log.userId))];
+    const [reviewers, mediaWithUrls] = await Promise.all([
+      Promise.all(reviewerIds.map((userId) => ctx.db.get(userId))),
       Promise.all(
         media.map(async (item) => ({ ...item, url: await ctx.storage.getUrl(item.storageId) })),
       ),
     ]);
+    const userById = new Map(reviewerIds.map((userId, index) => [userId, reviewers[index]]));
 
     // "Your artist history" receipt (design 23): the user's verified logs for
     // this artist — count, first-seen year, personal average.
@@ -286,7 +308,7 @@ export const get = query({
           }
         : null,
       reviews: logs
-        .map((log, index) => ({ ...log, user: users[index] }))
+        .map((log) => ({ ...log, user: userById.get(log.userId) ?? null }))
         .sort((left, right) => right.createdAt - left.createdAt),
       media: mediaWithUrls,
     };

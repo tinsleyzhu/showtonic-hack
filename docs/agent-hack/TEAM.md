@@ -1662,3 +1662,59 @@ resolve:candidates now exists, deployed and proven live: a write:candidates
 token calling resolve_candidate is refused by name with its granted scopes
 listed. Proposing and accepting are separate grants — an agent must not
 approve its own work. L5: the honest copy can go in.
+### L3 taste · 2026-08-27T09:20Z
+state:    shipped
+now:      wave 2 belief corrections (PR #23) + artists.ts, and a correction to my own number
+shipped:  PR #23, and a second PR to follow for artists.ts
+blocked:  both need merge + deploy; #23 adds a table
+next:     discovery.home / listShowSummaries — scoped here first, per your instruction
+
+**Retracting my own figure.** I said `artists.get` takes "over two minutes".
+It does not. That run was `npx convex run … | head`, and the pipe — not the
+query — is what hung. Measured properly from the linked worktree, three runs:
+**2.06s, 0.99s, 1.04s wall including CLI startup**, which sits either side of
+your 2.6s in the app. The mechanism is real and the fix is worth making; the
+number I quoted was an artifact of how I measured it, and I should have
+noticed that a query that "times out" and then returns complete data was
+telling me something about my pipe.
+
+**And a correction that runs the other way — the onboarding number was
+right, for a reason I had not verified when I claimed it.** Convex's limits:
+`db.get`/`db.query` CALLS are capped at **4,096**, documents scanned at
+32,000, data read at 16 MiB. The onboarding warning was counting CALLS —
+`artistsForOnboarding` issued one `ctx.db.get` per unique artist in the
+upcoming catalog, 3,798 of them, against a hard 4,096. That one really would
+have thrown, and the city-scoped read is what fixes it.
+
+It also means `discovery.cityStats` collecting 9,000 shows is *one call* and
+in no danger from that ceiling — a whole-table `.collect()` is cheap in calls
+and expensive in scan and bytes. Two different failure modes, and I had been
+treating them as one.
+
+**`artists.get`, rewritten (my lane now, per your call).** `shows` has no
+index that can answer "which shows list this artist" — `artistIds` is an
+array and Convex indexes scalars — so the complete fix is a `showArtists`
+join table: a schema change plus a backfill of the whole catalog, which is
+not a thing to do hours before a demo. Bounded instead: two indexed `by_date`
+ranges around today (730 days back, 400 forward, 3,000 cap), logs and photos
+read per show through `by_show` instead of two whole-table scans, and each
+reviewer fetched once rather than once per review. **Behaviour change worth
+knowing: a show more than two years old no longer appears on an artist page.**
+`artists.forOnboarding` is deleted — no callers since the grid moved to
+`taste.artistsForOnboarding`, and it did the same collect-everything scan.
+
+**Wave 2 is built and PR'd (#23)**, with both refusals stated in the PR in
+the terms you asked for. One additive table, no contract change.
+
+**Scope note, as instructed — `discovery.home` and `listShowSummaries`.** I
+have looked and not touched. `home` already bounds itself (±400/210 days,
+4,000 cap) and its own comment explains why, so it is in better shape than
+`artists.get` was; what it still does is `.collect()` `logs` and `attendance`
+whole-table alongside. That is scan-and-bytes, not calls, so it is a latency
+question rather than a ceiling one. Front door, separate PR, only if you want
+it before the freeze — say the word and I will take it on its own.
+
+**Still unrendered by me:** the briefing, the corrections and the artist page
+all need your deploy. The one I would look at first is the artist page — the
+window bound is the only change in any of this that can make something
+disappear rather than appear.

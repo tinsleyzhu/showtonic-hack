@@ -466,6 +466,70 @@ function describeDrift(logs) {
   };
 }
 
+// The first count in a basis sentence — "6 of your 19 logged nights…" — which
+// is what "the evidence genuinely changed" is measured against.
+function basisCount(basis) {
+  const match = /\d+/.exec(String(basis ?? ""));
+  return match ? Number(match[0]) : null;
+}
+
+/**
+ * Apply a member's corrections to the beliefs we would otherwise show.
+ *
+ * "That's wrong" suppresses the belief — not for a cooling-off period. They
+ * said the claim is false; re-asserting it next week because a timer expired
+ * is the app arguing with someone about their own life. It comes back only
+ * when the evidence genuinely changed (the count behind it grew by half
+ * again), and when it does it SAYS it was corrected rather than reappearing
+ * as if nothing happened.
+ *
+ * "That's right" pins the belief and marks it confirmed. It does not promote
+ * `forming` to `strong`: strength is derived from counts, and a member
+ * agreeing with us is not more nights in the diary. Their agreement is its own
+ * fact, not a louder version of ours.
+ */
+export function applyBeliefFeedback(beliefs = [], feedback = [], options = {}) {
+  const { limit = 4 } = options;
+  const byStatement = new Map(
+    feedback.map((entry) => [normalize(entry.statement), entry]),
+  );
+
+  const kept = [];
+  for (const belief of beliefs) {
+    const correction = byStatement.get(normalize(belief.statement));
+    if (!correction) {
+      kept.push({ belief, pinned: false });
+      continue;
+    }
+
+    if (correction.verdict === "right") {
+      kept.push({
+        belief: { ...belief, basis: `${belief.basis} — and you confirmed it` },
+        pinned: true,
+      });
+      continue;
+    }
+
+    const then = basisCount(correction.basisAtTime);
+    const now = basisCount(belief.basis);
+    const evidenceChanged = then !== null && now !== null && now >= Math.ceil(then * 1.5);
+    if (!evidenceChanged) continue;
+
+    kept.push({
+      belief: {
+        ...belief,
+        basis: `${belief.basis} — you told me this was wrong when it was ${then}`,
+      },
+      pinned: false,
+    });
+  }
+
+  return kept
+    .sort((left, right) => Number(right.pinned) - Number(left.pinned))
+    .slice(0, Math.max(1, Math.min(limit, 4)))
+    .map((entry) => entry.belief);
+}
+
 // ---------------------------------------------------------------------------
 // ③ WHILE YOU WERE AWAY
 // ---------------------------------------------------------------------------
