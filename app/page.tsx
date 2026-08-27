@@ -582,6 +582,7 @@ export default function Home() {
           openArtist={openArtist}
           openShow={openShow}
           openVenue={openVenue}
+          onOpenBackfill={() => setBackfillOpen(true)}
           onSetFavorites={(logIds) => live.setFavorites(logIds as Id<"logs">[])}
           onSignOut={signOut}
           profile={live.profile}

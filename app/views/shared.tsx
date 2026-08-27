@@ -157,6 +157,32 @@ export function Avatar({ name, color }: { name: string; color?: string }) {
   return <span aria-label={name} role="img" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#141210] text-xs font-black text-black" style={{ backgroundColor: color ?? "#FF7A50" }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
+// Both share buttons in the app called `navigator.share?.()` — on any desktop
+// browser without the Web Share API the optional chain swallows the call and the
+// button does nothing at all. No error, no fallback, no clue. Two dead controls
+// on exactly the machine a demo runs on.
+//
+// AbortError is treated as success on purpose: it means the person opened the OS
+// share sheet and dismissed it. Falling through to the clipboard there would
+// copy something they had just declined to send.
+export async function shareOrCopy(data: { title: string; text: string }): Promise<"shared" | "copied" | "failed"> {
+  if (typeof navigator === "undefined") return "failed";
+  if (navigator.share) {
+    try {
+      await navigator.share(data);
+      return "shared";
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return "shared";
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(data.text);
+    return "copied";
+  } catch {
+    return "failed";
+  }
+}
+
 export function BackButton({ onClick, label = "Back to show" }: { onClick: () => void; label?: string }) {
   return <button className="flex items-center gap-2 text-sm text-[#8A8177]" onClick={onClick} type="button"><ArrowLeft className="h-4 w-4" /> {label}</button>;
 }

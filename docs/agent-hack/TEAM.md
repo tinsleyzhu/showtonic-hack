@@ -694,6 +694,7 @@ agent.**
 | focus visibility + live regions (globals.css only) | L6 | 06:00Z |
 | loading-state guards in ShowView/EntityViews/TasteMatchView/ProfileView (first 2 lines of each component only) | L6 | 06:40Z |
 | notice banner + boot copy in app/page.tsx | L6 | 06:40Z |
+| empty-state actions + share fallback (DiscoverView, ProfileView, ShowView StubCard) | L6 | 07:10Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked

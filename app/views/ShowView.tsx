@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Camera, Check, ExternalLink, MapPin, Music2, Star, Ticket, X } from "lucide-react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { vibes } from "../data";
@@ -14,6 +14,7 @@ import {
   RatingStars,
   ReviewRow,
   SectionTitle,
+  shareOrCopy,
   ShowRail,
   Stat,
   StatusPanel,
@@ -234,11 +235,12 @@ export function ShowView({
 // carrying handle + stub code.
 function StubCard({ artistLine, venueName, city, date, rating, handle, stubCode }: { artistLine: string; venueName?: string; city?: string; date: string; rating: number; handle: string; stubCode: string }) {
   const dateLabel = new Intl.DateTimeFormat("en", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`));
-  function share() {
-    void navigator.share?.({
+  const [shareState, setShareState] = useState<"idle" | "shared" | "copied" | "failed">("idle");
+  async function share() {
+    setShareState(await shareOrCopy({
       title: `${artistLine} — Showtonic stub`,
       text: `I was at ${artistLine}${venueName ? ` at ${venueName}` : ""} · ${dateLabel}${rating > 0 ? ` · rated ${rating}/5` : ""} — logged by @${handle} on Showtonic · stub ${stubCode}`,
-    });
+    }));
   }
   return (
     <div className="mt-4 max-w-md">
@@ -255,9 +257,16 @@ function StubCard({ artistLine, venueName, city, date, rating, handle, stubCode 
           <span className="font-mono text-xs font-black text-[#FF7A50]">{stubCode}</span>
         </div>
       </div>
-      <button className="mt-3 w-full border border-[#2A2521] px-4 py-3 text-sm font-black text-[#4EC98F]" onClick={share} type="button">
+      <button className="mt-3 w-full border border-[#2A2521] px-4 py-3 text-sm font-black text-[#4EC98F]" onClick={() => void share()} type="button">
         Share this stub
       </button>
+      {shareState !== "idle" && (
+        <p aria-live="polite" className={`mt-2 text-xs ${shareState === "failed" ? "text-red-200" : "text-[#8A8177]"}`} role="status">
+          {shareState === "copied" && "Copied to your clipboard — paste it anywhere."}
+          {shareState === "shared" && "Sent to your share sheet."}
+          {shareState === "failed" && "Could not share or copy. Select the stub text above and copy it by hand."}
+        </p>
+      )}
     </div>
   );
 }

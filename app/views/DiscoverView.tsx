@@ -61,6 +61,20 @@ export function DiscoverView({
   const [followedOnly, setFollowedOnly] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [syncing, setSyncing] = useState(false);
+
+  // The sync button gave no sign it had been pressed until the status line
+  // changed, which on a slow fetch is several seconds of a control that looks
+  // broken.
+  async function runSync() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await onSyncJamBase();
+    } finally {
+      setSyncing(false);
+    }
+  }
   const allShows = collapseFestivalShows(discovery.shows.map((show) => adaptShow(show)));
   const locations = [...new Set(allShows.map((show) => show.city).filter(Boolean))].sort() as string[];
   const venues = [...new Set(allShows.map((show) => show.venueName).filter(Boolean))].sort() as string[];
@@ -95,6 +109,27 @@ export function DiscoverView({
     ?? filtered.find((show) => show.festivalId && (show.artistNames?.length ?? 0) > 1);
   const hero = festival ?? filtered[0] ?? allShows.find((show) => show.date >= today) ?? allShows[0];
   const hasStructuredFilter = Boolean(query.trim() || artistFilter || venueFilter || followedOnly || (datePreset !== "any" && (presetRange.from || presetRange.to)));
+
+  // A search that finds nothing has to offer a way back out. Without this the
+  // worst case is a filter left on from an earlier run making the whole catalog
+  // read as empty.
+  function clearFilters() {
+    setQuery("");
+    setArtistFilter("");
+    setVenueFilter("");
+    setFollowedOnly(false);
+    setDatePreset("any");
+    setDateFrom("");
+    setDateTo("");
+  }
+
+  const activeFilterLabels = [
+    query.trim() && `"${query.trim()}"`,
+    artistFilter && `artist: ${artistFilter}`,
+    venueFilter && `venue: ${venueFilter}`,
+    followedOnly && "followed only",
+    datePreset !== "any" && (presetRange.from || presetRange.to) ? "a date range" : "",
+  ].filter(Boolean) as string[];
 
   const reasonContext = { favoriteArtists, followedArtistNames, homeCity };
   const upcomingShelves = [
@@ -192,12 +227,25 @@ export function DiscoverView({
             </section>
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-y border-white/10 py-3 text-xs">
-              <span className="text-[#8A8177]">{locationStatus} · {dataStatus}</span>
-              <button className="font-black text-[#FF7A50]" onClick={() => void onSyncJamBase()} type="button">Sync JamBase</button>
+              <span aria-live="polite" className="text-[#8A8177]" role="status">{locationStatus} · {dataStatus}</span>
+              <button className="font-black text-[#FF7A50] disabled:text-[#8A8177]" disabled={syncing} onClick={() => void runSync()} type="button">{syncing ? "Syncing…" : "Sync JamBase"}</button>
             </div>
 
             {mode === "past" ? (
               <ShowRail eyebrow={`${filtered.length} matches in ${homeCity}`} openShow={openShow} shows={filtered} title="Past shows" />
+            ) : hasStructuredFilter && filtered.length === 0 ? (
+              <section className="mt-8 border border-dashed border-[#2A2521] p-8">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]">No matches</p>
+                <h2 className="font-display mt-1 text-2xl">Nothing in {homeCity} fits that</h2>
+                <p className="mt-3 max-w-lg text-sm leading-6 text-[#8A8177]">
+                  You are filtering by {activeFilterLabels.join(", ")}. The catalog has {allShows.length} shows in it — widen one of these and they come back.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button className="bg-[#FF7A50] px-4 py-3 text-sm font-black text-black" onClick={clearFilters} type="button">Clear all filters</button>
+                  {followedOnly && <button className="border border-[#2A2521] px-4 py-3 text-sm font-black" onClick={() => setFollowedOnly(false)} type="button">Include artists I don&apos;t follow</button>}
+                  {datePreset !== "any" && <button className="border border-[#2A2521] px-4 py-3 text-sm font-black" onClick={() => { setDatePreset("any"); setDateFrom(""); setDateTo(""); }} type="button">Any date</button>}
+                </div>
+              </section>
             ) : hasStructuredFilter ? (
               <>
                 <ShowRail eyebrow={favoriteArtists.length ? "Filtered by your setup picks" : "Filtered artists you follow and rate"} openShow={openShow} reasonFor={(show) => reasonForShow(show, { ...reasonContext, shelf: "taste" })} shows={filteredTasteLed} title="Taste-led picks" />
