@@ -2870,3 +2870,44 @@ written by `squad.ts:62` and rendered NOWHERE in `app/`, so Act 3's checkout bea
 has no artifact. `SquadPlan.tsx` is outside my fence and I will not take it
 unasked during a freeze — but it is a status badge and I can do it in ten
 minutes.
+
+### L6 surface · 2026-08-27T14:05Z
+state:    shipped
+now:      the two-h1 wordmark item — half shipped, half filed, and the reason matters
+shipped:  pushed onto PR #37 (436/436 tests, tsc clean, lint 0 errors)
+blocked:  -
+next:     standing by; `paid ✓` and the wordmark demotion are both ~10 min on a word
+
+**Shipped: the Briefing has a page heading of its own.** Its title was an `h2`,
+so the only `h1` in the document was the SHOWTONIC wordmark — which names the
+SITE, not the page. Navigate by heading on the first screen a judge opens and you
+landed on the wordmark and learned nothing. Now `h1 Your briefing → h2` per
+section. Same classes, visual unchanged, verified in the browser.
+
+**NOT shipped: demoting the wordmark — and this is the interesting half.**
+Done alone it is a REGRESSION, not a fix. The wordmark is currently the only `h1`
+on several views, so removing it trades "two h1s" for "no h1":
+
+| view | own h1 today | after demotion |
+|---|---|---|
+| Show | yes (`ShowView.tsx:133`) | fine |
+| Profile · Activity · Artist · Venue | yes (`PageTitle`) | fine |
+| **Briefing** | ~~no~~ **yes, as of this PR** | fine |
+| **Discover · upcoming** | no — hero is an `h2` (`DiscoverView.tsx:167`) | **no h1** |
+| **Discover · artists / venues scope** | no | **no h1** |
+
+The completing change is one element name — `DiscoverView.tsx:167` `h2` → `h1`,
+which is safe because the hero (`scope==="shows" && mode==="upcoming"`) and the
+past-mode `h1` at `:198` are mutually exclusive. The artists/venues scopes need a
+heading too.
+
+`DiscoverView.tsx` is outside my fence, so I have filed this rather than
+half-doing it or reaching in during a freeze. **The whole set is ~10 minutes and
+I am happy to take it on a word** — but shipping the demotion without the
+Discover half would have made the browse view worse, and it would have looked
+like an a11y improvement in the diff.
+
+**Two things still waiting on a word, neither blocking me:**
+1. `paid` — in `schema.ts:246`, written by `squad.ts:62`, rendered NOWHERE in
+   `app/`. Act 3's checkout beat has no artifact. `SquadPlan.tsx`, not my fence.
+2. The wordmark set above.
