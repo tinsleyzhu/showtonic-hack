@@ -424,6 +424,59 @@ lane, and `search` in particular has an agent-facing consumer, so changing its
 semantics is a coordinator call rather than a lane one. Say the word and I will
 take either.
 
+### L3 taste + p2p · 2026-08-27T05:00Z
+state:    shipped
+now:      city gate on onboarding artists; optional city on search; squad slates scoped
+shipped:  PR #10 (224/224 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**1. Presence is a gate, not a bonus.** The weight was never too small — the
+mechanism was wrong. New York Philharmonic: 234 upcoming New York shows, zero
+in San Francisco. 234 × 1 beats any 4× an SF artist can earn (they would need
+59 SF shows), so it topped the grid for San Franciscans permanently, as an
+artist they could not go and see. Now: with a home city known, an artist needs
+at least one upcoming show there to appear at all; survivors rank by presence
+in that city. With no home city, the global ranking stands — the honest
+degraded state. Home and elsewhere are counted separately, because a gate
+cannot be built from a number that has already had "somewhere else" blended in.
+
+Same hole existed one level up and is closed too: a city with nothing upcoming
+used to fall through to the hardcoded seed list, putting artists three thousand
+miles away back on screen. It now shows an empty state naming the city.
+
+**2. Search: `city` is optional and the default is UNCHANGED.**
+
+⚠️ **One instruction I did not follow literally, deliberately.** The brief said
+both "defaulting to the caller's `homeCity`" and "an agent that wants a global
+search can still get one by passing nothing", and those two cannot both hold —
+if omitting `city` means `homeCity`, then every agent already in the field
+silently gets narrowed. I followed the stated *principle* over the stated
+*default*: **omit `city` → everywhere, exactly as before**; pass a city → scoped;
+`"anywhere"`/`"any"`/`"*"`/`"all"` are accepted for a caller that wants to be
+explicit. If you did mean homeCity-by-default, it is a one-line change — but I
+would want you to choose it knowingly, because it changes what a published tool
+returns underneath agents that already read the manifest.
+
+The scoping happens *before* the 500 cap. That was the real defect: the cap had
+already spent itself on the larger city before any filter ran.
+
+**3. Squad slates.** `agents/squad.mjs` scopes to the city the members share.
+Members split across cities is handled explicitly, as you asked: both cities go
+on the table, the transcript says so out loud, and if a squad spread across a
+continent cannot converge, the negotiator already knows that refusing is the
+right answer.
+
+**4. Leaderboard: noted and left**, per your call. `leaderboard.list` infers
+city from the user's *logs* and falls back to a hardcoded `"San Francisco"`, so
+a member with no logs is ranked against SF regardless of the home city they
+just picked. Cosmetic, off the demo path, correct today only by luck.
+`artists.forOnboarding` still has zero callers and is still left alone.
+
+Caveat, fourth time and unchanged: **I cannot render any of this.** The city
+gate in particular deserves eyes — the failure mode if I got it wrong is an
+*empty* grid rather than a wrong one, which is safer but very visible.
+
 ---
 
 ## Proposals — L3: `find_compatible_humans` MCP tool
@@ -581,6 +634,8 @@ next:     tracking `upcoming` coverage from here on, per the coordinator.
 | onboarding step reorder (homebase→taste) | L3 | 02:30Z |
 | co-occurrence genre families | L3 | 02:45Z |
 | city-aware default artist grid | L3 | 03:30Z |
+| city gate on onboarding artists | L3 | 04:15Z |
+| optional city scope on search + squad slate | L3 | 04:40Z |
 | Runtype spike | L4 | 23:30Z |
 | Hacker Bob scan | L4 | 2026-08-26T23:50Z |
 

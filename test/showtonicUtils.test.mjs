@@ -5,9 +5,49 @@ import {
   buildDiscoveryShelves,
   matchesSearch,
   normalizeSearchTerm,
+  scopeToCity,
   summarizeRatings,
   validateLogInput,
 } from "../convex/showtonicUtils.js";
+
+const CATALOG = [
+  { title: "A", city: "New York" },
+  { title: "B", city: "San Francisco" },
+  { title: "C", city: "New York" },
+];
+
+test("scopeToCity leaves the result set alone when no city is given", () => {
+  // The default must not narrow: search_shows is published in the agent
+  // manifest, and an agent that read it must keep getting what it was
+  // promised. This is the drift guard, not a convenience.
+  assert.deepEqual(scopeToCity(CATALOG, undefined), CATALOG);
+  assert.deepEqual(scopeToCity(CATALOG, ""), CATALOG);
+});
+
+test("scopeToCity accepts explicit wildcards for a caller that wants to say so", () => {
+  for (const wildcard of ["anywhere", "any", "*", "all", "  ANYWHERE  "]) {
+    assert.equal(scopeToCity(CATALOG, wildcard).length, 3, wildcard);
+  }
+});
+
+test("scopeToCity restricts to one city, case- and whitespace-insensitively", () => {
+  assert.deepEqual(
+    scopeToCity(CATALOG, "  san FRANCISCO ").map((show) => show.title),
+    ["B"],
+  );
+});
+
+test("scopeToCity returns nothing for a city not in the catalog, rather than everything", () => {
+  // Falling back to the full catalog here is how a caller asking for Boise
+  // ends up showing someone New York.
+  assert.deepEqual(scopeToCity(CATALOG, "Boise"), []);
+});
+
+test("scopeToCity does not mutate the caller's array", () => {
+  const original = [...CATALOG];
+  scopeToCity(CATALOG, "anywhere").push({ title: "D", city: "Nowhere" });
+  assert.deepEqual(CATALOG, original);
+});
 
 test("validateLogInput rejects ratings outside half-star steps", () => {
   assert.throws(() => validateLogInput({ rating: 4.2, vibes: ["sweaty"] }), /half-star/);

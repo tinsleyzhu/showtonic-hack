@@ -82,22 +82,59 @@ const wanted = [
   ),
 ].slice(0, 12);
 
+// Where the squad can actually go. The catalog spans several cities and is not
+// evenly sized — a broad search returns more from the biggest one — so an
+// unscoped slate quietly imports another city's listings into this group's
+// decision. Scope to the city the members share.
+//
+// Disagreement is a real case, not an error: a squad split across cities is
+// answered by putting BOTH cities on the table and saying so out loud, then
+// letting the negotiation do its job. If nobody can converge across a
+// continent, refusing is the correct outcome and it already knows how.
+const cities = [...new Set(squad.map((m) => m.taste.homeCity).filter(Boolean))];
+const sharedCity = cities.length === 1 ? cities[0] : null;
+if (sharedCity) {
+  say(convener.agent, convener.taste.handle, `We're all in ${sharedCity}, so I'll look there.`);
+} else if (cities.length > 1) {
+  say(
+    convener.agent,
+    convener.taste.handle,
+    `This group is split across ${cities.join(" and ")} — I'll put shows from each on the table rather than quietly picking one.`,
+  );
+} else {
+  say(
+    convener.agent,
+    convener.taste.handle,
+    "Nobody has set a home city, so I'm searching everywhere — the slate may lean toward whichever city has the bigger listing.",
+  );
+}
+
+// `city: undefined` means everywhere, which is search_shows' documented
+// default — we pass a city only when we have one to pass.
+const searchCities = sharedCity ? [sharedCity] : cities.length > 1 ? cities : [undefined];
+
 const byId = new Map();
 for (const term of wanted) {
-  const hits = await call(convener.token, "search_shows", {
-    query: term,
-    upcoming_only: true,
-    limit: 6,
-  });
-  for (const show of hits) byId.set(show.showId, show);
+  for (const city of searchCities) {
+    const hits = await call(convener.token, "search_shows", {
+      query: term,
+      upcoming_only: true,
+      limit: 6,
+      ...(city ? { city } : {}),
+    });
+    for (const show of hits) byId.set(show.showId, show);
+  }
 }
 if (byId.size < 3) {
-  for (const show of await call(convener.token, "search_shows", {
-    query: ROSTER.query ?? "San Francisco",
-    upcoming_only: true,
-    limit: 12,
-  })) {
-    byId.set(show.showId, show);
+  for (const city of searchCities) {
+    for (const show of await call(convener.token, "search_shows", {
+      query: ROSTER.query ?? city ?? "San Francisco",
+      upcoming_only: true,
+      limit: 12,
+      ...(city ? { city } : {}),
+    })) {
+      byId.set(show.showId, show);
+    }
   }
 }
 const slate = [...byId.values()];
