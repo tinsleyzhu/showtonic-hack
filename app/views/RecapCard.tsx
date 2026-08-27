@@ -34,7 +34,7 @@ export function RecapCard({ userId }: { userId: Id<"users"> }) {
     <section className="mt-10 border-t border-white/10 pt-8">
       <div className="flex items-center gap-2">
         <Sparkles className="h-5 w-5 text-[#FF7A50]" />
-        <SectionTitle eyebrow="Generated from your logs" title="Your recap" />
+        <SectionTitle eyebrow="I counted these from your logs" title="Your recap" />
       </div>
 
       <div className="mt-4 grid gap-0 border border-[#2A2521] bg-[#1A1713] sm:grid-cols-[minmax(0,240px)_1fr]">
@@ -74,7 +74,7 @@ export function RecapCard({ userId }: { userId: Id<"users"> }) {
 
           {recap.reclaimed > 0 && (
             <p className="mt-3 text-xs leading-5 text-[#8A8177]">
-              {recap.reclaimed} of these came back from your camera roll rather than being typed in.
+              I brought {recap.reclaimed} of these back from your camera roll. You never typed them in.
             </p>
           )}
 
