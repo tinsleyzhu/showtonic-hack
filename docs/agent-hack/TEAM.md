@@ -2062,3 +2062,78 @@ L6, two minutes, first screen a judge opens: several Briefing sections use
 aria-labelledby="briefing-…" but SectionTitle renders an h2 with NO id, so the
 references resolve to nothing and the landmarks are unnamed. Give SectionTitle
 an id prop or switch those to aria-label. Fold it into the flip PR.
+
+### L5 share · 2026-08-27T13:05Z
+state:    idle
+now:      audit pass on the deployed app — FILING, not fixing, per the freeze
+shipped:  - (docs only)
+blocked:  two things need a human call, both below
+next:     more passes if the browser env is restored; happy to fix any of these on your word
+
+**FINDING 1 — demo-critical. The reclaim story card is on the path the demo
+does not take.** There are TWO confirm paths that write the same diary entries:
+
+| path | where | offers the card |
+|---|---|---|
+| `BackfillFlow` scan → confirm → complete | modal | **yes** (`BackfillFlow.tsx:494`) |
+| `PendingCandidates` on the Briefing → "Yes, I was there" | Decisions you owe | **no** |
+
+Act 1 as you described it — *reclaim summary → Briefing decisions → confirm →
+reclaim story card offer* — runs through the second path. Nothing is offered
+there: the row simply leaves the queue and the moment ends. That is also the
+**agent-native** path (candidates arriving from `reclaim_camera_roll` over MCP),
+which is precisely where "my agent rebuilt N nights I never logged" is most
+true.
+
+Fix is small and entirely in `PendingCandidates.tsx`: accumulate accepted
+candidates in local state (they already flow through `decide()`), and render
+`<ReclaimShareCard handle={handle} nights={accepted} />` once `accepted.length
+> 0`. The card is already pure, tested and empty-room-safe, and takes exactly
+`{ clusterDate, artistNames?, showTitle? }`. **~15 lines. Say the word and it is
+done in ten minutes; I am not touching it unasked during the freeze.**
+
+**FINDING 2 — the reclaim entry point is three taps deep for anyone with a
+diary.** All three `onOpenBackfill` call sites are conditional, and two are
+empty-state-only:
+- `BriefingView.tsx:208` — only in the "nothing to scout yet" empty state.
+- `ProfileView.tsx` (`DiaryArchive`) — only in "Nothing logged yet" / "Nothing
+  to group yet" empty states.
+- `DiscoverView.tsx:197` — only when `mode === "past"`.
+
+@tinsley has 7 logged shows, so every empty state is gone and the ONLY live
+entry is **Browse → Past Shows → "Or scan your camera roll for past shows"** — a
+tertiary "Or…" link, on a non-default tab, behind a mode toggle. Verified in the
+browser. If Act 1 opens on the reclaim flow, whoever drives has to remember that
+path, and a judge exploring alone will never find it.
+
+**FINDING 3 — duplicate venue in the catalog, differing only by apostrophe.**
+The venue filter lists both `Bimbo's 365 Club` (straight) and `Bimbo’s 365 Club`
+(curly) as separate entries. L1/L2's ground, not mine. Any dedupe that
+casefolds should also normalise `’ → '` — the same class of bug as L3's
+double-Beck, one character wide.
+
+**FINDING 4 — minor a11y.** Field labels render at **10px** (`USERNAME`,
+`PROFILE VISIBILITY`, `SEARCH CITY`) in `#8A8177`. Contrast passes (~5.2:1); the
+size does not fail any WCAG rule either, but 10px uppercase with wide tracking
+is the smallest text in the product and it sits on the first screen a new member
+types into. Bumping to 11–12px costs nothing.
+
+**NOT A BUG, but flag it for the demo laptop.** The Immersive Translate
+extension injects `data-immersive-translate-page-theme` onto `<html>`, which
+React reports as a hydration mismatch on every load. Harmless, but it fills the
+console with red on a machine someone may screen-share. Worth disabling
+extensions on the demo profile.
+
+⚠️ **Two things I could not do, both needing a human call rather than my
+judgement.**
+1. **I did not walk scan → confirm → card end-to-end, because it writes to the
+   shared demo backend.** `runScan` persists candidates via
+   `backfill.saveCandidates`, and confirming writes real `logs` rows — against
+   @tinsley, the demo account, whose diary and recap numbers are on stage in a
+   few hours. I am not adding rows to the demo account on a peer's say-so.
+   Give me a throwaway handle to run it under and I will walk the whole minute.
+2. **My browser session is degraded**: `window.innerHeight` reports **0**, so
+   `inset-0` overlays measure 0x0 and the extension's screenshot API has been
+   erroring all session. Everything above is from DOM/state inspection and code,
+   which is unaffected — but I cannot see the pixels, and I am not going to
+   claim I did.
