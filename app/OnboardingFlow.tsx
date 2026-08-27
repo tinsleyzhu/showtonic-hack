@@ -71,17 +71,19 @@ export function Onboarding({
       ? { handle: handleValidation.handle }
       : "skip",
   );
-  const catalogArtists = useQuery(api.artists.forOnboarding, step === "taste" ? { limit: 18 } : "skip");
   // Genre-first: the picker leads with what is actually playing near you soon,
   // family-capped so a jazz-heavy city cannot fill every slot with jazz.
   const onboardingGenres = useQuery(
     api.taste.genresForOnboarding,
     step === "taste" ? { today: todayIso(), homeCity, limit: 10 } : "skip",
   );
-  const genreArtists = useQuery(
-    api.taste.artistsForGenre,
-    step === "taste" && genreFilter
-      ? { genre: genreFilter, today: todayIso(), homeCity, limit: 18 }
+  // ONE source for both the unfiltered grid and the per-genre grids. They were
+  // two, and the unfiltered one ranked by catalog totals with no city — so a
+  // member who had just chosen San Francisco met the New York Philharmonic.
+  const onboardingArtists = useQuery(
+    api.taste.artistsForOnboarding,
+    step === "taste"
+      ? { today: todayIso(), homeCity, limit: 18, ...(genreFilter ? { genre: genreFilter } : {}) }
       : "skip",
   );
   const cityStats = useQuery(
@@ -95,9 +97,8 @@ export function Onboarding({
   }
 
   const tasteChoices = useMemo(() => {
-    const source = genreFilter ? genreArtists : catalogArtists;
-    if (source?.length) {
-      return source.map((artist) => ({
+    if (onboardingArtists?.length) {
+      return onboardingArtists.map((artist) => ({
         name: artist.name,
         image: artist.image,
         genre: artist.genres[0] ?? "Live artist",
@@ -107,7 +108,7 @@ export function Onboarding({
     // falling back to the general list, which would look like a broken filter.
     if (genreFilter) return [];
     return ONBOARDING_ARTISTS.map((name) => ({ name, image: undefined, genre: "Live artist" }));
-  }, [catalogArtists, genreArtists, genreFilter]);
+  }, [onboardingArtists, genreFilter]);
 
   const wizardSteps = ONBOARDING_STEPS.filter((item) => item !== "welcome");
   const stepNumber = Math.max(onboardingStepIndex(step as OnboardingStep), 1);
@@ -376,7 +377,7 @@ export function Onboarding({
                 ))}
               </div>
             )}
-            {genreFilter && genreArtists?.length === 0 && (
+            {genreFilter && onboardingArtists?.length === 0 && (
               <p className="mt-4 border-l-2 border-[#6FBCD3] pl-3 text-xs leading-5 text-[#8A8177]">
                 Nothing upcoming in {genreFilter} yet — try another, or go back to most seen.
               </p>

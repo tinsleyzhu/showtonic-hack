@@ -320,16 +320,21 @@ export const genresForOnboarding = query({
 // The other half of genre-first onboarding: you tap "house", you get house
 // artists you could actually go and see. Ranked by upcoming appearances rather
 // than catalog totals, for the same reason the genre list is.
-export const artistsForGenre = query({
+//
+// `genre` is OPTIONAL, and that is the point. This backs BOTH the unfiltered
+// "Most seen" grid and the per-genre grids, so the two cannot drift apart.
+// They did once: the chips were city-aware while the default grid came from a
+// separate city-blind query, and a member who had just chosen San Francisco
+// was shown the New York Philharmonic. One source, one ranking, one promise.
+export const artistsForOnboarding = query({
   args: {
-    genre: v.string(),
+    genre: v.optional(v.string()),
     today: v.string(),
     homeCity: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const genre = args.genre.trim().toLowerCase();
-    if (!genre) return [];
+    const genre = (args.genre ?? "").trim().toLowerCase();
 
     const upcoming = await ctx.db
       .query("shows")
@@ -353,7 +358,9 @@ export const artistsForGenre = query({
       .filter(
         (artist): artist is NonNullable<typeof artist> =>
           artist !== null &&
-          (artist.genres ?? []).some((value) => value.trim().toLowerCase() === genre),
+          // No genre means the unfiltered grid: every artist with something
+          // upcoming, still city-weighted.
+          (!genre || (artist.genres ?? []).some((value) => value.trim().toLowerCase() === genre)),
       )
       .map((artist) => ({
         _id: artist._id,
