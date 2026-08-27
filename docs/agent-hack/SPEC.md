@@ -9,7 +9,7 @@
 > | MCP front door + discovery | ✅ shipped and deployed — https://showtonic-hack.showtonic.workers.dev |
 > | Machine auth: scoped agent tokens | ✅ shipped — mint UI at Profile → Connect your agent |
 > | Catalog-gap agent (Tavily) | ✅ shipped — `convex/catalogGap.ts` + `catalogProposals`. Evidence-gated: 100% precision, 0 false proposals against a naive top-result baseline's 33% / 6 (`npm run eval`) |
-> | Vision agent | ❌ cut for now — privacy cost vs accuracy gain unresolved |
+> | Vision agent | ❌ **cut, decided 2026-08-27** — not unresolved any more. The app promises on screen that photos never leave the device, and that outranks the accuracy gain. Refusing is the stronger answer, on stage and off. |
 > | Draft-writer agent | ❌ not started |
 > | Squad negotiation (phase 4) | ✅ shipped — `agents/squad.mjs` + `agents/negotiate.mjs`, N agents from the roster / uneven scopes, verified against production. Three outcomes: consensus, split (a subgroup goes and the rest are named), refused |
 > | Taste v2 + peer discovery | ✅ shipped — genre affinity when both sides have genres, artist/venue fallback when they don't; `find_compatible_humans` finds compatible humans with neither human online, and refuses under five logged shows |
@@ -77,7 +77,14 @@ with heuristic boosts. The fleet closes its real gaps, in value order:
   candidate approves the proposal → inserts into `shows` (source-attributed).
 - **Side effect is the point:** every unmatched night grows the catalog.
 
-### 1c. Vision agent (build only if ahead at ~16:00 — first cut)
+### 1c. Vision agent — CUT (decision, not a shortfall)
+
+Kept below as designed, but **this is not being built.** Screen `[07]` promises
+the user that photos never leave their device. Honouring that promise is worth
+more than the confidence it would buy, and a per-night consent flow that
+genuinely explains the exception is a bigger piece of product than the analysis
+it gates. The original design follows for the record:
+
 - Per-cluster explicit consent step, then ≤ 3 photos upload for analysis (this is a
   deliberate, visible exception to "photos never upload" — consent copy in DESIGN.md).
 - Claude (`claude-sonnet-5`) reads flyer text / LED-wall artist names / recognizable rooms →
@@ -140,6 +147,77 @@ doubles as the demo's audit visual.
 | Runtype | optional: draft-writer/negotiation as Runtype flows | 1-hr morning spike **with their engineer**, walk away at the hour |
 | Cloudflare | Worker hosts the MCP server | already on stack |
 | Nebius / Mitosis / HUD / Tenki | no honest fit | skip |
+
+## Named future work — a festival is one thing, not sixty
+
+**Status: designed, deliberately not built. The interim behaviour is shipped
+and tested.** Decided 2026-08-27 with the human; written down so the demo
+answer is a plan rather than an improvisation.
+
+### The symptom
+
+The backfill matcher declines festival nights entirely. Every set at Outside
+Lands shares one venue coordinate, so no locating evidence distinguishes them,
+and the ambiguity guard (`convex/backfillMatch.js`, `AMBIGUITY_MARGIN`) refuses
+to pick between tied candidates rather than flip a coin in someone's diary.
+
+That is the precision rule working exactly as designed, and it produces the
+honest answer: **we know the night, we do not know the set.** It is also why a
+festival night — the app's own origin story — currently yields no candidates.
+
+### The actual problem, which is not the matcher
+
+A festival is currently sixty-odd `shows` rows sharing a `festivalId`. So it
+gets sixty pages, sixty possible diary entries, and sixty things to match a
+photo against. The matcher declining is a *symptom* of that shape, not a bug in
+scoring: asking "which of these sixty did you attend" is the wrong question.
+
+**A festival should be one entity.** One page, one diary entry, one thing to
+match. Nobody remembers a day at Outside Lands as six separate sets, and asking
+them to log it that way is asking them to do data entry.
+
+### What a festival diary entry is
+
+One log per person per festival *day*, not per set:
+
+- **Title** is the festival and the day (`Outside Lands 2026 — Saturday`), not
+  an artist.
+- **`artistNames`** is the lineup the person actually saw, which is a
+  multi-select at accept time seeded from that day's bill — the one thing worth
+  asking a human, because it is the one thing only they know.
+- **Rating and vibes** describe the day. This is already how people talk about
+  festivals.
+- **Taste** then works unchanged: `tasteMath` reads `artistNames` and
+  `artistGenres` off the log, so a festival day contributes several artists at
+  once and needs no new scoring code.
+
+### How it threads through
+
+`festivalId` already exists on `shows` (`convex/schema.ts`), is already indexed
+(`by_festival`), and already has a reader (`shows.listByFestival`). The work is
+mostly collapsing, not adding:
+
+1. **Catalog** — a `festivals` entity (or a designated "festival day" show row
+   per date) that owns the page. The per-set rows stay as the lineup, but stop
+   being separately matchable.
+2. **Matcher** — collapse same-date candidates sharing a `festivalId` into one
+   candidate before the ambiguity guard runs. The guard then sees one
+   well-located option instead of sixty tied ones and matches it confidently:
+   GPS proves you were in Golden Gate Park that day, which is exactly the claim
+   being made. No change to any threshold.
+3. **Accept flow** — the existing sheet gains the lineup multi-select. Reuses
+   `backfill.resolve` unchanged.
+4. **Discover** — one card per festival instead of a wall of sets, which is the
+   change a user notices first.
+
+### Why declining is the right interim
+
+Collapsing candidates before the guard is only safe once the catalog actually
+has a festival entity to collapse *to*; doing it in the matcher alone would
+mean inventing a showId to attach the log to. Until then, declining is correct,
+cheap, and honest — and it is pinned by a test
+(`test/backfillMatch.test.mjs`, "a festival day is declined") so it stays a
+decision rather than an accident.
 
 ## Out of scope (say no on-site)
 
