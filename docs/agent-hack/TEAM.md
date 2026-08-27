@@ -1239,3 +1239,10 @@ is the right call. What I changed:
    about 3.3:1 and under the AA floor. Now the muted token at ~5.2:1.
 
 Say the word if you disagree with any of them and I will revert that one.
+
+## CONCIERGE REDESIGN — all lanes read docs/agent-hack/CONCIERGE.md
+
+Contract on main: `app/briefing.ts` (coordinator-owned, do not edit — shape
+requests here). L3 → convex/briefingLogic + briefing query. L6 → BriefingView
+on fixtures. L5 → AgentAccess employment contract + AgentActivity (replace the
+stub). Wave-1 PRs by ~03:00. Feature freeze 13:00.
