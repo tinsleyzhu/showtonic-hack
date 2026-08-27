@@ -13,6 +13,11 @@ export default defineSchema({
     bio: v.optional(v.string()),
     topTrack: v.optional(v.string()), // preview/embed url
     jambaseUrl: v.optional(v.string()), // sponsor attribution
+    // Where `genres` came from: "spotify" | "musicbrainz" | "ticketmaster" |
+    // "context" (venue/title inference) | "web-search". Nothing reads this
+    // today; it exists so a tag's confidence can be judged later, since a
+    // web-searched genre is weaker evidence than a Spotify one.
+    genreSource: v.optional(v.string()),
   }).index("by_jambase", ["jambaseId"]),
 
   venues: defineTable({
@@ -269,4 +274,15 @@ export default defineSchema({
     .index("by_log", ["logId"])
     .index("by_show", ["showId"])
     .index("by_user", ["userId"]),
+
+  // Metered third-party search credits, counted so a budget is enforced rather
+  // than merely intended. Tavily credits are shared between consumers and
+  // expire with the event, so a run that overspends takes them from another
+  // lane. Keyed per consumer ("tavily:artists"), never shared.
+  searchBudget: defineTable({
+    key: v.string(),
+    spent: v.number(),
+    limit: v.number(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });
