@@ -155,7 +155,10 @@ export function scoreShow(show) {
     present(show.memoryPrompt) +
     present(show.festivalId) +
     present(show.jambaseUrl) +
-    present(show.artistNames)
+    present(show.artistNames) +
+    // A room named "Irving Plaza Powered By Verizon 5G" is the same room with
+    // an ad on it. Between two copies, the survivor should be the one without.
+    (hasSponsorSuffix(show.venueName) ? 0 : 1)
   );
 }
 
@@ -352,6 +355,161 @@ export function planDeduplication(rows, { keyFn, mergeFn }) {
   return {
     groupCount: merges.length,
     excessRows: merges.reduce((total, merge) => total + merge.duplicateIds.length, 0),
+    merges,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Pass 2 — venue aliases
+// ---------------------------------------------------------------------------
+//
+// Pass 1 keyed on the venue NAME, so it could not see that "Blue Note Jazz
+// Club" and "The Blue Note" are one room. 332 groups survive it where the date,
+// the headliner and the start time all match and only the venue name differs.
+//
+// Coordinates would look like the obvious fix and are verified unsafe: several
+// venue rows carry city-centroid geocodes (Golden Gate Theater, Miner
+// Auditorium, Orpheum and the Warfield all share one rounded point), and rooms
+// that genuinely share an address are real — Carnegie's Stern and Weill, Cafe
+// du Nord and Swedish American Hall.
+//
+// So the test is a TOKEN SUBSET: one name's words must be wholly contained in
+// the other's. That accepts "Blue Note" ⊂ "Blue Note Jazz Club" and refuses
+// "Bowery Palace" vs "The Bowery Electric", which share a word but are two
+// rooms. Subset is directional containment, not overlap, and that is the whole
+// safety of it.
+
+// Sponsor dressing and city suffixes are noise the sources add, not part of the
+// room's name: "Irving Plaza Powered By Verizon 5G", "Blue Note Jazz Club - NY".
+const VENUE_STOP_PHRASES = [/\bpowered by\b.*$/, /\bpresented by\b.*$/, /\bsponsored by\b.*$/];
+const VENUE_TRAILING_STOP_TOKENS = new Set(["ny", "nyc", "sf"]);
+
+// Words that do not identify a room on their own. A name that reduces to
+// nothing but these cannot be matched by subset — otherwise a venue called
+// "Park" would be absorbed by "Golden Gate Park".
+const GENERIC_VENUE_TOKENS = new Set([
+  "the", "at", "and", "of", "a", "on",
+  "theater", "hall", "club", "room", "stage", "lounge", "bar", "cafe",
+  "center", "centre", "arena", "auditorium", "ballroom", "music", "jazz",
+  "live", "park", "venue", "house", "studio", "studios", "presents",
+]);
+
+export function venueTokens(name) {
+  let folded = stripLeadingThe(foldText(name));
+  for (const phrase of VENUE_STOP_PHRASES) folded = folded.replace(phrase, "");
+  const tokens = folded.split(" ").filter(Boolean);
+  while (tokens.length > 1 && VENUE_TRAILING_STOP_TOKENS.has(tokens[tokens.length - 1])) {
+    tokens.pop();
+  }
+  return tokens;
+}
+
+export function hasSponsorSuffix(name) {
+  const folded = foldText(name);
+  return VENUE_STOP_PHRASES.some((phrase) => phrase.test(folded));
+}
+
+/**
+ * True when two venue names are the same room under the subset rule: one
+ * token set contains the other, and the contained set says something more
+ * specific than "hall" or "park".
+ */
+export function venueNamesAlias(left, right) {
+  const a = new Set(venueTokens(left));
+  const b = new Set(venueTokens(right));
+  if (a.size === 0 || b.size === 0) return false;
+
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  for (const token of small) {
+    if (!large.has(token)) return false;
+  }
+  // The shared part has to be distinctive on its own.
+  return [...small].some((token) => !GENERIC_VENUE_TOKENS.has(token));
+}
+
+// Venue-free identity: same night, same headliner, same start time. Rows
+// sharing this are CANDIDATES for the subset test, never merged on it alone —
+// on its own it would merge two genuinely different rooms.
+export function showAliasKey(show) {
+  if (!show) return "";
+  const date = typeof show.date === "string" ? show.date.slice(0, 10) : "";
+  const names = Array.isArray(show.artistNames) ? show.artistNames : [];
+  const headliner = normalizeArtistName(names[0] ?? show.title ?? "");
+  if (!date || !headliner) return "";
+  const startTime = typeof show.startTime === "string" ? show.startTime.trim() : "";
+  return `${date}|${headliner}|${startTime}`;
+}
+
+/**
+ * Cluster rows that share an alias key into groups of one-room-many-names.
+ * Transitive on purpose: "The Blue Note" ⊂ "Blue Note Jazz Club" ⊂ "Blue Note
+ * Jazz Club - NY" is one room under three names, and all three should land in
+ * the same cluster.
+ */
+export function clusterByVenueAlias(rows) {
+  const clusters = [];
+  for (const row of rows ?? []) {
+    const match = clusters.find((cluster) =>
+      cluster.some((member) => venueNamesAlias(member.venueName, row.venueName)),
+    );
+    if (match) match.push(row);
+    else clusters.push([row]);
+  }
+  return clusters.filter((cluster) => cluster.length > 1);
+}
+
+/**
+ * The pass-2 plan. Rows are bucketed by the venue-free key, then each bucket is
+ * clustered by the subset rule; only clusters larger than one merge.
+ *
+ * A row with NO start time is a special case worth stating: it is allowed to
+ * join a cluster only when that cluster has exactly one distinct start time.
+ * Two distinct times means the untimed row could belong to either the early or
+ * the late set, and guessing there is how a real show gets deleted.
+ */
+export function planVenueAliasDeduplication(shows) {
+  const buckets = new Map();
+  const untimed = new Map();
+  for (const show of shows ?? []) {
+    const key = showAliasKey(show);
+    if (!key) continue;
+    const timed = typeof show.startTime === "string" && show.startTime.trim().length > 0;
+    const target = timed ? buckets : untimed;
+    const bucket = target.get(key);
+    if (bucket) bucket.push(show);
+    else target.set(key, [show]);
+  }
+
+  const merges = [];
+  for (const [key, rows] of buckets) {
+    for (const cluster of clusterByVenueAlias(rows)) {
+      merges.push({ key, ...planShowMerge(cluster) });
+    }
+  }
+
+  // Untimed rows: their alias key ends in an empty time, so pair them against
+  // the timed rows for the same night and headliner.
+  let untimedAttached = 0;
+  for (const [key, rows] of untimed) {
+    const prefix = key.slice(0, key.lastIndexOf("|") + 1);
+    const siblings = [];
+    for (const [timedKey, timedRows] of buckets) {
+      if (timedKey.startsWith(prefix)) siblings.push(...timedRows);
+    }
+    const distinctTimes = new Set(siblings.map((row) => row.startTime));
+    if (distinctTimes.size !== 1) continue; // ambiguous — leave it alone
+    for (const row of rows) {
+      const cluster = [...siblings, row];
+      if (!clusterByVenueAlias(cluster).length) continue;
+      merges.push({ key, ...planShowMerge(cluster) });
+      untimedAttached += 1;
+    }
+  }
+
+  return {
+    groupCount: merges.length,
+    excessRows: merges.reduce((total, merge) => total + merge.duplicateIds.length, 0),
+    untimedAttached,
     merges,
   };
 }

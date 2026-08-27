@@ -18,6 +18,7 @@ import {
   planArtistMerge,
   planVenueMerge,
   planDeduplication,
+  planVenueAliasDeduplication,
 } from "../convex/dedupUtils.js";
 
 const dir = process.argv[2];
@@ -89,4 +90,19 @@ for (const [table, plan] of Object.entries(plans)) {
         (gained.length ? `   +[${gained.join(" ")}]` : ""),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Pass 2 — venue aliases on the show key
+// ---------------------------------------------------------------------------
+
+const alias = planVenueAliasDeduplication(shows);
+console.log(
+  `\nPASS 2 (venue aliases)  ${alias.groupCount} clusters · ${alias.excessRows} excess · ` +
+    `${shows.length - alias.excessRows} after · ${alias.untimedAttached} untimed rows attached`,
+);
+
+const samples = alias.merges.slice(0, sampleCount);
+for (const sample of samples) {
+  console.log(`  x${sample.duplicateIds.length + 1}  ${sample.key}`);
 }

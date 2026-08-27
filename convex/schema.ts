@@ -69,8 +69,13 @@ export default defineSchema({
     // date | venue | headliner | startTime (dedupUtils.showKey). Start time is
     // part of it on purpose: an 8:30 and a 10:30 set are two ticketed events.
     dedupKey: v.optional(v.string()),
+    // date | headliner | startTime, with NO venue — the candidate set for the
+    // venue-alias rule. Never a merge key on its own: two genuinely different
+    // rooms can share it, and only the token-subset test can tell them apart.
+    aliasKey: v.optional(v.string()),
   })
     .index("by_dedup_key", ["dedupKey"])
+    .index("by_alias_key", ["aliasKey"])
     .index("by_festival", ["festivalId"])
     .index("by_date", ["date"])
     .index("by_city_date", ["city", "date"])
