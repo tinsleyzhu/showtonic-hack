@@ -184,9 +184,19 @@ test("demo camera roll fabricates matchable evening photos from past shows", () 
   const photos = buildDemoCameraRoll(shows, { today: "2026-08-15", limit: 3 });
   assert.equal(photos.length >= 9, true); // ≥3 photos per night
   const clusters = clusterPhotosIntoNights(photos);
-  assert.equal(clusters.length, 3);
+  // Three placeable nights PLUS one the catalog cannot explain. The roll is
+  // built from real shows, so without a deliberate gap every night would match
+  // and the demo could never show the matcher refusing — the behaviour the
+  // product is proudest of would be the one thing the demo hides.
+  assert.equal(clusters.length, 4);
   const candidates = matchClustersToShows(clusters, shows, { today: "2026-08-15" });
   assert.equal(candidates.length, 3);
+  const placed = new Set(candidates.map((candidate) => candidate.clusterDate));
+  const declined = clusters.filter((cluster) => !placed.has(cluster.clusterDate));
+  assert.equal(declined.length, 1);
+  // And it must be refused on the evidence, not by luck: the gap night carries
+  // GPS, far from any venue, so location cannot rescue it either.
+  assert.equal(declined[0].gps !== null, true);
   // Deterministic: same input, same output.
   assert.deepEqual(buildDemoCameraRoll(shows, { today: "2026-08-15", limit: 3 }), photos);
 });

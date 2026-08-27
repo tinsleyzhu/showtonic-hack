@@ -138,7 +138,49 @@ function buildDemoCameraRoll(shows, options = {}) {
       photos.push(photo);
     }
   }
+
+  // ONE NIGHT THE CATALOG CANNOT EXPLAIN.
+  //
+  // Every cluster above is generated AT a real show's date and coordinates, so
+  // by construction all of them are placeable — a roll built from matches can
+  // never produce the one thing the product is proudest of. The demo would
+  // show only work done and never the restraint, which is the marketing
+  // version of the feed.
+  //
+  // So the roll carries a deliberate gap: an evening with no show in the
+  // catalog, far from any venue. The scan then reports "N nights rebuilt, 1
+  // declined" live, and the refusal a judge sees is produced by the scan in
+  // front of them rather than seeded beforehand.
+  const knownDates = new Set(pastShows.map((show) => show.date));
+  const anchor = picked[0]?.date ?? today;
+  let gapDate = null;
+  for (let back = 3; back < 400 && !gapDate; back += 1) {
+    const candidate = shiftDays(anchor, -back);
+    if (!knownDates.has(candidate) && candidate < today) gapDate = candidate;
+  }
+  if (gapDate) {
+    // Far enough from any real venue that GPS cannot rescue it (~55 km), which
+    // is what makes the refusal honest rather than a near miss we suppressed.
+    const base = picked.find((show) => Number.isFinite(show.venueLatitude ?? show.latitude));
+    const lat = (base?.venueLatitude ?? base?.latitude ?? 37.7749) + 0.5;
+    const lon = (base?.venueLongitude ?? base?.longitude ?? -122.4194) + 0.5;
+    for (let index = 0; index < 4; index += 1) {
+      photos.push({
+        name: `IMG_${gapDate.replaceAll("-", "")}_${index}.jpg`,
+        takenAt: `${gapDate}T${21 + (index % 3)}:${String((11 * index) % 60).padStart(2, "0")}:00`,
+        latitude: Number((lat + index * 0.0001).toFixed(6)),
+        longitude: Number((lon - index * 0.0001).toFixed(6)),
+      });
+    }
+  }
+
   return photos;
+}
+
+function shiftDays(iso, days) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 export { buildDemoCameraRoll, extractExifDate };
