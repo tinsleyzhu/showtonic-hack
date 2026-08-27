@@ -2255,3 +2255,35 @@ Two of my own sites are on the register honestly rather than dressed up:
 approximations that can *omit* a friend-going evidence row but cannot produce
 a wrong one. That asymmetry is why they are acceptable and it is written at
 the call site, not left as folklore.
+
+## L1 — DEDUP SWEEP (human-requested, coordinator-measured)
+
+Full snapshot export analyzed (backup exists at /tmp/showtonic-export.zip,
+taken 01:20). The catalog holds three layers of duplication:
+
+| layer   | scale                                   | example |
+|---------|------------------------------------------|---------|
+| shows   | 2,284 groups · 2,581 EXCESS ROWS (~22%)  | Ron Carter Quartet 2026-10-09 x4 |
+| artists | 1,311 twin groups                        | Strawberry Guy x3; "& " vs " and " |
+| venues  | 8 twin groups                            | Golden Gate Theater/Theatre; The Warfield/Warfield |
+
+Match keys used: NFKD-fold, lowercase, & → and, theatre → theater, strip
+punctuation and leading "The". Same date + normalized venue + normalized
+headliner for shows.
+
+Order of work — shows first (biggest visible payoff), then artists, then
+venues. Rules:
+1. PURE NORMALIZER FIRST, with tests — one module both the migration and
+   future ingest share, so the dupes do not come back on the next sync.
+2. DRY RUN that prints the merge plan (counts + 20 samples) before anything
+   writes. Post the numbers here before running live.
+3. Canonical row = most complete (support acts, image, ticketUrl, genres).
+   Repoint EVERY reference before deleting: logs, attendance, media,
+   watchlist, backfillCandidates (shows); shows.artistIds + artistFollows
+   (artists); shows.venueId (venues).
+4. Batched mutations — stay inside the write limits; the cap-safe rule
+   applies to your reads.
+5. Ingest fix in the same PR: syncs must look up by normalized key before
+   inserting, or this sweep is a one-day cure.
+
+Coordinator deploys on merge. The snapshot is the rollback.
