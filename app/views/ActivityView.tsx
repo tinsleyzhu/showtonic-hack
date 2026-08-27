@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Bookmark, Heart, Star } from "lucide-react";
 import { Avatar, EmptyLine, formatDate, PageTitle, SectionTitle, type LiveState } from "./shared";
 
@@ -102,6 +103,13 @@ export function ActivityView({
 
 function FeedRow({ event, onOpenShow, onToggleLike, onWatchlist }: { event: FeedEvent; onOpenShow: (id: string) => void; onToggleLike: (logId: string) => Promise<unknown>; onWatchlist: (showId: string) => Promise<unknown> }) {
   const artist = event.show.artistNames?.[0] ?? event.show.title;
+  const [liking, setLiking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // "Save show" gave no lasting sign it had worked, so the same row invited the
+  // same tap forever. The feed carries no watchlist flag to read back, so this
+  // is a local acknowledgement of what YOU just did — deliberately not a claim
+  // about server state.
+  const [saved, setSaved] = useState(false);
   return (
     <div className="py-4">
       <div className="flex items-center gap-3">
@@ -123,12 +131,32 @@ function FeedRow({ event, onOpenShow, onToggleLike, onWatchlist }: { event: Feed
       )}
       <div className="mt-3 flex items-center justify-between text-xs text-[#8A8177]">
         {event.kind === "logged" && event.logId ? (
-          <button className={`flex items-center gap-1 font-black ${event.likedByMe ? "text-[#4EC98F]" : ""}`} onClick={() => void onToggleLike(String(event.logId))} type="button">
+          <button
+            aria-label={event.likedByMe ? `Unlike this review (${event.likeCount} likes)` : `Like this review (${event.likeCount} likes)`}
+            aria-pressed={event.likedByMe}
+            className={`flex items-center gap-1 font-black disabled:opacity-60 ${event.likedByMe ? "text-[#4EC98F]" : ""}`}
+            disabled={liking}
+            onClick={() => {
+              setLiking(true);
+              void Promise.resolve(onToggleLike(String(event.logId))).finally(() => setLiking(false));
+            }}
+            type="button"
+          >
             <Heart className={`h-4 w-4 ${event.likedByMe ? "fill-current" : ""}`} /> {event.likeCount || ""}
           </button>
         ) : <span />}
-        <button className="flex items-center gap-1 font-black text-[#4EC98F]" onClick={() => void onWatchlist(String(event.showId))} type="button">
-          <Bookmark className="h-4 w-4" /> Save show
+        <button
+          className="flex items-center gap-1 font-black text-[#4EC98F] disabled:opacity-60"
+          disabled={saving || saved}
+          onClick={() => {
+            setSaving(true);
+            void Promise.resolve(onWatchlist(String(event.showId)))
+              .then(() => setSaved(true))
+              .finally(() => setSaving(false));
+          }}
+          type="button"
+        >
+          <Bookmark className={`h-4 w-4 ${saved ? "fill-current" : ""}`} /> {saving ? "Saving…" : saved ? "Saved" : "Save show"}
         </button>
       </div>
     </div>

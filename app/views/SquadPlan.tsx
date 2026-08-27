@@ -47,7 +47,7 @@ export function SquadPlanCard({
         />
       </div>
 
-      <div className="mt-4 border border-[#2A2521] bg-[#1A1713] p-5">
+      <div className="surface-settle mt-4 border border-[#2A2521] bg-[#1A1713] p-5">
         <button className="text-left" onClick={() => openShow(plan.showId)} type="button">
           <h3 className="font-display text-2xl">{plan.showTitle}</h3>
           <p className="mt-1 text-sm text-[#C9C1B4]">
@@ -73,6 +73,7 @@ export function SquadPlanCard({
         )}
 
         <button
+          aria-expanded={showTranscript}
           className="mt-5 flex items-center gap-2 text-xs font-black text-[#6FBCD3]"
           onClick={() => setShowTranscript((open) => !open)}
           type="button"
@@ -82,7 +83,7 @@ export function SquadPlanCard({
         </button>
 
         {showTranscript && (
-          <div className="mt-4 divide-y divide-white/10 border-t border-white/10">
+          <div className="surface-settle mt-4 divide-y divide-white/10 border-t border-white/10">
             {plan.transcript.length ? (
               plan.transcript.map((line, index) => (
                 <p className="py-3 text-sm leading-6" key={`${line.at}-${index}`}>

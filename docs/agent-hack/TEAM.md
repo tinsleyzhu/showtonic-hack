@@ -695,6 +695,8 @@ agent.**
 | loading-state guards in ShowView/EntityViews/TasteMatchView/ProfileView (first 2 lines of each component only) | L6 | 06:40Z |
 | notice banner + boot copy in app/page.tsx | L6 | 06:40Z |
 | empty-state actions + share fallback (DiscoverView, ProfileView, ShowView StubCard) | L6 | 07:10Z |
+| interaction feedback: BackfillFlow accept, ShowView attendance/watchlist, AgentAccess revoke, ActivityView like/save | L6 | 07:35Z |
+| surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked

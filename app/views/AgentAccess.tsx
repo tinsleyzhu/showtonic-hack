@@ -48,6 +48,23 @@ export function AgentAccess({ userId }: { userId: Id<"users"> }) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Revoking was one unconfirmed tap that permanently kills a token you cannot
+  // be shown again. Two taps, with the consequence stated in between.
+  const [confirmingRevoke, setConfirmingRevoke] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  async function revokeToken(tokenId: Id<"agentTokens">) {
+    setRevoking(String(tokenId));
+    setError("");
+    try {
+      await revoke({ userId, tokenId });
+      setConfirmingRevoke(null);
+    } catch (revokeError) {
+      setError(revokeError instanceof Error ? revokeError.message : "Could not revoke that token. It is still active — try again.");
+    } finally {
+      setRevoking(null);
+    }
+  }
 
   function toggle(id: string) {
     setScopes((current) => {
@@ -111,7 +128,7 @@ export function AgentAccess({ userId }: { userId: Id<"users"> }) {
         </div>
       )}
 
-      {error && <p className="mt-4 border border-red-400/60 bg-red-950/30 p-3 text-xs text-red-200">{error}</p>}
+      {error && <p aria-live="assertive" className="mt-4 border border-red-400/60 bg-red-950/30 p-3 text-xs text-red-200" role="alert">{error}</p>}
 
       <div className="mt-5 border border-[#2A2521] bg-[#141210] p-4">
         <label className="block text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]" htmlFor="agent-label">Name this agent</label>
@@ -160,6 +177,7 @@ export function AgentAccess({ userId }: { userId: Id<"users"> }) {
       {tokens && tokens.length > 0 && (
         <div className="mt-5">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-[#8A8177]">Your agents</p>
+          <p className="mt-1 text-xs text-[#8A8177]">Revoking is permanent — the agent stops working immediately and the token cannot be reissued.</p>
           <div className="mt-2 divide-y divide-white/10 border-y border-white/10">
             {tokens.map((token) => (
               <div className="flex items-center gap-3 py-3" key={String(token._id)}>
@@ -172,14 +190,28 @@ export function AgentAccess({ userId }: { userId: Id<"users"> }) {
                   </small>
                 </span>
                 {!token.revoked && (
-                  <button
-                    aria-label={`Revoke ${token.label}`}
-                    className="flex shrink-0 items-center gap-1 border border-[#2A2521] px-3 py-2 text-xs font-black text-[#8A8177]"
-                    onClick={() => void revoke({ userId, tokenId: token._id as Id<"agentTokens"> })}
-                    type="button"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Revoke
-                  </button>
+                  confirmingRevoke === String(token._id) ? (
+                    <span className="flex shrink-0 items-center gap-2">
+                      <button
+                        className="border border-[#FF7A50] px-3 py-2 text-xs font-black text-[#FF7A50] disabled:opacity-60"
+                        disabled={revoking === String(token._id)}
+                        onClick={() => void revokeToken(token._id as Id<"agentTokens">)}
+                        type="button"
+                      >
+                        {revoking === String(token._id) ? "Revoking…" : "Revoke for good"}
+                      </button>
+                      <button className="text-xs font-black text-[#8A8177]" onClick={() => setConfirmingRevoke(null)} type="button">Keep</button>
+                    </span>
+                  ) : (
+                    <button
+                      aria-label={`Revoke ${token.label}`}
+                      className="flex shrink-0 items-center gap-1 border border-[#2A2521] px-3 py-2 text-xs font-black text-[#8A8177]"
+                      onClick={() => setConfirmingRevoke(String(token._id))}
+                      type="button"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Revoke
+                    </button>
+                  )
                 )}
               </div>
             ))}

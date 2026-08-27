@@ -240,13 +240,18 @@ export function BackfillFlow({
   }
 
   async function saveRatingAndNext() {
-    if (!activeLog) return;
+    if (!activeLog || busy) return;
     if (quickRating > 0 && activeLog.logId) {
+      setBusy(true);
       try {
         await rateLog({ userId, logId: activeLog.logId, rating: quickRating });
       } catch (ratingError) {
-        setError(ratingError instanceof Error ? ratingError.message : "Could not save the rating");
+        // The night itself is already in the diary — only the rating failed, and
+        // saying so keeps someone from assuming the whole thing was lost.
+        setError(ratingError instanceof Error ? ratingError.message : "The show is saved, but the rating did not go through. Try again, or rate it later from your diary.");
         return;
+      } finally {
+        setBusy(false);
       }
     }
     setResolved((entries) => [...entries, { candidate: activeLog.row.candidate, rating: quickRating }]);
@@ -276,7 +281,7 @@ export function BackfillFlow({
           <span aria-hidden className="h-10 w-10" />
         </div>
 
-        {error && <p className="mt-4 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
+        {error && <p aria-live="assertive" className="surface-settle mt-4 border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" role="alert">{error}</p>}
 
         {stage === "offer" && (
           <section className="flex flex-1 flex-col">
@@ -327,7 +332,7 @@ export function BackfillFlow({
                 <small className="mt-1 text-[10px] uppercase tracking-wide text-[#8A8177]">photos checked</small>
               </span>
             </div>
-            <div className="mt-10 divide-y divide-white/10 border-y border-white/10 text-sm">
+            <div aria-live="polite" className="mt-10 divide-y divide-white/10 border-y border-white/10 text-sm" role="status">
               <p className="flex items-center justify-between py-3">Night clusters found <b className="text-[#4EC98F]">{scanProgress.clusters}</b></p>
               <p className="flex items-center justify-between py-3">Photos with a location <b className="text-[#4EC98F]">{scanProgress.geotagged}</b></p>
               <p className="flex items-center justify-between py-3">Matched to known shows <b className="text-[#4EC98F]">{scanProgress.matched}</b></p>
@@ -382,7 +387,7 @@ export function BackfillFlow({
             <div className="flex-1" />
             <div className="mt-6 grid grid-cols-[2fr_1fr] gap-2">
               <button className="bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={busy} onClick={() => void resolveCurrent("accept")} type="button">
-                Yes, add it
+                {busy ? "Adding…" : "Yes, add it"}
               </button>
               <button className="border border-[#2A2521] px-5 py-4 text-sm font-black disabled:opacity-60" disabled={busy} onClick={() => void resolveCurrent("reject")} type="button">
                 No
@@ -396,7 +401,7 @@ export function BackfillFlow({
             {reassignOpen && (
               <div className="mt-3 divide-y divide-white/10 border-y border-white/10">
                 {sameNightAlternatives.slice(0, 4).map((show) => (
-                  <button className="flex w-full items-center gap-3 py-3 text-left" disabled={busy} key={show.id} onClick={() => void resolveCurrent("accept", show.id as Id<"shows">)} type="button">
+                  <button className="flex w-full items-center gap-3 py-3 text-left disabled:opacity-60" disabled={busy} key={show.id} onClick={() => void resolveCurrent("accept", show.id as Id<"shows">)} type="button">
                     <img alt="" className="h-10 w-10 rounded object-cover" src={show.image} />
                     <span className="min-w-0 flex-1">
                       <b className="block truncate text-sm">{show.artistNames?.join(" + ") || show.title}</b>
@@ -410,8 +415,8 @@ export function BackfillFlow({
         )}
 
         {stage === "rate" && activeLog && (
-          <section className="flex flex-1 flex-col">
-            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Show {resolved.length + 1} added</p>
+          <section className="surface-settle flex flex-1 flex-col">
+            <p aria-live="polite" className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]" role="status">Show {resolved.length + 1} added</p>
             <h1 className="font-display mt-3 text-4xl leading-[1.05]">
               How good was {activeLog.row.candidate.artistNames[0] ?? activeLog.row.candidate.showTitle}?
             </h1>
@@ -429,13 +434,13 @@ export function BackfillFlow({
               </div>
               <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
                 <RatingStars interactive onChange={setQuickRating} value={quickRating} />
-                <strong className="font-display text-3xl">{quickRating ? quickRating.toFixed(1) : "—"}</strong>
+                <strong className={`font-display text-3xl ${quickRating ? "surface-accept" : ""}`} key={quickRating}>{quickRating ? quickRating.toFixed(1) : "—"}</strong>
               </div>
               <p className="mt-3 text-xs text-[#8A8177]">{activeLog.row.candidate.photoCount} moments stay on this device.</p>
             </div>
             <div className="flex-1" />
-            <button className="mt-8 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black" onClick={() => void saveRatingAndNext()} type="button">
-              {quickRating > 0 ? "Save rating and next" : "Add without rating"}
+            <button className="mt-8 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={busy} onClick={() => void saveRatingAndNext()} type="button">
+              {busy ? "Saving…" : quickRating > 0 ? "Save rating and next" : "Add without rating"}
             </button>
             <button className="mt-3 text-sm font-black text-[#4EC98F]" onClick={() => { setQuickRating(0); void saveRatingAndNext(); }} type="button">
               Skip rating
@@ -448,7 +453,7 @@ export function BackfillFlow({
           <section className="flex flex-1 flex-col">
             <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Your diary has a past now</p>
             <div className="mt-4 flex items-baseline gap-3">
-              <strong className="font-display text-6xl text-[#4EC98F]">{resolved.length}</strong>
+              <strong className="surface-accept font-display text-6xl text-[#4EC98F]">{resolved.length}</strong>
               <span className="text-xs font-black uppercase tracking-[0.2em]">{resolved.length === 1 ? "show" : "shows"} reclaimed</span>
             </div>
             <h1 className="font-display mt-3 text-4xl leading-[1.05]">{describeReclaimSpan(resolved.map((entry) => entry.candidate)) || "Your nights, back in one place."}</h1>
