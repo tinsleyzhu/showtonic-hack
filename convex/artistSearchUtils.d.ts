@@ -48,3 +48,38 @@ export function decideArtistGenres(
   results: readonly SearchResult[] | undefined,
   options?: { name?: string; minDomains?: number; maxGenres?: number },
 ): ArtistGenreDecision;
+
+export const MAX_CONSECUTIVE_IDENTIFY_FAILURES: number;
+
+export type IdentifyBatchResult = {
+  searched?: number;
+  requested?: number;
+  identified?: number;
+  skipped?: string;
+  budgetRemaining?: number;
+};
+
+export type IdentifyPlan = {
+  done: boolean;
+  stop: boolean;
+  reason: string;
+  delayMs: number | null;
+  nextLimit: number;
+  failures: number;
+  creditsSpent: number;
+};
+
+/**
+ * Every stop condition for the backlog drain, in one pure place: budget cap,
+ * batch cap, empty backlog, and the difference between a batch that finished
+ * and one that broke early against a failing endpoint.
+ */
+export function planNextIdentifyBatch(state?: {
+  limit?: number;
+  maxCredits?: number;
+  creditsSpent?: number;
+  batchIndex?: number;
+  maxBatches?: number;
+  failures?: number;
+  last?: IdentifyBatchResult | null;
+}): IdentifyPlan;

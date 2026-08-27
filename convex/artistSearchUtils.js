@@ -212,3 +212,121 @@ export {
   corroboratedGenres,
   decideArtistGenres,
 };
+
+// ---------------------------------------------------------------------------
+// Draining the backlog — the pure half of the self-scheduling driver.
+// ---------------------------------------------------------------------------
+//
+// One artist is one metered credit, so the chain that walks the backlog needs
+// stop conditions that are provable rather than hoped for. This function holds
+// every one of them and touches nothing, so the arithmetic that decides
+// "spend another 25 credits" is tested without spending any.
+//
+// The distinctions that matter, and why:
+//   · budget exhausted is a STOP, not a finish — the backlog is still there.
+//   · a batch that threw is retried with a backoff; five in a row gives up.
+//   · a batch that searched FEWER artists than it asked for hit a failing
+//     endpoint mid-run and broke early. That is a failure, not a finish line;
+//     treating it as "backlog empty" is exactly how a drain stalls silently.
+//   · asking for fewer than a full page means the backlog itself ran out.
+
+export const MAX_CONSECUTIVE_IDENTIFY_FAILURES = 5;
+
+export function planNextIdentifyBatch(state) {
+  const limit = Math.max(1, Math.floor(state?.limit ?? 25));
+  const maxCredits = Math.max(0, Math.floor(state?.maxCredits ?? 200));
+  const spentBefore = Math.max(0, Math.floor(state?.creditsSpent ?? 0));
+  const batchIndex = Math.max(0, Math.floor(state?.batchIndex ?? 0));
+  const maxBatches = Math.max(1, Math.floor(state?.maxBatches ?? 100));
+  const failuresBefore = Math.max(0, Math.floor(state?.failures ?? 0));
+  const last = state?.last ?? null;
+
+  const halt = (reason, extra) => ({
+    done: false,
+    stop: true,
+    reason,
+    delayMs: null,
+    nextLimit: 0,
+    failures: failuresBefore,
+    creditsSpent: spentBefore,
+    ...extra,
+  });
+
+  // A batch that threw. The chain is the only thing keeping the drain alive,
+  // so losing it here would stall with no signal.
+  if (last === null) {
+    const failures = failuresBefore + 1;
+    if (failures >= MAX_CONSECUTIVE_IDENTIFY_FAILURES) {
+      return halt("gave up after consecutive batch failures", { failures });
+    }
+    return {
+      done: false,
+      stop: false,
+      reason: "batch failed — retrying with backoff",
+      delayMs: 5_000 * failures,
+      nextLimit: limit,
+      failures,
+      creditsSpent: spentBefore,
+    };
+  }
+
+  const searched = Math.max(0, Math.floor(last.searched ?? 0));
+  const requested = Math.max(0, Math.floor(last.requested ?? 0));
+  const creditsSpent = spentBefore + searched;
+
+  // The action reports its own refusals — no key, no budget — in band.
+  if (last.skipped) return halt(last.skipped, { creditsSpent });
+
+  // A partial grant spends what was left and comes back with nothing to give.
+  // Read the budget itself rather than inferring emptiness from a short page,
+  // which is the same thing for very different reasons.
+  if (typeof last.budgetRemaining === "number" && last.budgetRemaining <= 0) {
+    return halt("search budget exhausted", { creditsSpent, failures: 0 });
+  }
+
+  // Nothing left to look up.
+  if (requested === 0) {
+    return { ...halt("backlog empty", { creditsSpent }), done: true, failures: 0 };
+  }
+
+  // Broke mid-run against a failing endpoint. Retry — the artists it did not
+  // reach are still reported as missing, so nothing is lost by coming back.
+  if (searched < requested) {
+    const failures = failuresBefore + 1;
+    if (failures >= MAX_CONSECUTIVE_IDENTIFY_FAILURES) {
+      return halt("gave up after consecutive batch failures", { failures, creditsSpent });
+    }
+    return {
+      done: false,
+      stop: false,
+      reason: "batch stopped early — retrying with backoff",
+      delayMs: 5_000 * failures,
+      nextLimit: limit,
+      failures,
+      creditsSpent,
+    };
+  }
+
+  // A short page means the backlog ran out, not that anything went wrong.
+  if (requested < limit) {
+    return { ...halt("backlog empty", { creditsSpent }), done: true, failures: 0 };
+  }
+
+  const remainingCredits = maxCredits - creditsSpent;
+  if (remainingCredits <= 0) {
+    return { ...halt("credit cap for this run reached", { creditsSpent }), failures: 0 };
+  }
+  if (batchIndex + 1 >= maxBatches) {
+    return { ...halt("batch cap for this run reached", { creditsSpent }), failures: 0 };
+  }
+
+  return {
+    done: false,
+    stop: false,
+    reason: "continuing",
+    delayMs: 1_000,
+    nextLimit: Math.min(limit, remainingCredits),
+    failures: 0,
+    creditsSpent,
+  };
+}
