@@ -476,6 +476,117 @@ function mentionsVenue(text, venueName) {
   return core.length >= VENUE_CORE_MIN_LENGTH && haystack.includes(core);
 }
 
+// The catalog's name for a room the web wrote a different way.
+//
+// A proposal carries the venue name its SOURCE used — "Midway San Francisco",
+// "The Midway SF" — and approving one creates a show. If that name does not
+// resolve to the row the catalog already has, approval quietly mints a twin
+// venue, and this agent becomes a duplicate generator pointed at the catalog it
+// exists to fill.
+//
+// So the same matching that decides whether a page is about a room decides
+// which row it is: exact name, then shared core, then one core containing the
+// other (the "Irving Plaza" / "Irving Plaza Powered By Verizon 5G" shape).
+// City must agree when both sides state one, because "The Independent" is a
+// room in San Francisco and a different room elsewhere.
+//
+// Returns the existing venue, or null — and null means "insert what the source
+// said", never "guess". A wrong merge is worse than a duplicate: it moves a
+// show into a room it was not in.
+// The words a venue's name grows by without becoming another venue: who is
+// paying for it, where it is, and what kind of room it is.
+const VENUE_TAG_WORDS = new Set([
+  "powered",
+  "presented",
+  "presents",
+  "sponsored",
+  "brought",
+  "by",
+  "at",
+  "formerly",
+  "aka",
+  "the",
+  "club",
+  "jazz",
+  "music",
+  "hall",
+  "theatre",
+  "theater",
+  "lounge",
+  "ballroom",
+  "room",
+  "bar",
+  "cafe",
+  "arena",
+  "amphitheater",
+  "amphitheatre",
+  "auditorium",
+  "center",
+  "centre",
+  "live",
+  "sf",
+  "nyc",
+  "ny",
+  "ca",
+  "san",
+  "francisco",
+  "new",
+  "york",
+  "brooklyn",
+  "5g",
+  "verizon",
+]);
+
+function isVenueNameTag(extra) {
+  const words = String(extra ?? "")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return false;
+  // A sponsor clause can carry a brand this list has never heard of, but it
+  // always announces itself first: "powered by <anything>".
+  if (/^(?:powered|presented|sponsored|brought)\b/.test(words[0])) return true;
+  return words.every((word) => VENUE_TAG_WORDS.has(word));
+}
+
+function canonicalVenue(candidateName, candidateCity, venues) {
+  const wanted = normalizeText(candidateName);
+  if (!wanted) return null;
+  const wantedCore = venueCore(candidateName);
+  const city = normalizeText(candidateCity ?? "");
+
+  const sameCity = (venue) => {
+    const venueCity = normalizeText(venue?.city ?? "");
+    return !city || !venueCity || city === venueCity;
+  };
+
+  const rows = (Array.isArray(venues) ? venues : []).filter(sameCity);
+  const exact = rows.find((venue) => normalizeText(venue.name) === wanted);
+  if (exact) return exact;
+  if (wantedCore.length < VENUE_CORE_MIN_LENGTH) return null;
+
+  const sameCore = rows.find((venue) => venueCore(venue.name) === wantedCore);
+  if (sameCore) return sameCore;
+
+  // One name is the other plus something. That something decides: a sponsor, a
+  // city tag or the room's own type is the SAME room written longer; anything
+  // else is a different name that happens to start the same way, and merging it
+  // moves a show into a room it was not in.
+  const contained = rows.filter((venue) => {
+    const core = venueCore(venue.name);
+    if (core.length < VENUE_CORE_MIN_LENGTH) return false;
+    if (core === wantedCore) return true;
+    const extra = core.startsWith(`${wantedCore} `)
+      ? core.slice(wantedCore.length + 1)
+      : wantedCore.startsWith(`${core} `)
+        ? wantedCore.slice(core.length + 1)
+        : null;
+    return extra !== null && isVenueNameTag(extra);
+  });
+  // Two rows both plausible means the catalog itself is ambiguous about this
+  // room, and picking one is a coin flip that moves a show.
+  return contained.length === 1 ? contained[0] : null;
+}
+
 function lineupKey(names) {
   return names.map(normalizeText).sort().join("|");
 }
@@ -1305,6 +1416,7 @@ export {
   VENUE_ANCHOR_METERS,
   buildFestivalQueries,
   buildGapQueries,
+  canonicalVenue,
   dateNeedles,
   dayLineupSegment,
   describeProposal,

@@ -16,6 +16,7 @@ import {
   nightsMissingFromCatalog,
   buildFestivalQueries,
   buildGapQueries,
+  canonicalVenue,
   dayLineupSegment,
   describeProposal,
   extractArtistNames,
@@ -545,4 +546,54 @@ test("a sentence fragment is never an act", () => {
   assert.equal(looksLikeArtistName("many more artists"), false);
   assert.equal(looksLikeArtistName("scheduled for Sunday"), false);
   assert.equal(looksLikeArtistName("Wet Leg"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Approving a proposal must not mint a twin venue
+// ---------------------------------------------------------------------------
+//
+// The agent's whole purpose is filling the catalog. Writing through the venue
+// name the SOURCE used — "Midway San Francisco" next to the catalog's "The
+// Midway" — turns it into a duplicate generator pointed at the thing it exists
+// to fix, and every later match has to pick between the twins.
+
+const CATALOG_VENUES = [
+  { name: "The Midway", city: "San Francisco" },
+  { name: "The Independent", city: "San Francisco" },
+  { name: "Irving Plaza", city: "New York" },
+  { name: "Blue Note Jazz Club", city: "New York" },
+];
+
+test("a room the web wrote differently resolves to the row the catalog has", () => {
+  const resolve = (name, city) => canonicalVenue(name, city, CATALOG_VENUES)?.name ?? null;
+  assert.equal(resolve("Midway San Francisco", "San Francisco"), "The Midway");
+  assert.equal(resolve("The Midway SF", "San Francisco"), "The Midway");
+  // The alias shape L1 measured on the catalog itself: a sponsor bolted on.
+  assert.equal(resolve("Irving Plaza Powered By Verizon 5G", "New York"), "Irving Plaza");
+  assert.equal(resolve("The Blue Note", "New York"), "Blue Note Jazz Club");
+});
+
+test("a room the catalog does not have is inserted, not merged into a neighbour", () => {
+  // Null means "write what the source said". A wrong merge is worse than a
+  // duplicate: it moves a show into a room it was not in.
+  assert.equal(canonicalVenue("Bimbo's 365 Club", "San Francisco", CATALOG_VENUES), null);
+  // "The Midway" plus a word that is not a sponsor, a city or a room type is a
+  // different name that happens to start the same way.
+  assert.equal(canonicalVenue("Midway Point", "San Francisco", CATALOG_VENUES), null);
+});
+
+test("the same name in another city is another room", () => {
+  assert.equal(canonicalVenue("The Independent", "Los Angeles", CATALOG_VENUES), null);
+  assert.equal(
+    canonicalVenue("The Independent", "San Francisco", CATALOG_VENUES)?.name,
+    "The Independent",
+  );
+});
+
+test("two plausible rows mean the catalog is ambiguous, so nothing is merged", () => {
+  const twins = [
+    { name: "Blue Note", city: "New York" },
+    { name: "Blue Note Jazz Club", city: "New York" },
+  ];
+  assert.equal(canonicalVenue("Blue Note Jazz", "New York", twins), null);
 });
