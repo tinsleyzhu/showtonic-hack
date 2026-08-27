@@ -162,6 +162,45 @@ const NIGHTS = [
 
   // Nothing came back at all. The agent must survive an empty result set.
   night("gap-no-results", "2025-12-20", VENUES.gamh.name, null, []),
+
+  // --- Found in production, not invented ------------------------------------
+  // The first real 28-night sweep of The Midway proposed this as an artist.
+  // The fixtures above were all too clean to produce it: a social caption is
+  // promotional prose, correctly dated, naming the right venue, and it parses
+  // into something that looks like a bill if you only split on separators.
+  night("gap-social-caption", "2026-05-27", VENUES.midway.name, null, [
+    {
+      title: "Register for presale now 〰️ themidwaysf. com + galantis Block ...",
+      url: "https://www.facebook.com/Themidwaysf/videos/register-for-presale-now",
+      content: "The Midway SF, May 27, 2026. Block party szn is in full bloom.",
+    },
+  ]),
+
+  // A real listing corroborated by a social post is still a real listing — the
+  // social rule must not throw away the night, only refuse to carry it alone.
+  night("gap-social-corroborates", "2026-05-23", VENUES.midway.name, ["Benny Benassi"], [
+    {
+      title: "Benny Benassi at The Midway - May 23, 2026",
+      url: "https://www.shazam.com/event/3fe84689",
+      content: "The Midway, San Francisco. May 23, 2026.",
+    },
+    {
+      title: "Benny Benassi @ The Midway",
+      url: "https://www.instagram.com/p/benny-midway",
+      content: "Saturday, May 23 at The Midway.",
+    },
+  ]),
+
+  // The venue writes its own name half a dozen ways. "Midway San Francisco" is
+  // the same room as "The Midway", and requiring the exact catalog string threw
+  // away correctly dated real listings.
+  night("gap-venue-alias", "2026-05-09", VENUES.midway.name, ["Bolly+House Day Party"], [
+    {
+      title: "Bolly+House Day Party @ Midway San Francisco | May 9 Tickets, Saturday, May 9",
+      url: "https://www.eventbrite.com/e/bollyhouse-day-party-midway-san-francisco-may-9-tickets",
+      content: "Saturday, May 9 at Midway San Francisco.",
+    },
+  ]),
 ];
 
 export { NIGHTS, night };

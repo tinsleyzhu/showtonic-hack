@@ -89,10 +89,13 @@ function printGapOverall(results) {
 function printGapRows(result) {
   console.log(`\n${result.label} — every night, and what it proposed:`);
   for (const row of result.rows) {
-    const got = row.actual ? row.actual.join(" + ") : "—";
+    // Quoted per name: "Bolly + House Day Party" as one name and as two look
+    // identical when joined, which hid a real failure once.
+    const show = (names) => (names ? names.map((name) => `"${name}"`).join(" + ") : "—");
+    const got = show(row.actual);
     console.log(
       `  ${row.clusterDate}  ${pad(row.scenario, 22)} ${pad(row.outcome, 19)}` +
-        ` expected=${pad(row.expected ? row.expected.join(" + ") : "nothing", 18)} got=${got}`,
+        ` expected=${pad(show(row.expected), 26)} got=${got}`,
     );
   }
 }

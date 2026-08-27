@@ -91,6 +91,9 @@ export function extractArtistNames(title: string, venueName?: string | null): st
 export function splitLineup(value: string): string[];
 export function hostOf(url: string): string;
 export function isTicketingDomain(url: string): boolean;
+export function isSocialDomain(url: string): boolean;
+export function mentionsVenue(text: string, venueName: string): boolean;
+export function weekdayDateNeedles(isoDate: string): string[];
 export function describeProposal(proposal: CatalogProposal | null): string;
 export function proposeFromResults(
   gap: GapNight,
