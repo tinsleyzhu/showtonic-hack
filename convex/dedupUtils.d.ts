@@ -46,3 +46,44 @@ export function planDeduplication<T extends { _id: unknown }>(
   rows: readonly T[],
   options: { keyFn: (row: T) => string; mergeFn: (members: T[]) => MergePlan<T["_id"]> },
 ): DeduplicationPlan<T["_id"]>;
+
+/** Venue-name tokens with sponsor dressing and trailing city suffixes removed. */
+export function venueTokens(name: unknown): string[];
+export function hasSponsorSuffix(name: unknown): boolean;
+
+/**
+ * One room under two names: one token set contains the other, and the
+ * contained set is distinctive (not just "hall" or "park"). Directional
+ * containment, not overlap — that is what refuses Sofar NoLita vs NoMad.
+ */
+export function venueNamesAlias(left: unknown, right: unknown): boolean;
+
+/** date | headliner | startTime, with no venue. A candidate set, never a merge key. */
+export function showAliasKey(show: unknown): string;
+
+export function clusterByVenueAlias<T extends { venueName?: string }>(
+  rows: readonly T[] | undefined,
+): T[][];
+
+export function planVenueAliasDeduplication<T extends { _id: unknown }>(
+  shows: readonly T[] | undefined,
+): {
+  groupCount: number;
+  excessRows: number;
+  untimedAttached: number;
+  merges: (MergePlan<T["_id"]> & { key: string })[];
+};
+
+export function chooseDisplayVenueName(
+  candidates: readonly { name: string; count?: number; fromVenueRow?: boolean }[] | undefined,
+): string;
+
+/** One spelling per room for the denormalized shows.venueName string. */
+export function planVenueNameCanonicalization(
+  shows: readonly unknown[] | undefined,
+  venues: readonly unknown[] | undefined,
+): {
+  roomCount: number;
+  spellingCount: number;
+  renames: { key: string; keep: string; replace: string[] }[];
+};

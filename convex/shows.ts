@@ -3,7 +3,14 @@ import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { listShowSummaries } from "./discovery";
 import { summarizeRatings } from "./showtonicUtils.js";
-import { artistKey, venueKey, showKey } from "./dedupUtils.js";
+import {
+  artistKey,
+  venueKey,
+  showKey,
+  showAliasKey,
+  venueNamesAlias,
+  hasSponsorSuffix,
+} from "./dedupUtils.js";
 
 const upcomingEvent = v.object({
   jambaseId: v.string(),
@@ -385,6 +392,7 @@ export const importUpcoming = mutation({
         jambaseUrl: event.jambaseUrl,
       };
       const dedupKey = showKey(payload);
+      const aliasKey = showAliasKey(payload);
       let existingShow = await ctx.db
         .query("shows")
         .withIndex("by_jambase", (q) => q.eq("jambaseId", event.jambaseId))
@@ -398,6 +406,19 @@ export const importUpcoming = mutation({
           .withIndex("by_dedup_key", (q) => q.eq("dedupKey", dedupKey))
           .first();
       }
+      // And the same room under another name. The alias key alone would merge
+      // two genuinely different rooms on the same night, so it only produces
+      // candidates — the token-subset test decides.
+      if (!existingShow && aliasKey) {
+        const candidates = await ctx.db
+          .query("shows")
+          .withIndex("by_alias_key", (q) => q.eq("aliasKey", aliasKey))
+          .take(20); // cap-safe: an alias key is one night + one headliner + one start time; a handful of rows at most, and the subset test filters them
+        existingShow =
+          candidates.find((candidate) =>
+            venueNamesAlias(candidate.venueName, event.venueName),
+          ) ?? null;
+      }
 
       if (existingShow) {
         // Patch WITHOUT the identity fields: the surviving row keeps the
@@ -406,6 +427,16 @@ export const importUpcoming = mutation({
         const merged = {
           ...payload,
           dedupKey,
+          aliasKey,
+          // The room keeps the cleaner of the two names. An incoming
+          // "… Powered By Verizon 5G" must not rename a row that is already
+          // clean — and if the stored row is the dressed one, this is the
+          // chance to undress it.
+          venueName:
+            hasSponsorSuffix(existingShow.venueName) && !hasSponsorSuffix(payload.venueName)
+              ? payload.venueName
+              : existingShow.venueName,
+          venueId: existingShow.venueId ?? payload.venueId,
           artistIds: payload.artistIds.length >= (existingShow.artistIds?.length ?? 0)
             ? payload.artistIds
             : existingShow.artistIds,
@@ -418,7 +449,7 @@ export const importUpcoming = mutation({
         await ctx.db.patch(existingShow._id, merged);
         updated += 1;
       } else {
-        await ctx.db.insert("shows", { jambaseId: event.jambaseId, ...payload, dedupKey });
+        await ctx.db.insert("shows", { jambaseId: event.jambaseId, ...payload, dedupKey, aliasKey });
         inserted += 1;
       }
     }

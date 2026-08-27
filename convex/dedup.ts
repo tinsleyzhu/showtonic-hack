@@ -32,8 +32,11 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   showKey,
+  showAliasKey,
   artistKey,
   venueKey,
+  planVenueAliasDeduplication,
+  planVenueNameCanonicalization,
   planShowMerge,
   planArtistMerge,
   planVenueMerge,
@@ -397,9 +400,20 @@ export const backfillKeysPage = internalMutation({
           await ctx.db.patch(row._id, { nameKey });
           patched += 1;
         }
+      } else if (args.table === "shows") {
+        const show = row as Doc<"shows">;
+        const dedupKey = showKey(show);
+        const aliasKey = showAliasKey(show);
+        const patch: Record<string, string> = {};
+        if (dedupKey && show.dedupKey !== dedupKey) patch.dedupKey = dedupKey;
+        if (aliasKey && show.aliasKey !== aliasKey) patch.aliasKey = aliasKey;
+        if (Object.keys(patch).length > 0) {
+          await ctx.db.patch(row._id, patch);
+          patched += 1;
+        }
       } else {
-        const dedupKey = args.table === "shows" ? showKey(row) : venueKey(row);
-        if (dedupKey && (row as Doc<"shows"> | Doc<"venues">).dedupKey !== dedupKey) {
+        const dedupKey = venueKey(row);
+        if (dedupKey && (row as Doc<"venues">).dedupKey !== dedupKey) {
           await ctx.db.patch(row._id, { dedupKey });
           patched += 1;
         }
@@ -514,6 +528,187 @@ export const runDedup = action({
       summary.keyed += page.patched;
       if (page.isDone) break;
       keyCursor = page.cursor;
+    }
+
+    return summary;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Pass 2 — venue aliases
+// ---------------------------------------------------------------------------
+//
+// Pass 1 keyed on the venue name, so it could not see that "Blue Note Jazz
+// Club" and "The Blue Note" are one room. This pass buckets shows by the
+// venue-free key and then requires a token-subset match on the names, which is
+// what keeps Sofar's neighbourhood rooms — and Birdland's Jazz Club vs its
+// Theater — apart. Coordinates are NOT used: several venue rows carry
+// city-centroid geocodes, and rooms that share an address are real.
+//
+// Reuses applyShowMerges, so absorb-repoint-delete and the whole reference map
+// are the same code that ran in pass 1.
+export const runVenueAliasDedup = action({
+  args: {
+    apply: v.optional(v.boolean()),
+    maxGroups: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    samples: v.optional(v.number()),
+  },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    applied: boolean;
+    rows: number;
+    groupCount: number;
+    excessRows: number;
+    untimedAttached: number;
+    patched: number;
+    repointed: number;
+    deleted: number;
+    keyed: number;
+    samples: { key: string; copies: number; venueNames: string[] }[];
+  }> => {
+    const rows = (await collectTable(ctx, "shows")) as Doc<"shows">[];
+    const plan = planVenueAliasDeduplication(rows as never[]);
+
+    const byId = new Map(rows.map((row) => [String(row._id), row]));
+    const merges = plan.merges
+      .slice(0, Math.max(args.maxGroups ?? plan.merges.length, 0))
+      .map((merge) => ({
+        canonicalId: String(merge.canonicalId),
+        duplicateIds: merge.duplicateIds.map(String),
+        patch: merge.patch,
+      }));
+
+    const samples = merges.slice(0, Math.min(Math.max(args.samples ?? 20, 0), 100)).map((merge) => ({
+      key: byId.get(merge.canonicalId)?.date ?? "",
+      copies: merge.duplicateIds.length + 1,
+      venueNames: [
+        byId.get(merge.canonicalId)?.venueName ?? "",
+        ...merge.duplicateIds.map((id) => byId.get(id)?.venueName ?? ""),
+      ],
+    }));
+
+    const summary = {
+      applied: args.apply ?? false,
+      rows: rows.length,
+      groupCount: plan.groupCount,
+      excessRows: plan.excessRows,
+      untimedAttached: plan.untimedAttached,
+      patched: 0,
+      repointed: 0,
+      deleted: 0,
+      keyed: 0,
+      samples,
+    };
+    if (!args.apply) return summary;
+
+    const batchSize = Math.min(Math.max(args.batchSize ?? 25, 1), 100);
+    for (let start = 0; start < merges.length; start += batchSize) {
+      const result: { patched: number; repointed: number; deleted: number } = await ctx.runMutation(
+        internal.dedup.applyShowMerges,
+        { merges: merges.slice(start, start + batchSize) },
+      );
+      summary.patched += result.patched;
+      summary.repointed += result.repointed;
+      summary.deleted += result.deleted;
+    }
+
+    let cursor: string | null = null;
+    for (;;) {
+      const page: { patched: number; cursor: string; isDone: boolean } = await ctx.runMutation(
+        internal.dedup.backfillKeysPage,
+        { table: "shows", cursor },
+      );
+      summary.keyed += page.patched;
+      if (page.isDone) break;
+      cursor = page.cursor;
+    }
+
+    return summary;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Denormalized display names
+// ---------------------------------------------------------------------------
+//
+// Merging every duplicate SHOW still leaves the Browse dropdown showing
+// "Bimbo's 365 Club" and "Bimbo’s 365 Club" as two rooms, because it reads the
+// denormalized shows.venueName string. This rewrites the minority spellings to
+// the majority one. It changes no row's identity — but it DOES change
+// showKey, so the keys are rebuilt afterwards.
+//
+// Pairs, not an object: a rename map keyed by name would hit Convex's
+// 1,024-field object cap on a larger catalog, which already bit the repoint map.
+export const rewriteVenueNamesPage = internalMutation({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    renames: v.array(v.object({ from: v.string(), to: v.string() })),
+  },
+  handler: async (ctx, args) => {
+    const lookup = new Map(args.renames.map((rename) => [rename.from, rename.to]));
+    const page = await ctx.db.query("shows").paginate({ cursor: args.cursor, numItems: 200 });
+
+    let patched = 0;
+    for (const show of page.page) {
+      const replacement = lookup.get(show.venueName);
+      if (!replacement || replacement === show.venueName) continue;
+      const next = { ...show, venueName: replacement };
+      await ctx.db.patch(show._id, {
+        venueName: replacement,
+        dedupKey: showKey(next),
+        aliasKey: showAliasKey(next),
+      });
+      patched += 1;
+    }
+
+    return { patched, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+export const canonicalizeVenueNames = action({
+  args: { apply: v.optional(v.boolean()) },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    applied: boolean;
+    roomCount: number;
+    spellingCount: number;
+    rewritten: number;
+    renames: { keep: string; replace: string[] }[];
+  }> => {
+    const [shows, venues] = await Promise.all([
+      collectTable(ctx, "shows"),
+      collectTable(ctx, "venues"),
+    ]);
+    const plan = planVenueNameCanonicalization(shows as never[], venues as never[]);
+
+    const summary = {
+      applied: args.apply ?? false,
+      roomCount: plan.roomCount,
+      spellingCount: plan.spellingCount,
+      rewritten: 0,
+      renames: plan.renames.map((rename) => ({ keep: rename.keep, replace: rename.replace })),
+    };
+    if (!args.apply) return summary;
+
+    const pairs = plan.renames.flatMap((rename) =>
+      rename.replace.map((from) => ({ from, to: rename.keep })),
+    );
+    if (pairs.length === 0) return summary;
+
+    let cursor: string | null = null;
+    for (;;) {
+      const page: { patched: number; cursor: string; isDone: boolean } = await ctx.runMutation(
+        internal.dedup.rewriteVenueNamesPage,
+        { cursor, renames: pairs },
+      );
+      summary.rewritten += page.patched;
+      if (page.isDone) break;
+      cursor = page.cursor;
     }
 
     return summary;

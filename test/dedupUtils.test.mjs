@@ -18,6 +18,13 @@ import {
   planArtistMerge,
   planVenueMerge,
   planDeduplication,
+  venueNamesAlias,
+  venueTokens,
+  hasSponsorSuffix,
+  clusterByVenueAlias,
+  showAliasKey,
+  planVenueAliasDeduplication,
+  planVenueNameCanonicalization,
 } from "../convex/dedupUtils.js";
 
 // ---------------------------------------------------------------------------
@@ -192,4 +199,164 @@ test("the plan is deterministic and counts what it will delete", () => {
   assert.equal(first.groupCount, 1);
   assert.equal(first.excessRows, 1);
   assert.equal(first.merges[0].canonicalId, second.merges[0].canonicalId);
+});
+
+// ---------------------------------------------------------------------------
+// Pass 2 — venue aliases. One room, two names.
+// ---------------------------------------------------------------------------
+
+test("a contained name is the same room; a merely overlapping one is not", () => {
+  assert.equal(venueNamesAlias("Blue Note Jazz Club", "The Blue Note"), true);
+  assert.equal(venueNamesAlias("Irving Plaza", "Irving Plaza Powered By Verizon 5G"), true);
+  assert.equal(venueNamesAlias("Racket", "Racket NYC"), true);
+  assert.equal(venueNamesAlias("United Palace", "United Palace Theatre"), true);
+  assert.equal(venueNamesAlias("El Patio at Radio Hotel", "Patio at Radio Hotel"), true);
+
+  // Shares a word, different room — overlap is not containment.
+  assert.equal(venueNamesAlias("Bowery Palace", "The Bowery Electric"), false);
+  // The spec's own refusal case: Sofar's neighbourhood rooms.
+  assert.equal(venueNamesAlias("Sofar Sounds NoLita", "Sofar Sounds NoMad"), false);
+  // Two real rooms in one building.
+  assert.equal(venueNamesAlias("Carnegie Hall Stern Auditorium", "Carnegie Hall Weill Recital Hall"), false);
+});
+
+test("a name that reduces to generic words cannot absorb anything", () => {
+  assert.equal(venueNamesAlias("Park", "Golden Gate Park"), false);
+  assert.equal(venueNamesAlias("The Hall", "Great American Music Hall"), false);
+  assert.equal(venueNamesAlias("", "The Fillmore"), false);
+});
+
+test("sponsor dressing and trailing city suffixes are not part of the name", () => {
+  assert.deepEqual(venueTokens("Irving Plaza Powered By Verizon 5G"), ["irving", "plaza"]);
+  assert.deepEqual(venueTokens("Blue Note Jazz Club - NY"), ["blue", "note", "jazz", "club"]);
+  assert.equal(hasSponsorSuffix("Irving Plaza Powered By Verizon 5G"), true);
+  assert.equal(hasSponsorSuffix("Irving Plaza"), false);
+});
+
+test("aliases cluster transitively — one room under three names", () => {
+  const clusters = clusterByVenueAlias([
+    { _id: "a", venueName: "The Blue Note" },
+    { _id: "b", venueName: "Blue Note Jazz Club" },
+    { _id: "c", venueName: "Blue Note Jazz Club - NY" },
+  ]);
+  assert.equal(clusters.length, 1);
+  assert.equal(clusters[0].length, 3);
+});
+
+test("the alias key carries no venue, so it can only ever be a candidate set", () => {
+  const key = showAliasKey({ date: "2026-10-09", venueName: "Anywhere", startTime: "20:30", artistNames: ["Ron Carter"] });
+  assert.equal(key, "2026-10-09|ron carter|20:30");
+});
+
+test("the sponsor-free name wins the merge", () => {
+  const merge = planShowMerge([
+    { _id: "a", _creationTime: 1, venueName: "Irving Plaza Powered By Verizon 5G", artistIds: ["x"] },
+    { _id: "b", _creationTime: 2, venueName: "Irving Plaza", artistIds: ["x"] },
+  ]);
+  assert.equal(merge.canonicalId, "b");
+});
+
+test("two different rooms on the same night are never merged by the alias pass", () => {
+  const plan = planVenueAliasDeduplication([
+    { _id: "a", _creationTime: 1, date: "2026-09-01", startTime: "20:00", venueName: "Sofar Sounds NoLita", artistNames: ["Otha"], artistIds: [] },
+    { _id: "b", _creationTime: 2, date: "2026-09-01", startTime: "20:00", venueName: "Sofar Sounds NoMad", artistNames: ["Otha"], artistIds: [] },
+  ]);
+  assert.equal(plan.groupCount, 0);
+  assert.equal(plan.excessRows, 0);
+});
+
+test("an untimed row joins only when the night has ONE start time", () => {
+  const timed = (id, startTime) => ({
+    _id: id, _creationTime: Number(id.slice(1)), date: "2026-09-01", startTime,
+    venueName: "Blue Note Jazz Club", artistNames: ["Ron Carter"], artistIds: [],
+  });
+  const untimed = {
+    _id: "u", _creationTime: 9, date: "2026-09-01",
+    venueName: "The Blue Note", artistNames: ["Ron Carter"], artistIds: [],
+  };
+
+  // One set that night: safe to attach.
+  const single = planVenueAliasDeduplication([timed("a1", "20:00"), untimed]);
+  assert.equal(single.untimedAttached, 1);
+
+  // Two sets: the untimed row could belong to either, so it is left alone.
+  const ambiguous = planVenueAliasDeduplication([timed("a1", "20:00"), timed("a2", "22:30"), untimed]);
+  assert.equal(ambiguous.untimedAttached, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The human signoff of 2026-08-27, encoded as tests
+// ---------------------------------------------------------------------------
+
+test("nested rooms stay separate — a room inside a venue is not another name for it", () => {
+  // What separates these from an alias is WHERE the containment sits: the
+  // shorter name appears entirely after an "at".
+  assert.equal(venueNamesAlias("City Winery", "The Loft at City Winery"), false);
+  assert.equal(venueNamesAlias("Madison Square Garden", "Infosys Theater at Madison Square Garden"), false);
+  assert.equal(venueNamesAlias("Lincoln Center", "David Geffen Hall at Lincoln Center"), false);
+  assert.equal(venueNamesAlias("Bill Graham Civic Auditorium", "The Theater at Bill Graham Civic Auditorium"), false);
+  assert.equal(venueNamesAlias("The Chapel", "The Chapel’s Outdoor Stage"), false);
+
+  // Same rule, other direction: Geffen Hall IS an alias of Geffen Hall at
+  // Lincoln Center, because "david geffen hall" sits before the "at".
+  assert.equal(venueNamesAlias("David Geffen Hall", "David Geffen Hall at Lincoln Center"), true);
+});
+
+test("the unresolved Apollo pair stays separate until someone reads the source", () => {
+  assert.equal(venueNamesAlias("Apollo’s Victoria Theater", "The Apollo's Victoria Theater 1"), false);
+});
+
+test("every approved alias on the signoff list still merges", () => {
+  for (const [left, right] of [
+    ["Iridium", "Iridium Jazz Club"],
+    ["Racket", "Racket NYC"],
+    ["United Palace", "United Palace Theatre"],
+    ["Hill Country Live", "Hill Country Live NY"],
+    ["Sugar Mouse", "Sugar Mouse NYC"],
+    ["Patio at Radio Hotel", "El Patio at Radio Hotel"],
+    ["Miner Auditorium", "Miner Auditorium @ SFJAZZ"],
+    ["Orpheum Theatre", "Orpheum Theatre - San Francisco"],
+    ["Brick & Mortar Music Hall", "Brick and Mortar Music Hall"],
+  ]) {
+    assert.equal(venueNamesAlias(left, right), true, `${left} || ${right}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Display names
+// ---------------------------------------------------------------------------
+
+test("the spelling most shows use wins, and one venue record cannot outvote them", () => {
+  const plan = planVenueNameCanonicalization(
+    [
+      ...Array.from({ length: 36 }, (_, index) => ({ _id: `a${index}`, venueName: "The Warfield", city: "San Francisco" })),
+      { _id: "b", venueName: "Warfield", city: "San Francisco" },
+      { _id: "c", venueName: "Warfield", city: "San Francisco" },
+    ],
+    [{ _id: "v", name: "Warfield", city: "San Francisco" }],
+  );
+  assert.equal(plan.roomCount, 1);
+  assert.equal(plan.renames[0].keep, "The Warfield");
+  assert.deepEqual(plan.renames[0].replace, ["Warfield"]);
+});
+
+test("a room already spelled one way produces no rename", () => {
+  const plan = planVenueNameCanonicalization(
+    [{ _id: "a", venueName: "The Fillmore", city: "San Francisco" }],
+    [{ _id: "v", name: "The Fillmore", city: "San Francisco" }],
+  );
+  assert.equal(plan.roomCount, 0);
+  assert.equal(plan.spellingCount, 0);
+});
+
+test("curly and straight apostrophes are one room, and one of them wins", () => {
+  const plan = planVenueNameCanonicalization(
+    [
+      ...Array.from({ length: 18 }, (_, index) => ({ _id: `a${index}`, venueName: "Bimbo's 365 Club", city: "San Francisco" })),
+      ...Array.from({ length: 13 }, (_, index) => ({ _id: `b${index}`, venueName: "Bimbo’s 365 Club", city: "San Francisco" })),
+    ],
+    [],
+  );
+  assert.equal(plan.renames[0].keep, "Bimbo's 365 Club");
+  assert.deepEqual(plan.renames[0].replace, ["Bimbo’s 365 Club"]);
 });
