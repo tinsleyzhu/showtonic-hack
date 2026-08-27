@@ -5,6 +5,7 @@ import { v } from "convex/values";
 import {
   buildDiscoveryShelves,
   matchesSearch,
+  scopeToCity,
   summarizeRatings,
 } from "./showtonicUtils.js";
 
@@ -183,14 +184,28 @@ export const home = query({
   },
 });
 
+// `city` is optional and ADDITIVE. Omitting it searches the whole catalog,
+// exactly as before — this query backs the published `search_shows` agent
+// tool, and an outside agent that has already read the manifest must keep
+// getting what it was promised. Narrowing the default would be the same silent
+// drift we fixed in the manifest itself.
+//
+// It exists because the catalog is lopsided: ~1,567 upcoming New York shows
+// against ~746 in San Francisco. A broad query ("jazz", "orchestra") fills its
+// 500-result cap from the larger city, so a caller who wants results near a
+// human has to be able to say so.
 export const search = query({
   args: {
     userId: v.id("users"),
     query: v.string(),
+    city: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const shows = await listShowSummaries(ctx, args.userId);
+    // Scope BEFORE the cap, or the cap would already have spent itself on the
+    // bigger city before the filter ever ran.
+    const scoped = scopeToCity(shows, args.city);
     // Capped for the same reason as home: a two-letter query matches thousands.
-    return shows.filter((show) => matchesSearch(show, args.query)).slice(0, 500);
+    return scoped.filter((show) => matchesSearch(show, args.query)).slice(0, 500);
   },
 });

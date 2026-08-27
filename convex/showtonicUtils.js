@@ -117,11 +117,28 @@ function matchesSearch(show, query) {
   ).includes(term);
 }
 
+// Restrict a result set to one city. An empty or wildcard value means
+// everywhere, which is what `discovery.search` does when no city is given —
+// that tool is published in the agent manifest, so its default must stay what
+// outside agents were already promised.
+//
+// The catalog is lopsided (roughly 1,567 upcoming New York shows against 746
+// in San Francisco), so a broad query fills its result cap from the larger
+// city. This is how a caller says "near this human" instead.
+const ANY_CITY = new Set(["", "anywhere", "any", "*", "all"]);
+
+function scopeToCity(shows, city) {
+  const wanted = String(city ?? "").trim().toLowerCase();
+  if (ANY_CITY.has(wanted)) return [...shows];
+  return shows.filter((show) => String(show.city ?? "").trim().toLowerCase() === wanted);
+}
+
 export {
   VIBE_VOCABULARY,
   buildDiscoveryShelves,
   matchesSearch,
   normalizeSearchTerm,
+  scopeToCity,
   summarizeRatings,
   validateLogInput,
 };

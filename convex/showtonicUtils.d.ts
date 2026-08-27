@@ -11,6 +11,11 @@ export function validateLogInput(input: { rating: number; vibes: string[] }): vo
 export function summarizeRatings(logs: RatingLog[]): { rating: number; ratingCount: number };
 export function normalizeSearchTerm(value: string): string;
 export function matchesSearch(show: SearchableShow, query: string): boolean;
+/** Empty, "anywhere", "any", "*" or "all" means no restriction. */
+export function scopeToCity<T extends { city?: string }>(
+  shows: readonly T[],
+  city?: string,
+): T[];
 export function buildDiscoveryShelves<T>(shows: T[], today?: string): {
   popularThisWeek: T[];
   trendingAmongFriends: T[];

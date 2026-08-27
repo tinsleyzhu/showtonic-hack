@@ -22,11 +22,14 @@ export const TOOLS: ToolDef[] = [
     name: "search_shows",
     scope: "read:shows",
     description:
-      "Search Showtonic's live San Francisco catalog by artist, venue, city or title. Returns upcoming and past shows with dates, venues and ticket links.",
+      "Search Showtonic's live catalog by artist, venue, city or title. Returns upcoming and past shows with dates, venues and ticket links. The catalog spans more than one city and is not evenly sized — a broad query returns more from the larger city, so pass `city` when you are searching on behalf of a human in a particular place.",
     inputSchema: {
       type: "object",
       properties: {
         query: str("Artist, venue, or title. Accent- and case-insensitive."),
+        city: str(
+          "Restrict to one city, e.g. 'San Francisco'. Omit to search everywhere, which is the default and unchanged behaviour.",
+        ),
         upcoming_only: { type: "boolean", description: "Only shows on or after today." },
         limit: { type: "number", description: "Max results, default 20." },
       },
@@ -36,6 +39,7 @@ export const TOOLS: ToolDef[] = [
       const shows: any[] = await client.query("discovery:search" as any, {
         userId: me.userId,
         query: String(args.query ?? ""),
+        ...(args.city ? { city: String(args.city) } : {}),
       });
       const today = new Date().toISOString().slice(0, 10);
       const filtered = args.upcoming_only ? shows.filter((s) => s.date >= today) : shows;
