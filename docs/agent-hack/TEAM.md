@@ -1239,3 +1239,81 @@ is the right call. What I changed:
    about 3.3:1 and under the AA floor. Now the muted token at ~5.2:1.
 
 Say the word if you disagree with any of them and I will revert that one.
+
+### L3 taste · 2026-08-27T07:40Z
+state:    shipped
+now:      briefing wave 1 — scoreFinds, narrateBeliefs, deriveActivity, briefing.forUser
+shipped:  PR to follow on lane/taste (301/301 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy (new Convex functions) — coordinator's
+next:     respond to review; property tests for tasteMath edge cases
+
+**I rendered the app for the first time and the onboarding grid was wrong in
+a way four rounds of type-checking could not show.** `st-taste` now has the
+read-only `.env.local`, so this lane can finally see its own work.
+
+A San Franciscan opening the taste step is offered **"Karaoke Tuesday" first
+and "Open Mic Night" second** — a weekly night genuinely has more upcoming
+dates (13, 12) than any touring act, so the presence ranking put them on top,
+working exactly as designed on rows that cannot answer the question the step
+asks. Filtered on the vocabulary of a recurring event format rather than a
+blocklist of names, and deliberately narrowly: it hides cards in one picker
+and changes nothing else in the app.
+
+**Half the New York grid is doubled** — two Becks, two Oseeses, two Courtney
+Barnetts — because the same act arrives from more than one feed. Worse than
+ugly: selection in the picker is BY NAME, so tapping one Beck lights both
+cards and still counts as one of the five picks. A member taps five faces and
+the counter says three. Merged on the casefolded name, counts summed, the row
+with a photograph kept for the picture and a capitalised variant kept for the
+name.
+
+⚠️ **Both onboarding queries were reading 3,798 documents against Convex's
+4,096 limit — 93% of the ceiling, on the first screen a new member sees,
+while L1 and L2 are both still adding rows.** Past the limit a query does not
+degrade, it throws, and the taste step goes blank on stage. The artist grid
+now reads `by_city_date`; the genre picker takes the city path only when the
+city can fill a picker alone, so its "a thin city still borrows from the wider
+catalog" design is intact. Coordinator: worth re-running
+`npx convex run taste:artistsForOnboarding '{"today":"...","homeCity":"San Francisco"}'`
+after deploy — the warning line should be gone.
+
+**Briefing wave 1 (CONCIERGE.md), all three sections:**
+
+1. `scoreFinds` — taste-scored upcoming shows with evidence rows. Reuses
+   `tasteMath.genreWeights`, so rarity is measured against what the city is
+   actually booking, and refuses entirely under `LOW_SIGNAL_SHOWS`. Evidence
+   weights are rescaled to sum to the score shown: a Why expansion that does
+   not add up to the number on the card is theatre. **No evidence, no card.**
+2. `narrateBeliefs` — two to four beliefs, each carrying its own arithmetic;
+   drift is only claimed when the diary has two halves to compare.
+3. `deriveActivity` — derived from `backfillCandidates`, `squadPlans` and
+   `logs`. No schema change. Refusals are first-class and their `detail` is
+   MANDATORY: an item that cannot say why is dropped rather than shown bare.
+4. `briefing.forUser` is thin and typed `Promise<Briefing>` against the
+   contract via `import type`, so a shape change breaks the build rather than
+   the screen. Erased before bundling, so nothing from `app/` reaches Convex.
+
+**Three notes for the coordinator, one of which is a contract question.**
+
+- **The contract's belief fixture cannot be produced from our data.** "You've
+  drifted toward smaller rooms this year / 6 of your last 8 nights were under
+  500 cap" — `venues` has no capacity column and no free source we have wired
+  supplies one. I did not invent a proxy. The shapes match; that particular
+  sentence will never appear live, and L6 should not design around it.
+- **CONCIERGE.md's empty-state copy says "log 3 nights and I can start
+  scouting" but the floor is `LOW_SIGNAL_SHOWS` = 5**, the number the profile
+  screen, `agents.tasteProfile` and peer discovery all use. I kept 5 and did
+  not touch the copy (yours). Change the copy or tell me to change the number
+  — but the app should not promise 3 and refuse at 5.
+- **I built on a cherry-pick.** `app/briefing.ts` and CONCIERGE.md were on
+  `lane/match-festivals`, not on main, when this lane started; commit f127d7b
+  here is 0fafe02 cherry-picked so the contract could be imported. Identical
+  patch, so the merge should be clean, but you will see it twice in the log.
+
+Caveat, honest: **the two onboarding fixes are rendered and confirmed; the
+briefing is not.** The logic is 301 tests green and pure, but no
+`CONVEX_DEPLOYMENT` here means `briefing.forUser` has never run against real
+data. First deploy is worth thirty seconds on a member with a real diary —
+the shape I would doubt first is `finds` coming back empty because
+`excludeShowIds` is over-broad (it excludes anything with an attendance row,
+including "interested").
