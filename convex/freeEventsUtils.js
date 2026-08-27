@@ -349,6 +349,54 @@ function inferGenresFromContext({ venueNames = [], titles = [] } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Date-window math for catalog expansion.
+//
+// Ticketmaster documents a hard paging cap — "we only support retrieving the
+// 1000th item. i.e. ( size * page < 1000 )" — so a city with more upcoming
+// shows than that cannot be paged through at all. The catalog import walks the
+// horizon in date windows instead and halves any window too dense to page.
+// Kept pure here because the boundary math is where this goes quietly wrong.
+// ---------------------------------------------------------------------------
+
+function addDaysIso(date, days) {
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+function daysBetweenIso(start, end) {
+  return Math.round(
+    (Date.parse(`${end}T12:00:00Z`) - Date.parse(`${start}T12:00:00Z`)) / 86_400_000,
+  );
+}
+
+// Half-open [start, end) windows covering the horizon, the last one clamped so
+// it never reaches past `end`.
+function dateWindows(start, end, windowDays) {
+  const size = Math.max(1, Math.floor(windowDays));
+  const windows = [];
+  let cursor = start;
+  while (cursor < end) {
+    const next = addDaysIso(cursor, size);
+    windows.push([cursor, next < end ? next : end]);
+    cursor = next;
+  }
+  return windows;
+}
+
+// Halve a window. Returns null when it is already a single day and therefore
+// cannot be narrowed any further — the caller has to accept truncation.
+function splitDateWindow([start, end]) {
+  const span = daysBetweenIso(start, end);
+  if (span <= 1) return null;
+  const mid = addDaysIso(start, Math.floor(span / 2));
+  return [
+    [start, mid],
+    [mid, end],
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Ticketmaster classifications -> artist genres.
 //
 // Every TM event carries a genre/subGenre, so the upcoming-catalog import
@@ -476,5 +524,7 @@ export {
   looksLikeDroppedVenueInference,
   normalizeGenreTags,
   artistGenreUpdatesFromEvents,
+  dateWindows,
+  splitDateWindow,
   toImportEvents,
 };

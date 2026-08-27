@@ -69,6 +69,23 @@ export function inferGenresFromContext(context?: {
 }): string[];
 
 /**
+ * Half-open [start, end) date windows covering a horizon, used to walk the
+ * catalog in slices small enough to page under Ticketmaster's 1000-item cap.
+ */
+export function dateWindows(
+  start: string,
+  end: string,
+  windowDays: number,
+): [string, string][];
+
+/**
+ * Halve a date window, or null when it is a single day and cannot narrow.
+ */
+export function splitDateWindow(
+  window: readonly [string, string],
+): [[string, string], [string, string]] | null;
+
+/**
  * Lowercase and split compound Ticketmaster genre names ("Hip-Hop/Rap") so
  * they share a vocabulary with Spotify/MusicBrainz tags.
  */

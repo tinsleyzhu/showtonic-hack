@@ -13,6 +13,8 @@ import {
   looksLikeDroppedVenueInference,
   normalizeGenreTags,
   artistGenreUpdatesFromEvents,
+  dateWindows,
+  splitDateWindow,
   toImportEvents,
 } from "../convex/freeEventsUtils.js";
 
@@ -255,6 +257,51 @@ test("inferGenresFromContext agrees across several rooms of the same family", ()
     inferGenresFromContext({ venueNames: ["Public Works", "1015 Folsom", "Monarch"] }),
     ["electronic", "dance"],
   );
+});
+
+// Date-window math — how the catalog import gets past Ticketmaster's
+// documented 1000-item paging cap (size * page < 1000).
+test("dateWindows tiles the horizon and clamps the final window", () => {
+  assert.deepEqual(dateWindows("2026-08-27", "2026-10-01", 30), [
+    ["2026-08-27", "2026-09-26"],
+    ["2026-09-26", "2026-10-01"], // clamped, never past the horizon
+  ]);
+});
+
+test("dateWindows covers the horizon exactly, with no gaps or overlaps", () => {
+  const windows = dateWindows("2026-01-01", "2026-07-01", 30);
+  assert.equal(windows[0][0], "2026-01-01");
+  assert.equal(windows[windows.length - 1][1], "2026-07-01");
+  for (let i = 1; i < windows.length; i += 1) {
+    assert.equal(windows[i][0], windows[i - 1][1], "window starts where the previous ended");
+  }
+});
+
+test("dateWindows returns nothing for an empty or inverted horizon", () => {
+  assert.deepEqual(dateWindows("2026-08-27", "2026-08-27", 30), []);
+  assert.deepEqual(dateWindows("2026-08-27", "2026-08-01", 30), []);
+});
+
+test("splitDateWindow halves a window and preserves its bounds", () => {
+  assert.deepEqual(splitDateWindow(["2026-01-01", "2026-01-31"]), [
+    ["2026-01-01", "2026-01-16"],
+    ["2026-01-16", "2026-01-31"],
+  ]);
+});
+
+test("splitDateWindow refuses to narrow a single day", () => {
+  // A day this dense is genuinely unreachable; the caller records truncation
+  // rather than looping forever.
+  assert.equal(splitDateWindow(["2026-01-01", "2026-01-02"]), null);
+  assert.equal(splitDateWindow(["2026-01-01", "2026-01-01"]), null);
+});
+
+test("splitDateWindow always terminates when applied repeatedly", () => {
+  let windows = [["2026-01-01", "2026-04-01"]];
+  for (let depth = 0; depth < 20 && windows.length; depth += 1) {
+    windows = windows.flatMap((window) => splitDateWindow(window) ?? []);
+  }
+  assert.equal(windows.length, 0, "repeated splitting bottoms out at single days");
 });
 
 // Ticketmaster classifications -> artist genres.
