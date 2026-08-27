@@ -57,6 +57,10 @@ const TICKETING_DOMAINS = [
   "tixr.com",
   "setlist.fm",
   "shotgun.live",
+  // The app's own catalog is JamBase rows — every show carries a `jambaseId`.
+  // A publisher we already trust to BE the catalog is not a weaker source when
+  // it is the one filling a hole in it.
+  "jambase.com",
 ];
 
 // Words that are never an artist name. A fragment built only out of these is
@@ -615,8 +619,641 @@ function describeProposal(proposal) {
   return `${proposal.artistNames.join(" + ")}${where} — proposed from ${hostOf(proposal.sourceUrl)}`;
 }
 
+// ---------------------------------------------------------------------------
+// Festivals — a day is one bill, not sixty separate shows
+// ---------------------------------------------------------------------------
+
+// The same mechanism as a history sweep, pointed at the other hole in the
+// catalog. Ticketmaster sells no past events, so a festival that already
+// happened is invisible to us, and a festival that has not happened yet arrives
+// (when it arrives at all) as sixty per-set rows.
+//
+// Both are answered by the same claim: **one proposal per festival DAY**, whose
+// `artistNames` is that day's bill. That is deliberately the shape SPEC.md's
+// "a festival is one thing, not sixty" asks the catalog for — a designated
+// festival-day row per date — so recovering history here does not have to be
+// undone when the data model lands.
+//
+// What changes from a venue night, and what does not:
+//
+//   · The claim is still only "this happened", never "you were there".
+//   · The date gate is unchanged, and a page that names the whole weekend but
+//     not this day cannot carry this day.
+//   · The bill is not read off a title. It is harvested from the part of the
+//     page that belongs to THIS day, and every name must be corroborated —
+//     either by a source authoritative about this festival, or by two
+//     independent publishers. A festival page lists sixty names; putting a
+//     misparsed one into the catalog is sixty chances to be wrong, not one.
+
+const DELTA_FESTIVAL_CONFIRMED = 0.3;
+
+// A bill longer than this is a page listing the whole weekend, not one day.
+const MAX_BILL_NAMES = 40;
+
+// And a bill SHORTER than this is a parse failure wearing a source URL.
+//
+// Lollapalooza 2025 is where this came from: JamBase's day sections came back
+// empty and setlist.fm's came back as one run-on line, so the day cut landed on
+// an at-a-glance table and a set-times blob. What survived was "Grant Park"
+// (the venue), "Summerdance", and "Sofia Camara Silly Goose" (two acts merged
+// into one name) — three real-looking claims about who played, none of them a
+// bill. A festival day that yields two or three names has not been read; a
+// festival day genuinely has more acts than that. Declining says so.
+const MIN_BILL_NAMES = 4;
+
+const FESTIVAL_CORE_MIN_LENGTH = 5;
+
+// Words that are festival furniture rather than acts. Distinct from
+// NOISE_WORDS, which is about listings boilerplate: these are the things a
+// festival page says around the names.
+const FESTIVAL_FURNITURE = new Set([
+  "stage",
+  "stages",
+  "lands",
+  "day",
+  "days",
+  "night",
+  "weekend",
+  "pass",
+  "passes",
+  "vip",
+  "ga",
+  "general",
+  "admission",
+  "gates",
+  "doors",
+  "food",
+  "drink",
+  "art",
+  "more",
+  "tba",
+  "tbd",
+  "guests",
+  "special",
+  "guest",
+  "set",
+  "sets",
+  "times",
+  "headliner",
+  "headliners",
+  "poster",
+  "map",
+  "faq",
+  "festival",
+  "fest",
+  // Site chrome that sits in the same lists as the acts on listings pages.
+  "report",
+  "group",
+  "by",
+  "sort",
+  "filter",
+  "view",
+  "share",
+  "menu",
+  "search",
+  "setlists",
+  "setlist",
+  // Listings-page table and nav labels. JamBase's "At-a-Glance" block sits in
+  // the same extracted text as the lineup, and on a festival whose day sections
+  // come back empty it is the only thing left to parse.
+  "dates",
+  "headliners",
+  "website",
+  "links",
+  "venue",
+  "map",
+  "directions",
+  "advertisement",
+  "playlist",
+  "hotels",
+  "lodging",
+  "company",
+  "follow",
+  "facebook",
+  "twitter",
+  "instagram",
+  "tiktok",
+  "youtube",
+  "threads",
+]);
+
+const MONTH_PATTERN = MONTHS.map((month) =>
+  month.length > 3 ? `${month.slice(0, 3)}(?:${month.slice(3)})?` : month,
+).join("|");
+const WEEKDAY_PATTERN = WEEKDAYS.map((day) => `${day.slice(0, 3)}(?:${day.slice(3)})?`).join("|");
+
+// "Friday, August 7", "FRIDAY", "Aug 7" — the three ways a lineup page starts a
+// day. Positions of these are the only thing that lets one page's content be
+// cut into days, which is the whole difficulty of reading a festival bill.
+const DAY_HEADER_SOURCE =
+  `\\b(?:${WEEKDAY_PATTERN})\\b[.,]?\\s*(?:(?:${MONTH_PATTERN})\\b\\.?\\s*\\d{1,2})?` +
+  `|\\b(?:${MONTH_PATTERN})\\b\\.?\\s*\\d{1,2}\\b`;
+
+// "Outside Lands 2026" and "Outside Lands Music and Arts Festival" are the same
+// event written two ways, and a page will use whichever it likes. Match on the
+// core, and on the first two significant words, so neither direction misses.
+function festivalNeedles(festivalName) {
+  const core = normalizeText(festivalName)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/^the\s+/, "")
+    .replace(/\b(?:19|20)\d{2}\b/g, " ")
+    .replace(/\b(?:music(?:\s+and\s+arts)?\s+)?festival\b|\bfest\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const words = core.split(" ").filter(Boolean);
+  const prefix = words.slice(0, 2).join(" ");
+  return [core, prefix].filter((needle) => needle.length >= FESTIVAL_CORE_MIN_LENGTH);
+}
+
+function mentionsFestival(text, festivalName) {
+  const haystack = normalizeText(text).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ");
+  return festivalNeedles(festivalName).some((needle) => haystack.includes(needle));
+}
+
+// "Aug 7 - 9, 2026" is how most pages state a festival, and requiring one of
+// the single-day forms threw away every one of them — including the pages that
+// then list each day under its own header further down.
+//
+// A run confirms the FESTIVAL, never the day, so it is only half a gate: a
+// result admitted this way must also carry a real day header, or it cannot say
+// anything about which day an act played. The year is still required, so the
+// wrong-year hole this replaces stays shut.
+function runOfDatesIncludes(text, isoDate) {
+  const parts = splitIsoDate(isoDate);
+  if (!parts) return false;
+  const haystack = normalizeText(text);
+  const pattern = new RegExp(
+    `\\b(${MONTH_PATTERN})\\b\\.?\\s*(\\d{1,2})\\s*(?:[-\u2013\u2014]|to|through|thru)\\s*(?:(${MONTH_PATTERN})\\b\\.?\\s*)?(\\d{1,2})(?:th|st|nd|rd)?\\s*,?\\s*((?:19|20)\\d{2})`,
+    "gi",
+  );
+  const ours = Date.UTC(Number(parts.year), parts.monthIndex, parts.dayNumber);
+  for (const match of haystack.matchAll(pattern)) {
+    const year = Number(match[5]);
+    if (year !== Number(parts.year)) continue;
+    const firstMonth = monthIndexOf(match[1]);
+    const secondMonth = match[3] ? monthIndexOf(match[3]) : firstMonth;
+    if (firstMonth < 0 || secondMonth < 0) continue;
+    const start = Date.UTC(year, firstMonth, Number(match[2]));
+    const end = Date.UTC(year, secondMonth, Number(match[4]));
+    if (start <= ours && ours <= end) return true;
+  }
+  return false;
+}
+
+function monthIndexOf(token) {
+  const value = normalizeText(token).replace(/\./g, "");
+  return MONTHS.findIndex((month) => month.startsWith(value.slice(0, 3)) && value.length >= 3);
+}
+
+function festivalSlug(festivalName, isoDate) {
+  const year = splitIsoDate(isoDate)?.year ?? "";
+  const base = normalizeText(festivalName)
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  return year && !base.includes(year) ? `${base}-${year}` : base;
+}
+
+function weekdayName(isoDate) {
+  const parts = splitIsoDate(isoDate);
+  if (!parts) return "";
+  const stamp = new Date(Date.UTC(Number(parts.year), parts.monthIndex, parts.dayNumber));
+  const weekday = WEEKDAYS[stamp.getUTCDay()] ?? "";
+  return weekday ? weekday[0].toUpperCase() + weekday.slice(1) : "";
+}
+
+// The title of a festival diary entry, per SPEC: the festival and the day, not
+// an artist. Nobody remembers Saturday at a festival as six separate sets.
+function festivalDayTitle(festivalName, isoDate) {
+  const day = weekdayName(isoDate);
+  return day ? `${festivalName} — ${day}` : String(festivalName ?? "");
+}
+
+// Does one day header name this date? mentionsDate covers the forms that carry
+// a year or a weekday. Inside a page already confirmed to be about this date,
+// a bare "August 7" or a bare "FRIDAY" is unambiguous too — the confirmation
+// happened at the page level, which is why this is not a hole in the year check.
+function headerNamesDate(headerText, isoDate) {
+  if (mentionsDate(isoDate, headerText)) return true;
+  const parts = splitIsoDate(isoDate);
+  if (!parts) return false;
+  const text = normalizeText(headerText);
+  const monthName = MONTHS[parts.monthIndex] ?? "";
+  const monthMatch = new RegExp(
+    `\\b${monthName.slice(0, 3)}(?:${monthName.slice(3)})?\\b\\.?\\s*${parts.dayNumber}\\b`,
+  ).test(text);
+  if (monthMatch) return true;
+  const weekday = normalizeText(weekdayName(isoDate));
+  if (!weekday) return false;
+  // A weekday-only header is ours only if the header carries no day number at
+  // all — "Friday, August 8" is a different day even in the right week.
+  if (/\d/.test(text)) return false;
+  return new RegExp(`\\b${weekday.slice(0, 3)}(?:${weekday.slice(3)})?\\b`).test(text);
+}
+
+function dayHeaderPositions(text) {
+  const pattern = new RegExp(DAY_HEADER_SOURCE, "gi");
+  const found = [];
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const end = match.index + match[0].length;
+    // "August 7-9, 2026" is the run of the whole festival, not the start of a
+    // day's section. Reading it as one would hand Friday's header everything
+    // printed before Friday actually begins — including the other days' bills.
+    const isRange = /^\s*(?:[-–—]|to\b|through\b)\s*\d/i.test(text.slice(end, end + 12));
+    if (!isRange) found.push({ index: match.index, text: match[0], length: match[0].length });
+    if (match.index === pattern.lastIndex) pattern.lastIndex += 1;
+  }
+  return found;
+}
+
+// The slice of a page that belongs to one day: from this day's header to the
+// next header naming a different one. Returns null when the page never names
+// the day — which is a refusal, not an empty bill.
+//
+// This is the guard against the failure that matters most here: a three-day
+// lineup page read whole would put Friday's headliners on Saturday's bill, with
+// a real URL attached and no way for a human to see it was wrong.
+function dayLineupSegment(content, isoDate) {
+  const text = String(content ?? "");
+  if (!text.trim()) return null;
+  const headers = dayHeaderPositions(text);
+  if (!headers.length) return { segment: text, headed: false };
+
+  const ours = headers.filter((header) => headerNamesDate(header.text, isoDate));
+  if (!ours.length) return null;
+
+  // A page names its day more than once — in the title, in the run of dates,
+  // in a nav teaser, and finally at the head of the day's own section. Only one
+  // of those is followed by the bill, and which one varies by publisher, so
+  // each candidate is cut and the one that actually lists acts wins.
+  let best = null;
+  for (const header of ours) {
+    const start = header.index + header.length;
+    const nextDay = headers.find(
+      (row) => row.index >= start && !headerNamesDate(row.text, isoDate),
+    );
+    // A day's list also ends at the next heading of any kind: that is where the
+    // page stops printing acts and starts printing footers, ads and menus.
+    const heading = nextHeadingIndex(text, start);
+    const end = Math.min(nextDay ? nextDay.index : text.length, heading ?? text.length);
+    const segment = text.slice(start, end);
+    const score = countPlausibleNames(segment);
+    if (!best || score > best.score) best = { segment, score };
+  }
+  return { segment: best.segment, headed: true };
+}
+
+// Markdown-ish headings are how the extracted page marks the end of a list.
+function nextHeadingIndex(text, from) {
+  const pattern = /\n\s*#{1,6}\s+\S/g;
+  pattern.lastIndex = from;
+  const match = pattern.exec(text);
+  return match ? match.index : null;
+}
+
+function countPlausibleNames(segment) {
+  return String(segment ?? "")
+    .split(BILL_SEPARATORS)
+    .map(trimBillFragment)
+    .filter(looksLikeArtistName).length;
+}
+
+// Everything a publisher uses to separate one act from the next — except the
+// colon. A colon does separate a day label from its bill ("Friday, August 7:
+// Tame Impala"), but the day cut has already removed those labels, and acts
+// bill themselves with colons too: "John Prine: Songs & Souvenirs w/ Jason
+// Wilber & Dave Jacques" is a tribute set, and splitting it on the colon claims
+// John Prine, who died in 2020, played a 2025 Sunday. Kept whole it is too long
+// to be a name and is dropped, which is the right answer for a billing we
+// cannot parse. "・" is setlist.fm's separator on festival pages.
+const BILL_SEPARATORS = /[,;|•·・\n\r\t]+|\s+\/\s+|\s+[-–—]+\s+|\s+and\s+|\s{3,}/i;
+
+function trimBillFragment(value) {
+  return stripTrailingNoise(
+    String(value ?? "")
+      .replace(/^[\s\-–—|·:•*+#>]+/, "")
+      .replace(/[\s\-–—|·:•*+#]+$/, "")
+      // A sentence's full stop, but never the one inside "Fred again..", which
+      // is part of the name and drops the act if we take it.
+      .replace(/(?<!\.)\.$/, "")
+      // setlist.fm writes "Albert Lee. 14 setlists"; the count survives the
+      // noise filter because it is attached to a real name.
+      .replace(/\.\s*\d{1,3}$/, "")
+      // A set time riding on the act it belongs to: "Sofia Camara 12:00 pm",
+      // "7:45 pm 2hollis". Stripping the clock keeps the name; rejecting the
+      // whole fragment threw away the best day-attributed source there is.
+      .replace(/\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/gi, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim()
+      // Prose lists leave the sentence's joints on the fragment: "…Dijon on
+      // Saturday" splits to "Dijon on". No act name ends in a bare preposition.
+      .replace(/\s+(?:on|at|in|for|with|plus|feat|ft|featuring|presents)$/i, "")
+      .replace(/^(?:on|at|in|for|with|plus|feat|ft|featuring|presented by)\s+/i, ""),
+  );
+}
+
+function isFestivalFurniture(value) {
+  const words = normalizeText(value)
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return true;
+  return words.every((word) => FESTIVAL_FURNITURE.has(word) || NOISE_WORDS.has(word));
+}
+
+function looksLikeArtistName(value) {
+  const name = String(value ?? "").trim();
+  if (name.length < 2 || name.length > 40) return false;
+  const words = name.split(/\s+/);
+  if (words.length > 5) return false;
+  if (looksLikePromoProse(name)) return false;
+  if (isTitleNoise(name) || isFestivalFurniture(name)) return false;
+  // Times, dates, prices and set-time rows are the other half of a lineup page.
+  if (/^[\d\s.,:/$+-]+$/.test(name)) return false;
+  if (/\b\d{1,2}\s*(?::\s*\d{2})?\s*(?:am|pm)\b/i.test(name)) return false;
+  if (new RegExp(`^(?:${DAY_HEADER_SOURCE})$`, "i").test(normalizeText(name))) return false;
+  if (/^\$/.test(name)) return false;
+  // A fragment that opens with a year is the tail of a date, not an act.
+  if (/^(?:19|20)\d{2}\b/.test(name.trim())) return false;
+  // Listings pages count things next to the names they count: "625 attendances
+  // by 114 users", "14 setlists". A name is not a statistic.
+  if (/\b\d+\s+(?:attendances?|users?|setlists?|comments?|fans?|photos?|videos?|reviews?|shows?|concerts?|tickets?)\b/i.test(name))
+    return false;
+  // "Lands End Stage", "Panhandle Tent" — a festival page names its rooms in
+  // the same lists as its acts, and a stage that becomes an artist is a row
+  // every later match can land on.
+  if (/\b(?:stage|tent|pavilion|grounds|polo field)$/i.test(name.trim())) return false;
+  // A name has letters in it.
+  return /[a-z]/i.test(name);
+}
+
+// Commas separate acts on a lineup page — and they also sit inside act names.
+// "Tyler, The Creator" splits into "Tyler" and "The Creator", and there is no
+// way to tell that apart from two acts called "Kaytranada" and "The Blaze".
+//
+// So both halves are dropped rather than guessed at. A missing name costs
+// recall; an invented one is a wrong artist in the shared catalog. Another
+// publisher writing the same bill with pipes or newlines recovers the name
+// intact, which is why corroboration runs across sources and not within one.
+function dropCommaSplitNames(fragments) {
+  const dropped = new Set();
+  for (let index = 1; index < fragments.length; index += 1) {
+    const current = normalizeText(fragments[index]);
+    const previous = fragments[index - 1];
+    if (!/^the\s+\S+/.test(current)) continue;
+    // Only a ONE-word neighbour is ambiguous: "Tyler, The Creator" splits that
+    // way, and so does "Sly and the Family Stone". "The Strokes, The xx" does
+    // not — a two-word neighbour is its own act, and dropping it was throwing
+    // away real headliners to guard against a collision that cannot happen.
+    const previousWords = String(previous).trim().split(/\s+/);
+    if (previousWords.length !== 1 || /^the$/i.test(previousWords[0])) continue;
+    // The one-word half is always the ambiguous one: "Tyler" next to "the
+    // Creator" may be an act or half of one. A longer neighbour can only be a
+    // bill fragment, and its own filters will judge it.
+    dropped.add(index - 1);
+    if (current.split(" ").length <= 3) dropped.add(index);
+  }
+  return fragments.filter((_, index) => !dropped.has(index));
+}
+
+// Every plausible act named in one day's slice of one page.
+// Publishers punctuate names freely: "I’m With Her" and "I'm With Her" are one
+// act, and billing them twice on one day makes the bill look padded and the
+// catalog gain a duplicate artist.
+function billKey(name) {
+  return normalizeText(name)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function harvestBillNames(segment, context = {}) {
+  const fragments = String(segment ?? "")
+    .split(BILL_SEPARATORS)
+    .map(trimBillFragment)
+    .filter(Boolean);
+  const names = dropCommaSplitNames(fragments).filter(looksLikeArtistName);
+  const excluded = [context.festivalName, context.venueName, context.city]
+    .filter(Boolean)
+    .map((value) => normalizeText(value));
+  const seen = new Set();
+  const kept = [];
+  for (const name of names) {
+    const key = billKey(name);
+    if (seen.has(key)) continue;
+    if (excluded.some((value) => key === value || value.includes(key) || key.includes(value)))
+      continue;
+    if (mentionsFestival(name, context.festivalName ?? "")) continue;
+    seen.add(key);
+    kept.push(name);
+  }
+  return kept;
+}
+
+// A source that can put a name on the bill by itself: the festival's own site,
+// or a ticketing/listings publisher. Everything else needs a second publisher
+// to agree with it.
+function isAuthoritativeFestivalSource(url, festivalName) {
+  if (isTicketingDomain(url)) return true;
+  const host = hostOf(url).replace(/[^a-z0-9]/g, "");
+  return festivalNeedles(festivalName).some(
+    (needle) => needle.length >= FESTIVAL_CORE_MIN_LENGTH && host.includes(needle.replace(/\s/g, "")),
+  );
+}
+
+// results: Tavily's `results[]`. festival: { festivalName, date, city?, venueName? }
+//
+// Returns the same shape as proposeFromResults — { proposal, considered,
+// rejected, declineReason } — because the caller, the report and the eval all
+// already speak it.
+function proposeFestivalDay(festival, results, options = {}) {
+  const minConfidence = options.minConfidence ?? MIN_PROPOSAL_CONFIDENCE;
+  const festivalName = festival.festivalName ?? "";
+  const date = festival.date ?? festival.clusterDate;
+  const rejected = [];
+  const admissible = [];
+  const corroborating = [];
+
+  for (const result of Array.isArray(results) ? results : []) {
+    const url = result?.url ?? "";
+    const title = result?.title ?? "";
+    const content = result?.content ?? "";
+
+    if (!mentionsFestival(`${title} ${content} ${url.replace(/[-/]/g, " ")}`, festivalName)) {
+      rejected.push({ url, reason: `page does not name ${festivalName}` });
+      continue;
+    }
+    const namesThisDate = mentionsDate(date, title, content, url);
+    const namesTheRun = !namesThisDate && runOfDatesIncludes(`${title} ${content}`, date);
+    if (!namesThisDate && !namesTheRun) {
+      rejected.push({ url, reason: "date not confirmed in the page" });
+      continue;
+    }
+    const slice = dayLineupSegment(`${title}\n${content}`, date);
+    if (!slice) {
+      rejected.push({ url, reason: "page covers the festival but never names this day" });
+      continue;
+    }
+    // The run of dates says the festival happened that week. Only a day header
+    // says an act played THIS day, so a page admitted on the run alone may not
+    // hand its whole bill to one day.
+    if (namesTheRun && !slice.headed) {
+      rejected.push({ url, reason: "page names the festival's run but never this day on its own" });
+      continue;
+    }
+    const names = harvestBillNames(slice.segment, {
+      festivalName,
+      venueName: festival.venueName,
+      city: festival.city,
+    });
+    if (!names.length) {
+      rejected.push({ url, reason: "no act name survived on this day's part of the page" });
+      continue;
+    }
+    const row = {
+      url,
+      title,
+      host: hostOf(url),
+      names,
+      authoritative: isAuthoritativeFestivalSource(url, festivalName),
+      ticketing: isTicketingDomain(url),
+      headed: slice.headed,
+    };
+    // A social caption may agree with a bill; it may never be the bill.
+    if (isSocialDomain(url)) corroborating.push(row);
+    else admissible.push(row);
+  }
+
+  if (!admissible.length) {
+    return {
+      proposal: null,
+      considered: [],
+      rejected,
+      declineReason: corroborating.length
+        ? "only social posts named this day, which is a caption not a lineup"
+        : "no result named this festival, this day and a lineup",
+    };
+  }
+
+  // Per-NAME evidence, not per-lineup. Two festival pages never carry byte-
+  // identical bills, so grouping by lineup the way a single-act night does
+  // would refuse every festival on earth. What actually corroborates is each
+  // name appearing on independent publishers' versions of the same day.
+  const tally = new Map();
+  for (const row of [...admissible, ...corroborating]) {
+    for (const name of row.names) {
+      const key = billKey(name);
+      const entry = tally.get(key) ?? { name, hosts: new Set(), authoritative: false };
+      if (!isSocialDomain(row.url)) entry.hosts.add(row.host);
+      entry.authoritative = entry.authoritative || row.authoritative;
+      tally.set(key, entry);
+    }
+  }
+
+  const bill = [...tally.values()]
+    .filter((entry) => entry.authoritative || entry.hosts.size >= 2)
+    .sort((left, right) => right.hosts.size - left.hosts.size)
+    .slice(0, MAX_BILL_NAMES);
+  const uncorroborated = tally.size - bill.length;
+
+  if (bill.length < MIN_BILL_NAMES) {
+    return {
+      proposal: null,
+      considered: [],
+      rejected,
+      declineReason: bill.length
+        ? `only ${bill.length} name${bill.length === 1 ? "" : "s"} survived on this day, which is a page we failed to read rather than a bill`
+        : "no act on this day was named by an authoritative or a second source",
+    };
+  }
+
+  const hosts = new Set(admissible.map((row) => row.host));
+  const ticketing = admissible.filter((row) => row.ticketing);
+  const evidence = [
+    {
+      kind: "web",
+      detail: `${bill.length} acts named on ${longDate(date)} at ${festivalName}`,
+      delta: DELTA_DATE_CONFIRMED,
+    },
+    {
+      kind: "web",
+      detail: `${hosts.size === 1 ? "The page names" : `${hosts.size} pages name`} ${festivalName} and this day of it`,
+      delta: DELTA_FESTIVAL_CONFIRMED,
+    },
+  ];
+  if (ticketing.length) {
+    evidence.push({
+      kind: "web",
+      detail: `Listed on ${[...new Set(ticketing.map((row) => row.host))].join(", ")}`,
+      delta: DELTA_TICKETING_DOMAIN,
+    });
+  }
+  if (hosts.size > 1) {
+    evidence.push({
+      kind: "web",
+      detail: `${hosts.size} independent sources agree`,
+      delta: DELTA_CORROBORATED,
+    });
+  }
+  const confidence = Math.min(
+    evidence.reduce((total, row) => total + row.delta, 0),
+    0.99,
+  );
+  if (confidence < minConfidence) {
+    return {
+      proposal: null,
+      considered: [],
+      rejected,
+      declineReason: `best confidence ${confidence.toFixed(2)} below ${minConfidence}`,
+    };
+  }
+
+  const primary =
+    admissible.find((row) => row.authoritative) ?? admissible.find((row) => row.headed) ?? admissible[0];
+  return {
+    proposal: {
+      clusterDate: date,
+      festivalId: festivalSlug(festivalName, date),
+      festivalName,
+      title: festivalDayTitle(festivalName, date),
+      venueName: festival.venueName ?? null,
+      city: festival.city ?? null,
+      artistNames: bill.map((entry) => entry.name),
+      sourceUrl: primary.url,
+      sourceTitle: primary.title,
+      corroboratingUrls: admissible.filter((row) => row.url !== primary.url).map((row) => row.url),
+      confidence,
+      evidence,
+    },
+    considered: [...tally.values()].map((entry) => ({
+      name: entry.name,
+      hosts: [...entry.hosts],
+      authoritative: entry.authoritative,
+    })),
+    rejected,
+    uncorroborated,
+    declineReason: null,
+  };
+}
+
+// One query per day, and a second that targets the pages which publish bills
+// day by day (set times, daily lineups) rather than one weekend poster.
+function buildFestivalQueries(festival) {
+  const date = longDate(festival.date ?? festival.clusterDate);
+  const name = festival.festivalName ? String(festival.festivalName) : "";
+  if (!date || !name) return [];
+  const city = festival.city ? ` ${festival.city}` : "";
+  const day = weekdayName(festival.date ?? festival.clusterDate);
+  return [
+    { query: `"${name}"${city} lineup ${date}` },
+    { query: `"${name}" ${day} ${date} set times daily lineup` },
+  ];
+}
+
 export {
   CREDITS_PER_ADVANCED_SEARCH,
+  DELTA_FESTIVAL_CONFIRMED,
+  MAX_BILL_NAMES,
+  MIN_BILL_NAMES,
   DELTA_CORROBORATED,
   DELTA_DATE_CONFIRMED,
   DELTA_NO_VENUE_ANCHOR,
@@ -626,21 +1263,32 @@ export {
   MIN_PROPOSAL_CONFIDENCE,
   TICKETING_DOMAINS,
   VENUE_ANCHOR_METERS,
+  buildFestivalQueries,
   buildGapQueries,
   dateNeedles,
+  dayLineupSegment,
   describeProposal,
   weekdayDateNeedles,
   eachNightInRange,
   estimateSweepCredits,
   extractArtistNames,
+  festivalDayTitle,
+  festivalSlug,
+  harvestBillNames,
   hostOf,
+  isAuthoritativeFestivalSource,
+  looksLikeArtistName,
   isSocialDomain,
   isTicketingDomain,
   longDate,
   mentionsDate,
+  mentionsFestival,
   mentionsVenue,
   nearestVenues,
   nightsMissingFromCatalog,
+  proposeFestivalDay,
   proposeFromResults,
+  runOfDatesIncludes,
   splitLineup,
+  weekdayName,
 };

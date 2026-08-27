@@ -5,11 +5,14 @@
 //                   catalog can explain.
 //   2. Catalog gap — naive top-result parsing vs evidence-gated proposals, on
 //                   nights the catalog CANNOT explain.
+//   3. Festivals   — reading a lineup page whole vs cutting it into days, where
+//                   the error to measure is a real act on the wrong day.
 //
-// Both exist so a change in quality is a number you can see, not a vibe.
+// They exist so a change in quality is a number you can see, not a vibe.
 
 import { runEval } from "./matchEval.mjs";
 import { runGapEval } from "./gapEval.mjs";
+import { runFestivalEval } from "./festivalEval.mjs";
 
 const percent = (value) => (value === null ? "  — " : `${(value * 100).toFixed(0).padStart(3)}%`);
 const pad = (value, width) => String(value).padEnd(width);
@@ -119,5 +122,39 @@ if (naiveFailures.length) {
   for (const row of naiveFailures) {
     console.log(`  ${row.clusterDate}  ${pad(row.scenario, 22)} "${row.actual.join(" + ")}"`);
   }
+}
+
+// --- Festivals --------------------------------------------------------------
+
+console.log("\n\nShowtonic — festival lineups (one bill per day, not sixty shows)");
+const festival = runFestivalEval().results;
+console.log("\nOVERALL");
+console.log(
+  `  ${pad("strategy", 26)} ${"days".padStart(5)} ${"acts".padStart(6)} ${"recall".padStart(7)}` +
+    ` ${"wrong day".padStart(10)} ${"two days".padStart(9)}`,
+);
+for (const result of Object.values(festival)) {
+  const o = result.overall;
+  console.log(
+    `  ${pad(result.label, 26)} ${String(`${o.daysWithBill}/${o.days}`).padStart(5)}` +
+      ` ${String(o.acts).padStart(6)} ${percent(o.recall).padStart(7)}` +
+      ` ${String(o.misplaced).padStart(10)} ${String(o.collisions).padStart(9)}`,
+  );
+}
+console.log(`\n${festival.dayGated.label} — every day, and what it billed:`);
+for (const row of festival.dayGated.rows) {
+  console.log(
+    `  ${row.date}  ${String(row.acts).padStart(3)} acts` +
+      `  headliners ${row.found}/${row.expected}  wrong-day ${row.misplaced.length}` +
+      `  ${percent(row.confidence)}  ${row.sourceUrl ?? "—"}`,
+  );
+}
+const strayed = festival.wholePage.rows.flatMap((row) =>
+  row.misplaced.map((act) => `${row.date}  "${act}"`),
+);
+if (strayed.length) {
+  console.log(`\n${festival.wholePage.label} — acts it would have put on the wrong day:`);
+  for (const line of strayed.slice(0, 12)) console.log(`  ${line}`);
+  if (strayed.length > 12) console.log(`  … and ${strayed.length - 12} more`);
 }
 console.log("");

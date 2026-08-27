@@ -4,10 +4,14 @@ import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   CREDITS_PER_ADVANCED_SEARCH,
+  buildFestivalQueries,
   buildGapQueries,
   estimateSweepCredits,
   nearestVenues,
+  eachNightInRange,
+  festivalSlug,
   nightsMissingFromCatalog,
+  proposeFestivalDay,
   proposeFromResults,
 } from "./catalogGapUtils.js";
 
@@ -127,6 +131,8 @@ export const record = mutation({
     clusterDate: v.string(),
     venueName: v.optional(v.string()),
     city: v.optional(v.string()),
+    festivalId: v.optional(v.string()),
+    title: v.optional(v.string()),
     artistNames: v.array(v.string()),
     sourceUrl: v.string(),
     sourceTitle: v.optional(v.string()),
@@ -143,9 +149,14 @@ export const record = mutation({
       .withIndex("by_date", (q) => q.eq("clusterDate", args.clusterDate))
       .collect();
     const key = args.artistNames.map((name) => name.toLowerCase()).sort().join("|");
-    const duplicate = sameNight.find(
-      (row) => row.artistNames.map((name) => name.toLowerCase()).sort().join("|") === key,
-    );
+    // A festival day is identified by its festival, not by its bill: re-running
+    // a sweep after the lineup page gained one act must update one claim about
+    // that day, never stack a second one beside it.
+    const duplicate = args.festivalId
+      ? sameNight.find((row) => row.festivalId === args.festivalId)
+      : sameNight.find(
+          (row) => row.artistNames.map((name) => name.toLowerCase()).sort().join("|") === key,
+        );
     if (duplicate) {
       // A rejected proposal stays rejected. A human already said no to this
       // exact claim; the agent does not get to ask again.
@@ -156,6 +167,8 @@ export const record = mutation({
       clusterDate: args.clusterDate,
       venueName: args.venueName,
       city: args.city,
+      festivalId: args.festivalId,
+      title: args.title,
       artistNames: args.artistNames,
       sourceUrl: args.sourceUrl,
       sourceTitle: args.sourceTitle,
@@ -215,17 +228,24 @@ export const approve = action({
     if (!proposal) throw new Error("Proposal not found");
     if (proposal.status !== "pending") throw new Error(`Proposal is already ${proposal.status}`);
 
-    const jambaseId = `gap:${proposal.clusterDate}:${proposal.artistNames
-      .join("-")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "")}`;
+    // A festival day is one row keyed by the festival and the date, so the
+    // bill can change without the day becoming a second show.
+    const jambaseId = proposal.festivalId
+      ? `gap:fest:${proposal.festivalId}:${proposal.clusterDate}`
+      : `gap:${proposal.clusterDate}:${proposal.artistNames
+          .join("-")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/(^-|-$)/g, "")}`;
 
     await ctx.runMutation(api.shows.importUpcoming, {
       events: [
         {
           jambaseId,
-          title: proposal.artistNames.join(" + "),
+          // A festival day is titled by the day, not by an artist — nobody
+          // remembers Saturday as six separate sets.
+          title: proposal.title ?? proposal.artistNames.join(" + "),
+          festivalId: proposal.festivalId,
           date: proposal.clusterDate,
           venueName: proposal.venueName ?? "Unknown venue",
           city: proposal.city ?? "San Francisco",
@@ -609,6 +629,293 @@ export const sweepVenueHistory = action({
       note:
         "Every proposal is pending and claims only that the show happened — not that anyone attended it. " +
         "A sweep never auto-approves, however confident.",
+    };
+  },
+});
+
+// --- Festivals --------------------------------------------------------------
+//
+// The other hole in the catalog, and a differently shaped one. A venue night is
+// one bill; a festival is sixty acts across three days, and the mistake to
+// avoid is not an invented artist — every name on a lineup page is real — it is
+// a real act filed under the wrong day.
+//
+// So the unit here is a festival DAY. One proposal per day, carrying that day's
+// bill, titled by the day, keyed by `festivalId`. That is the row SPEC.md's
+// "a festival is one thing, not sixty" asks the catalog for, which is why
+// recovering lineups now does not have to be undone when the model lands.
+
+// Two searches per day: the lineup, and the set-times pages that publish bills
+// day by day. Their results are POOLED before scoring — two searches that each
+// find one publisher are exactly the corroboration the per-act bar wants, and
+// scoring them separately would throw it away.
+const MAX_QUERIES_PER_FESTIVAL_DAY = 2;
+
+// No festival runs longer, and a typo in a date should not cost sixty searches.
+const MAX_FESTIVAL_DAYS = 14;
+
+export const searchFestivalDay = action({
+  args: {
+    festivalName: v.string(),
+    date: v.string(),
+    city: v.optional(v.string()),
+    venueName: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    date: string;
+    festivalName: string;
+    proposed: boolean;
+    proposalId?: Id<"catalogProposals">;
+    title?: string;
+    artistNames?: string[];
+    sourceUrl?: string;
+    confidence?: number;
+    heldBack?: number;
+    declineReason?: string;
+    creditsSpent: number;
+  }> => {
+    const queries = buildFestivalQueries({
+      festivalName: args.festivalName,
+      city: args.city ?? null,
+      date: args.date,
+    }).slice(0, MAX_QUERIES_PER_FESTIVAL_DAY);
+
+    if (!queries.length) {
+      return {
+        date: args.date,
+        festivalName: args.festivalName,
+        proposed: false,
+        declineReason: "a festival needs a name and a valid date",
+        creditsSpent: 0,
+      };
+    }
+    if (args.dryRun) {
+      return {
+        date: args.date,
+        festivalName: args.festivalName,
+        proposed: false,
+        declineReason: `dry run — would search: ${queries.map((row) => row.query).join(" | ")}`,
+        creditsSpent: 0,
+      };
+    }
+    if (!process.env.TAVILY_API_KEY) {
+      return {
+        date: args.date,
+        festivalName: args.festivalName,
+        proposed: false,
+        declineReason: "TAVILY_API_KEY is not set",
+        creditsSpent: 0,
+      };
+    }
+
+    const results: TavilyResult[] = [];
+    let creditsSpent = 0;
+    for (const { query } of queries) {
+      try {
+        const outcome = await tavilySearch(query, args.date);
+        creditsSpent += outcome.credits;
+        results.push(...outcome.results);
+      } catch (error) {
+        // One failed query still leaves the other one's evidence usable.
+        if (!results.length && query === queries[queries.length - 1].query) {
+          return {
+            date: args.date,
+            festivalName: args.festivalName,
+            proposed: false,
+            declineReason: error instanceof Error ? error.message : "search failed",
+            creditsSpent,
+          };
+        }
+      }
+    }
+
+    const { proposal, declineReason, uncorroborated } = proposeFestivalDay(
+      {
+        festivalName: args.festivalName,
+        date: args.date,
+        city: args.city ?? null,
+        venueName: args.venueName ?? null,
+      },
+      results,
+    );
+    if (!proposal) {
+      return {
+        date: args.date,
+        festivalName: args.festivalName,
+        proposed: false,
+        declineReason: declineReason ?? "no result cleared the bar",
+        creditsSpent,
+      };
+    }
+
+    // No requestedByUserId, exactly as with a history sweep: this claims that a
+    // day of a festival had a bill, never that anybody was standing in it.
+    const saved = await ctx.runMutation(api.catalogGap.record, {
+      clusterDate: proposal.clusterDate,
+      venueName: proposal.venueName ?? undefined,
+      city: proposal.city ?? undefined,
+      festivalId: proposal.festivalId,
+      title: proposal.title,
+      artistNames: proposal.artistNames,
+      sourceUrl: proposal.sourceUrl,
+      sourceTitle: proposal.sourceTitle,
+      corroboratingUrls: proposal.corroboratingUrls,
+      confidence: proposal.confidence,
+      evidence: proposal.evidence,
+    });
+
+    return {
+      date: args.date,
+      festivalName: args.festivalName,
+      proposed: saved.created,
+      proposalId: saved.proposalId,
+      title: proposal.title,
+      artistNames: proposal.artistNames,
+      sourceUrl: proposal.sourceUrl,
+      confidence: proposal.confidence,
+      heldBack: uncorroborated,
+      declineReason: saved.created ? undefined : `already proposed (${saved.status})`,
+      creditsSpent,
+    };
+  },
+});
+
+// Dates this festival already has rows on, so a sweep fills holes and never
+// second-guesses a lineup that came from a first-party source.
+export const festivalShowDates = query({
+  args: { festivalId: v.string() },
+  handler: async (ctx, args) => {
+    const shows = await ctx.db
+      .query("shows")
+      .withIndex("by_festival", (q) => q.eq("festivalId", args.festivalId))
+      .collect();
+    return [...new Set(shows.map((show) => show.date))];
+  },
+});
+
+export const sweepFestival = action({
+  args: {
+    festivalName: v.string(),
+    from: v.string(),
+    to: v.string(),
+    city: v.optional(v.string()),
+    venueName: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    festivalName: string;
+    festivalId: string;
+    range: { from: string; to: string };
+    daysInRange: number;
+    alreadyInCatalog: number;
+    daysWalked: number;
+    proposed: number;
+    declined: number;
+    creditsSpent: number;
+    estimatedCredits: number;
+    bills: { date: string; title: string; acts: number; sourceUrl: string; confidence: number }[];
+    declines: { date: string; reason: string }[];
+    collisions: { name: string; dates: string[] }[];
+    dryRun: boolean;
+    note: string;
+  }> => {
+    const festivalId = festivalSlug(args.festivalName, args.from);
+    const days = eachNightInRange(args.from, args.to).slice(0, MAX_FESTIVAL_DAYS);
+    const known: string[] = await ctx.runQuery(api.catalogGap.festivalShowDates, { festivalId });
+    const walking = days.filter((day) => !known.includes(day));
+    const estimatedCredits = estimateSweepCredits(walking.length, MAX_QUERIES_PER_FESTIVAL_DAY);
+
+    const base = {
+      festivalName: args.festivalName,
+      festivalId,
+      range: { from: args.from, to: args.to },
+      daysInRange: days.length,
+      alreadyInCatalog: known.length,
+      estimatedCredits,
+    };
+    if (args.dryRun || !process.env.TAVILY_API_KEY) {
+      return {
+        ...base,
+        daysWalked: 0,
+        proposed: 0,
+        declined: 0,
+        creditsSpent: 0,
+        bills: [],
+        declines: [],
+        collisions: [],
+        dryRun: Boolean(args.dryRun),
+        note: args.dryRun
+          ? `Would search ${walking.length} days for about ${estimatedCredits} Tavily credits.`
+          : "TAVILY_API_KEY is not set — nothing searched.",
+      };
+    }
+
+    const bills: { date: string; title: string; acts: number; sourceUrl: string; confidence: number }[] = [];
+    const declines: { date: string; reason: string }[] = [];
+    const seen = new Map<string, string[]>();
+    let creditsSpent = 0;
+    let walked = 0;
+
+    for (const date of walking) {
+      if (walked) await new Promise((resolve) => setTimeout(resolve, SWEEP_PAUSE_MS));
+      walked += 1;
+      let outcome;
+      try {
+        outcome = await ctx.runAction(api.catalogGap.searchFestivalDay, {
+          festivalName: args.festivalName,
+          date,
+          city: args.city,
+          venueName: args.venueName,
+        });
+      } catch (error) {
+        declines.push({ date, reason: error instanceof Error ? error.message : "search failed" });
+        continue;
+      }
+      creditsSpent += outcome.creditsSpent;
+      if (outcome.proposed && outcome.artistNames && outcome.sourceUrl) {
+        bills.push({
+          date,
+          title: outcome.title ?? args.festivalName,
+          acts: outcome.artistNames.length,
+          sourceUrl: outcome.sourceUrl,
+          confidence: outcome.confidence ?? 0,
+        });
+        for (const name of outcome.artistNames) {
+          const key = name.toLowerCase();
+          seen.set(key, [...(seen.get(key) ?? []), date]);
+        }
+      } else {
+        declines.push({ date, reason: outcome.declineReason ?? "declined" });
+      }
+    }
+
+    // An act on two days of one festival is the failure this whole path is
+    // shaped to avoid, so the sweep reports it rather than leaving a human to
+    // notice. It is visible without any answer key.
+    const collisions = [...seen.entries()]
+      .filter(([, dates]) => dates.length > 1)
+      .map(([name, dates]) => ({ name, dates }));
+
+    return {
+      ...base,
+      daysWalked: walked,
+      proposed: bills.length,
+      declined: declines.length,
+      creditsSpent,
+      bills,
+      declines,
+      collisions,
+      dryRun: false,
+      note:
+        "One proposal per festival DAY, carrying that day's bill. Every one is pending and claims " +
+        "only that the day happened — approving it creates a single festival-day show, not sixty.",
     };
   },
 });

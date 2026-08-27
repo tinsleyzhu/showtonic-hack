@@ -14,14 +14,22 @@ import {
   eachNightInRange,
   estimateSweepCredits,
   nightsMissingFromCatalog,
+  buildFestivalQueries,
   buildGapQueries,
+  dayLineupSegment,
   describeProposal,
   extractArtistNames,
+  festivalDayTitle,
+  festivalSlug,
+  harvestBillNames,
   hostOf,
+  looksLikeArtistName,
   isTicketingDomain,
   longDate,
   mentionsDate,
+  mentionsFestival,
   nearestVenues,
+  proposeFestivalDay,
   proposeFromResults,
   splitLineup,
 } from "../convex/catalogGapUtils.js";
@@ -314,4 +322,198 @@ test("a history proposal is scored exactly like a reclaim proposal", () => {
   ]);
   assert.deepEqual(strong.proposal.artistNames, ["ATLiens"]);
   assert.equal(strong.proposal.confidence >= MIN_PROPOSAL_CONFIDENCE, true);
+});
+
+// ---------------------------------------------------------------------------
+// Festivals — a day is one bill
+// ---------------------------------------------------------------------------
+//
+// A festival page names sixty acts across three days. Reading it whole would
+// put Friday's headliners on Saturday's bill with a real URL attached, which is
+// the worst shape a wrong claim can take: sourced, plausible, and unfalsifiable
+// by the human looking at it. So most of what follows tests the cutting.
+
+test("a festival day is titled by the day, not by an artist", () => {
+  assert.equal(festivalDayTitle("Outside Lands 2026", "2026-08-08"), "Outside Lands 2026 — Saturday");
+  assert.equal(festivalSlug("Outside Lands", "2026-08-08"), "outside-lands-2026");
+  assert.equal(festivalSlug("Outside Lands 2026", "2026-08-08"), "outside-lands-2026");
+});
+
+test("a festival is recognised however the page writes its name", () => {
+  assert.equal(mentionsFestival("Outside Lands Music and Arts Festival", "Outside Lands 2026"), true);
+  assert.equal(mentionsFestival("outside lands 2026 lineup", "Outside Lands Music and Arts Festival"), true);
+  assert.equal(mentionsFestival("Portola Festival 2026", "Outside Lands 2026"), false);
+});
+
+test("one day's slice stops where the next day's header starts", () => {
+  const page =
+    "Friday, August 7: Tame Impala | Kaytranada. Saturday, August 8: Doja Cat | Peggy Gou.";
+  const friday = dayLineupSegment(page, "2026-08-07");
+  assert.equal(friday.segment.includes("Kaytranada"), true);
+  assert.equal(friday.segment.includes("Doja Cat"), false);
+  const saturday = dayLineupSegment(page, "2026-08-08");
+  assert.equal(saturday.segment.includes("Peggy Gou"), true);
+  assert.equal(saturday.segment.includes("Tame Impala"), false);
+});
+
+test("a page with day sections but not this one carries no day", () => {
+  const page = "Saturday, August 8: Doja Cat. Sunday, August 9: Chappell Roan.";
+  assert.equal(dayLineupSegment(page, "2026-08-07"), null);
+});
+
+test("a page with no day structure at all is read whole, and says so", () => {
+  // Safe only because the page-level date gate ran first: proposeFestivalDay
+  // refuses a page that never confirms the date, whatever its shape.
+  const slice = dayLineupSegment("Tame Impala | Kaytranada | Overmono", "2026-08-07");
+  assert.equal(slice.headed, false);
+  const { proposal, rejected } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands returns to Golden Gate Park",
+      url: "https://www.sfstation.com/outside-lands",
+      content: "Three days of music in Golden Gate Park.",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.equal(rejected[0].reason, "date not confirmed in the page");
+});
+
+test("the festival's date range is not a day header", () => {
+  // "August 7-9" reads as a header for the 7th unless ranges are excluded, and
+  // then Friday's section swallows the whole page including the other days.
+  const page =
+    "Outside Lands runs August 7-9, 2026 in Golden Gate Park. " +
+    "Saturday, August 8: Doja Cat. Friday, August 7: Tame Impala.";
+  const friday = dayLineupSegment(page, "2026-08-07");
+  assert.equal(friday.segment.includes("Doja Cat"), false);
+  assert.equal(friday.segment.includes("Tame Impala"), true);
+});
+
+test("set times and furniture are not acts", () => {
+  assert.equal(looksLikeArtistName("Tame Impala"), true);
+  assert.equal(looksLikeArtistName("Fred again.."), true);
+  assert.equal(looksLikeArtistName("Twin Peaks Stage"), false);
+  assert.equal(looksLikeArtistName("9:45 PM"), false);
+  assert.equal(looksLikeArtistName("Saturday"), false);
+  assert.equal(looksLikeArtistName("VIP passes"), false);
+  assert.equal(looksLikeArtistName("$189"), false);
+});
+
+test("a comma inside an act's name drops both halves rather than inventing two acts", () => {
+  // "Tyler, The Creator" and "Kaytranada, The Blaze" are indistinguishable once
+  // split. Guessing either way puts a wrong artist in the shared catalog.
+  const names = harvestBillNames("Tyler, The Creator, Doja Cat, Peggy Gou");
+  assert.equal(names.includes("Tyler"), false);
+  assert.equal(names.includes("The Creator"), false);
+  assert.deepEqual(names, ["Doja Cat", "Peggy Gou"]);
+});
+
+const OSL = {
+  festivalName: "Outside Lands 2026",
+  date: "2026-08-07",
+  city: "San Francisco",
+  venueName: "Golden Gate Park",
+};
+
+const LINEUP_BY_DAY = {
+  title: "Outside Lands 2026 Lineup by Day",
+  url: "https://www.sfstation.com/outside-lands-2026-lineup",
+  content:
+    "Outside Lands returns to Golden Gate Park August 7-9, 2026. " +
+    "Friday, August 7: Tame Impala | Kaytranada | Overmono | Sudan Archives | Jessie Ware. " +
+    "Saturday, August 8: Doja Cat | Peggy Gou. Sunday, August 9: Chappell Roan.",
+};
+
+const SET_TIMES = {
+  title: "Outside Lands Friday August 7 2026 set times",
+  url: "https://www.sfgate.com/music/outside-lands-friday-set-times",
+  content:
+    "FRIDAY\nTame Impala\nKaytranada\nOvermono\nJessie Ware\nSudan Archives\nMk.gee\nSATURDAY\nDoja Cat",
+};
+
+test("a festival day proposal carries that day's bill and nobody else's", () => {
+  const { proposal } = proposeFestivalDay(OSL, [LINEUP_BY_DAY, SET_TIMES]);
+  assert.notEqual(proposal, null);
+  assert.deepEqual(proposal.artistNames.sort(), [
+    "Jessie Ware",
+    "Kaytranada",
+    "Overmono",
+    "Sudan Archives",
+    "Tame Impala",
+  ]);
+  assert.equal(proposal.title, "Outside Lands 2026 — Friday");
+  assert.equal(proposal.festivalId, "outside-lands-2026");
+  assert.equal(proposal.confidence >= MIN_PROPOSAL_CONFIDENCE, true);
+});
+
+test("an act named by one non-authoritative page does not make the bill", () => {
+  // Mk.gee appears only on sfgate here. One publisher's typo becomes an artist
+  // row that everyone else then matches against, so a second source is required.
+  const { proposal, uncorroborated } = proposeFestivalDay(OSL, [LINEUP_BY_DAY, SET_TIMES]);
+  assert.equal(proposal.artistNames.includes("Mk.gee"), false);
+  assert.equal(uncorroborated > 0, true);
+});
+
+test("a ticketing page can carry the bill on its own", () => {
+  const { proposal } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands 2026 - Friday Tickets",
+      url: "https://www.axs.com/events/outside-lands-friday",
+      content:
+        "Friday, August 7, 2026\nTame Impala\nKaytranada\nOvermono\nSudan Archives",
+    },
+  ]);
+  assert.notEqual(proposal, null);
+  assert.deepEqual(proposal.artistNames.sort(), [
+    "Kaytranada",
+    "Overmono",
+    "Sudan Archives",
+    "Tame Impala",
+  ]);
+});
+
+test("a social caption may corroborate a festival day but never carry one", () => {
+  const { proposal, declineReason } = proposeFestivalDay(OSL, [
+    {
+      title: "outsidelands on Instagram",
+      url: "https://www.instagram.com/p/xyz",
+      content: "Outside Lands Friday, August 7, 2026 — Tame Impala | Kaytranada",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.match(declineReason, /caption/);
+});
+
+test("a wrong-year festival page is refused, as it is for a venue night", () => {
+  const { proposal, rejected } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands 2025 Lineup",
+      url: "https://www.sfstation.com/outside-lands-2025",
+      content: "Friday, August 8, 2025: Tyler | Doechii",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.equal(rejected[0].reason, "date not confirmed in the page");
+});
+
+test("a festival day search asks about the day, not the weekend", () => {
+  const [first, second] = buildFestivalQueries(OSL);
+  assert.match(first.query, /"Outside Lands 2026"/);
+  assert.match(first.query, /August 7, 2026/);
+  assert.match(second.query, /Friday/);
+});
+
+test("a day that yields two or three names is a page we failed to read", () => {
+  // Lollapalooza 2025: JamBase's day sections came back empty and setlist.fm's
+  // came back as one run-on line, so what survived the filters was the venue,
+  // a stage programme, and two acts merged into one name. Three real-looking
+  // claims about who played, and not one of them a bill.
+  const { proposal, declineReason } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands 2026 At-a-Glance",
+      url: "https://www.jambase.com/festival/outside-lands-2026",
+      content: "Friday, August 7, 2026\nTame Impala\nKaytranada",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.match(declineReason, /failed to read/);
 });
