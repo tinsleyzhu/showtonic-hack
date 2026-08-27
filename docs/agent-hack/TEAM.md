@@ -2554,3 +2554,57 @@ DECIDED (coordinator): @tinsley's best night repointing to the Outside Lands
 row (94 artists, "Open show" lands on a festival page) STANDS for the demo —
 the night genuinely was a festival night and recap:build reads the log's own
 fields, so the stage line is unaffected. Post-hack: a per-set landing.
+
+### L5 share · 2026-08-27T03:05Z — screen-reader / keyboard pass
+state:    idle
+now:      a11y pass over Briefing and Diary; one real finding, three false alarms I caught
+shipped:  - (report only)
+blocked:  -
+next:     standing by; happy to take the image fallback if you want it.
+
+**The a11y pass is mostly good news.** Briefing: no dangling `aria-labelledby`
+(L6, your fix landed — my earlier finding is closed), no unnamed controls, one
+h1, no heading-level skips, every image has alt, nothing broken. Keyboard focus
+works: a real Tab press lands a solid 2px ember `:focus-visible` ring, from the
+global rule in `globals.css` — that rule is doing exactly what its comment says.
+
+**FINDING — the app hotlinks 100% of its artwork from jambase.com and has NO
+error fallback anywhere.** `grep onError app/views/*.tsx` returns nothing.
+`resolveShowImage` (`app/liveData.js:42`) passes any `http(s)` URL straight
+through, so a third-party URL that dies renders as broken alt text on a grey
+box. There is already a `DEFAULT_SHOW_IMAGE` constant sitting right there
+unused for this case.
+
+Live on the demo account right now: @tinsley's Diary shows **four broken images**,
+all the same dead URL (`.../2024/09/molly-santana-1480x832.jpg`, 404 in the
+browser), across the Favorite Shows tile, two artist chips and a memory tile.
+It is the first screen Act 1 lands on.
+
+The bigger risk is not that one URL. **Every image in the product is a hotlink to
+a host we do not control, requested in bursts of ~50 per screen.** If JamBase
+rate-limits or blips during the demo, the app fills with broken images and there
+is nothing to catch it. A five-line `onError` swapping to `DEFAULT_SHOW_IMAGE`
+makes any dead URL degrade to a neutral poster instead. It touches several of
+L6's view files, so I have not taken it — say the word and it is ten minutes.
+
+⚠️ **Three false alarms I caught before filing them, because the pattern is the
+point.** All three were my instrument, not the app:
+1. "40 of 40 controls have no focus indicator" — `.focus()` in script does not
+   trigger `:focus-visible`. A real Tab keypress showed the ring is fine.
+2. "Four unnamed buttons on Diary" — the poster tiles ARE named, by their
+   `img alt`, which my audit only counted as innerText.
+3. "The default placeholder is dead, so half the catalog is broken" — it loads
+   fine as a page sub-resource (1480x832); 49/49 images on Browse load. My
+   isolated `new Image()` probe failed on a URL the page renders happily, most
+   likely burst rate-limiting — which is itself the evidence for the finding
+   above.
+That is three instruments over-reporting in one pass, on top of the duplicate
+scan that ignored `startTime`. **The check that keeps working is: reproduce it
+the way a user would before writing it down.**
+
+**Minor, filed not fixed:** every page has two h1s — the `SHOWTONIC` wordmark and
+the page title. One of them should be a `p` or `div`. L6's call.
+
+**FYI on the ruled repoint:** it is visible on Diary, not just in data — the
+Favorite Shows tile for @tinsley's 5★ night now reads `Outside Lands`, where she
+pinned Charli XCX. Your ruling stands, just noting where it surfaces on screen.
