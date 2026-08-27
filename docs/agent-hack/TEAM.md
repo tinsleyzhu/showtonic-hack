@@ -1239,3 +1239,54 @@ is the right call. What I changed:
    about 3.3:1 and under the AA floor. Now the muted token at ~5.2:1.
 
 Say the word if you disagree with any of them and I will revert that one.
+
+### L5 share · 2026-08-27T07:20Z
+state:    shipped
+now:      merged main, then rendered the recap export for the first time — two real bugs
+shipped:  PR (lane/share): headline/stats collision + share-sheet fallback, 288/288 green
+blocked:  -
+next:     idle in-lane. Nothing here needs a Convex deploy; it is all client-side.
+
+**Rendering it took under a minute to break it, twice.** Thank you for the
+read-only `.env.local` — the caveat I repeated four times ("I have not rendered
+ANY of this") was load-bearing, and both bugs were invisible to `tsc`, to lint,
+and to five passing render tests.
+
+1. **The stats numerals were painted through the span line.** The headline block
+   was top-anchored at `heroHeight - 40`, so as soon as a recap had a `spanLine`
+   the block grew *downward* out of the hero and landed in the stats band: the
+   76px "7 / 5 / 3" sat directly on top of "Two years of nights, back in one
+   place." Every export with a span line — which is every non-empty recap —
+   shipped with that collision. The recording context the render tests use has
+   no pixels, so nothing could collide in a test. The block is one bottom-
+   anchored unit now, and the new tests assert baselines against the hero edge
+   and the numerals' ascent. They fail on the old code; I checked, because a
+   regression test that never fails is decoration.
+2. **A rejected `navigator.share` handed back a raw DOM error and no image** —
+   the exact silent dead end the "no post button" copy exists to avoid. It
+   rejects for two unlike reasons: cancelling the sheet is a *decision* and now
+   says so quietly, and any other refusal falls through to the download. The
+   likeliest refusal is mundane: share requires transient user activation, and
+   awaiting cross-origin photo fetches plus a PNG encode can outlive it.
+
+**Both open questions from 06:15Z are now answered.**
+- **Canvas tainting: not a risk.** Convex storage reflects `Origin` and sends
+  `access-control-allow-credentials`, so a `crossOrigin="anonymous"` photo loads
+  clean and the canvas is never tainted. Note the design was already safe either
+  way — a refused CORS read fires `onerror`, the photo is skipped, and the UI
+  says how many were left out. Not exercised with a real photo, because **no
+  member in the deployment has any media at all** (`media:listByUser` is empty
+  for @tinsley). Worth knowing before anyone demos "your photos lead."
+- **The export itself works.** 1080x1920, 1.4MB PNG, real data from main's
+  deployed `recap:build`. Screenshots in the PR.
+
+⚠️ **Two things I am leaving alone, both outside this lane.**
+- **A broken artwork image on Diary.** "Molly Santana at The Midway" renders as
+  alt text in the Favorite shows row — the artwork URL 404s. Catalog data, so
+  L1/L2's call, but it is on the demo path and it is the first screen after sign-in.
+- **`BEST NIGHT` never fits the story export.** `y < height - 260` gates it and
+  five artist rows always overrun, so the card silently drops the block while
+  the caption still says "Best night: Charli XCX." The honest fix is a taste
+  call I would rather the coordinator make: three artist rows and the best
+  night, or five artists and no best night. It is guarded, not broken, so I did
+  not guess.
