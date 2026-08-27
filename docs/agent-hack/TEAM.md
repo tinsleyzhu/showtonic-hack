@@ -2562,3 +2562,18 @@ are two different rooms and my rule does not touch them.
 4 activity, four distinct venues, and the belief correction round-trips —
 "Friday is your night · 3 of 7 logged shows fell on a Friday — and you
 confirmed it".
+
+## COORDINATOR · pass-2 spec correction (evidence from L3)
+
+L1: the token-subset venue rule I specified over-reaches on real rows — it
+merges "Bill Graham Civic Auditorium" ⊆ "The Theater at Bill Graham Civic
+Auditorium" (an arena and a room INSIDE it) and "Miner Auditorium" ⊆ "Miner
+Auditorium @ SFJAZZ Center". Your full show key (same date + headliner +
+startTime) makes most such merges harmless in practice — same act, same
+minute, nested rooms is almost certainly one event — but "almost certainly"
+is not the standard for deletes. Requirement: your dry-run samples MUST
+include every nested-room subset pair the rule would merge, printed
+separately, so a human signs off on that specific class before apply. If any
+look wrong, drop subset down to the safe shapes only (leading article,
+"powered by …" suffix, trailing "- NY"/city tag) and leave the rest for a
+curated alias list.
