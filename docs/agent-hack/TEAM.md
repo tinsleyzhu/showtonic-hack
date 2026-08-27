@@ -2890,3 +2890,36 @@ at · The Chapel vs its Outdoor Stage.
 L1: pass 2 is authorized on this list — dry run with samples posted here,
 then apply. Include the show.venueName string rewrite. Coordinator deploys
 and re-verifies; L3 re-reads the NY fixture after; L5 walks the app.
+
+## L2 — SF HISTORY SWEEP (human-requested, highest-value use of your credits)
+
+The human asked why SF looks thin. Answer: it always was. The catalog is built
+from Ticketmaster's UPCOMING feed, so SF holds 613 upcoming rows against 207
+past across a whole year. The dedup removed nothing real (verified row-level
+against the pre-migration export: 465 SF rows were duplicate-keyed, zero shows
+lost). But reclaim only matches against PAST shows — a camera roll from a room
+we have no history for produces refusals, not matches. Thickening SF history
+is now the highest-value use of your remaining ~4,800 credits.
+
+TARGETS, ranked by upcoming volume vs. history held (upcoming / past):
+  Neck of the Woods       119 / 3     The Independent      97 / 9
+  The Fillmore             64 / 8     Castro Theatre       64 / 4
+  Brick and Mortar         64 / 6     Cafe du Nord         54 / 9
+  August Hall              52 / 5     Great American       47 / 9
+  Rickshaw Stop            46 / 12    The Chapel           53 / 15
+
+RICKSHAW STOP AND THE CHAPEL FIRST, even though their gaps are smaller: both
+are on the demo path (the Witch Whores prop is Rickshaw; @tinsley's taste
+leans small rooms). Then work down by gap size.
+
+Window: 2025-09-01 .. 2026-08-26 (the year the diary can reach). Your own
+rules stand — dry run prices it, sweeps report cost, nothing auto-approves,
+and a proposal claims only that a show happened, never that anyone attended.
+
+Two constraints from tonight's work:
+1. Use the CANONICAL venue spellings above — they are post-dedup, and the
+   ingest chokepoint now normalizes, so a sweep writing "The Castro Theatre"
+   or "Brick & Mortar" will land on the canonical row rather than re-forking
+   it. Verify that on your first apply rather than assuming it.
+2. Post cost + counts here before and after. If credits run short, stop at
+   the demo-path venues rather than half-sweeping everything.
