@@ -410,6 +410,50 @@ next:     tracking `upcoming` coverage from here on, per the coordinator.
           Spotify remains unset and is still the single biggest lever
           (~9x faster than MusicBrainz and richer tags) — see NEEDS-HUMAN.
 
+### L1 enrich+catalog · 2026-08-27T (iteration 5)
+state:    building
+now:      took the catalog-expansion lane. Researched the TM Discovery API
+          against official docs before writing anything; two findings changed
+          the design.
+          (1) THE PAGING CAP IS REAL AND OFFICIAL: "we only support retrieving
+          the 1000th item. i.e. ( size * page < 1000 )". The existing pager is
+          fine for SF (807) and SILENTLY LOSSY for NY (2,011) — everything past
+          item 1000 is unreachable, with no error. New `syncUpcomingCatalog`
+          walks the horizon in date windows and halves any window too dense to
+          page. Multi-city, shared dedup set, shared request budget so one
+          dense city can't spend the daily quota. Window math extracted pure
+          and tested, including that repeated splitting terminates.
+          (2) TM'S DOCS CONTRADICT THEMSELVES ON RATE LIMIT: Getting Started
+          says 5 req/s, the FAQ says 2 req/s. We were pacing at 250ms (4/s),
+          i.e. over the conservative bound. Now 500ms, and a 429 is
+          distinguished from other failures so it stops the run cleanly with
+          partial work kept instead of retrying into a spent quota.
+          (3) GENRES FROM CLASSIFICATIONS shipped: every TM event already
+          carries genre/subGenre, so this is real sourced data at zero extra
+          requests. Tags are lowercased and compound names split
+          ("Hip-Hop/Rap" -> hip-hop, rap) so they share a vocabulary with
+          Spotify/MusicBrainz — otherwise the tally fragments into "Pop" and
+          "pop". Never clobbers a richer existing tag.
+shipped:  25972d8, 540b230, 1ebae3b on lane/enrich (189 tests green, tsc clean)
+blocked:  -
+next:     coordinator to run the import; numbers go in my next block.
+
+**PAST EVENTS: confirmed unavailable, as you suspected — do not force it.**
+Checked properly rather than trusting the single probe: every documented date
+param is forward-oriented (`startDateTime`/`endDateTime` on event date,
+`onsaleStart/EndDateTime` on the sale window); no `sort` value exposes ended
+events (name, date, relevance, distance, onSaleStartDate, id, venueName,
+random); `includeTBA`/`includeTBD`/`includeTest` govern unannounced and test
+entities, not past ones; neither `/attractions` nor `/venues` documents a
+past-event history. TM's only historical product is Archtics, partner-tier.
+Caveat worth stating: TM never says this outright, so it is one probe plus the
+complete absence of any documented mechanism — strongly implied, not
+officially confirmed. Written up in docs/FREE_DATA.md.
+**So Ticketmaster fixes the UPCOMING half of the catalog only. Backfill matches
+against PAST shows, so history still rests on Setlist.fm (key still unset — it
+is now the highest-value missing key, above Spotify) and L2's catalog-gap
+agent.**
+
 ---
 
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
@@ -419,7 +463,15 @@ next:     tracking `upcoming` coverage from here on, per the coordinator.
       `cotal actor grant cli --sub n6TFVkKoOfXvdKqfF87MVP3xXuo9rhl6`.
       Only needed if we want mesh-witnessed transcripts. Not blocking.
 - [ ] Door check-in at the badge table — no tool can do it.
-- [ ] Spotify developer app (client id + secret) — would make L1 ~9x faster.
+- [ ] ~~Spotify developer app~~ — DEAD END, stop chasing it. The app owner now
+      has to hold Premium, and the entitlement takes hours to propagate after
+      upgrading. Treat as not arriving before the lock.
+- [ ] **`SETLISTFM_API_KEY` — now the highest-value missing key** (was Spotify).
+      Free, from api.setlist.fm. Ticketmaster is confirmed to serve NO past
+      events, so it fixes only the upcoming half of the catalog. Backfill
+      matches against PAST shows, which makes Setlist.fm the only free source
+      of catalog history we have designed and not wired. `convex/freeEvents.ts`
+      already implements the whole path; it needs the key and nothing else.
 - [ ] L1 has no CONVEX_DEPLOYMENT in its worktree and can't run `npx convex
       dev`/`convex run` itself — coordinator needs to periodically run
       `freeEvents:enrichArtists` (or grant read access to `.env.local`) so
