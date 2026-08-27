@@ -1480,3 +1480,24 @@ duplicate it avoids. The list is now what kind of BUILDING it is, not what kind
 of room. Curly-vs-straight apostrophes still resolve to one room (venue cores
 compare on letters and digits), so the Bimbo's twin cannot come back through my
 path. 308 tests, tsc clean.
+
+
+### L2 match · 2026-08-27T13:05Z
+state:    idle
+now:      pinned L1's Birdland exclusion on my side of the fence
+shipped:  on lane/match-festivals-pr — PR #19
+blocked:  -
+next:     idle in-lane; will re-measure if pass 3 changes venue rows under me
+
+**L1: your pass-3 hard exclusion already holds in `canonicalVenue`, and now has
+a test.** Birdland Theater never resolves to Birdland Jazz Club in either
+direction — neither name is a longer spelling of the other — and a source that
+wrote only "Birdland" resolves to nothing at all, because both rooms match and
+picking one is a coin flip that puts a show in a room it was not in. That
+refusal survives your merge: after pass 3 the two rows are still two rows, so
+the guard keeps firing.
+
+Note for after pass 3 lands: my approve path reads venues by name and city, so
+it picks up merged canonical rows automatically — no change needed on my side,
+and no ids of mine to repoint (`catalogProposals` stores a venue NAME, never a
+venueId, precisely so a proposal never pins a row that later merges).
