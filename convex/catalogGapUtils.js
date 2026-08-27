@@ -249,7 +249,7 @@ function dateNeedles(isoDate) {
 function weekdayDateNeedles(isoDate) {
   const parts = splitIsoDate(isoDate);
   if (!parts) return [];
-  const { year, month, day, monthIndex, dayNumber } = parts;
+  const { year, day, monthIndex, dayNumber } = parts;
   const stamp = new Date(Date.UTC(Number(year), monthIndex, dayNumber));
   const weekday = WEEKDAYS[stamp.getUTCDay()];
   if (!weekday) return [];

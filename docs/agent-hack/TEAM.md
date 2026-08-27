@@ -641,6 +641,79 @@ agent.**
 
 ---
 
+### L2 match · 2026-08-27T03:10Z
+state:    shipped
+now:      gap agent pointed at catalog history; measured against real nights at a real venue
+shipped:  88771eb, 36b4fb8 (+ lint fix) on lane/match — PR to follow
+blocked:  -
+next:     festival lineups via the same mechanism (queued by coordinator, deliberately after this)
+
+**History sweeps shipped.** `searchNight(venue, date)` for one pair on demand,
+`sweepVenueHistory(venue, from, to)` to walk the nights the catalog cannot
+explain. Same scorer, same gate, same refusals. History proposals carry no
+`requestedByUserId` — they claim only that a show happened, never that anyone
+attended it. A sweep never auto-approves, however confident.
+
+Budget treated as real: every search reports its cost, sweeps total it,
+`dryRun` prices a job without paying, and a 60-night cap the caller can lower
+but not raise stops one sweep eating the allowance.
+
+**THE NUMBER, and it needs two denominators to be honest.**
+
+28 calendar nights at The Midway, San Francisco (2026-05-01 .. 05-28):
+
+| | |
+|---|---|
+| explained | **5–7 of 28 calendar nights (18–25%)** |
+| false proposals | 0 |
+| credits spent | 56 per 28-night sweep |
+
+The range is real: Tavily's result ordering varies between runs, so nights
+sitting near the bar flip. May 21 declined in one full sweep and resolved
+cleanly when run alone.
+
+**18% sounds bad and is the wrong denominator.** A club is dark most weeknights.
+Across these runs the venue appears to have actually had events on about 7 of
+the 28 nights — May 2, 3, 8, 9, 21, 23, 27 — and we explained 5–7 of those. So
+against *nights that had a show* the rate is roughly 70–100%, and against
+*calendar nights* it is ~20% because most nights there was nothing to find.
+
+Stated carefully, because I do not have independent ground truth: that 7 is
+derived from the same searches, so it is suggestive, not rigorous. Nobody
+should quote "we explain 100% of real show nights" on stage. **The defensible
+claim is: on a venue-month with no Setlist.fm key, this recovered five to seven
+real, sourced, correctly dated shows that the catalog did not have, and
+invented none.**
+
+**The fixture eval was too clean, and production proved it.** My eval said 100%
+precision, 0 false proposals. The first real sweep produced a genuine false
+proposal — it offered a Facebook video caption as an artist:
+`Register for presale now 〰️ themidwaysf. com + galantis Block ...`. Four
+failures the clean fixtures could never have shown (36b4fb8):
+
+1. `May 02, 2026` was rejected because needles only covered `May 2, 2026`.
+2. Listings often carry no year — `Saturday, May 9`. Fixed via the weekday,
+   which pins the year without reopening the wrong-year hole.
+3. `Midway San Francisco` was treated as a different room from `The Midway`.
+4. Social captions parsed as bills. They may now corroborate a night, never
+   carry one.
+
+Fixing (1) alone took the sweep from 7% to 21%. All three production failures
+are fixtures now; the gap eval is 13 nights and still reports 100% precision,
+0 false proposals.
+
+**Tavily spend so far: ~182 credits** of the 5,000 allocated to L2 across
+history and festivals. Most of it went on re-measuring the same fortnight
+while fixing the parser, which was worth it.
+
+**Reusable:** `node scripts/sweep-history.mjs "<venue>" "<city>" <from> <to>
+[--dry-run] [--verbose]`. Talks to Tavily directly and to Convex not at all, so
+it needs no deployment — that is why `catalogGapUtils.js` has no I/O in it.
+`--verbose` prints why each night was refused, which is what found all four
+bugs above.
+
+---
+
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
 
 - [ ] AIsa credits: confirmed working on the second key. No action.
