@@ -424,6 +424,39 @@ export function BriefingView({
               </div>
             </section>
           )}
+
+          {/* The way to ask for MORE work, which had nowhere to live.
+              Every onOpenBackfill call site in the app was conditional and two
+              were empty-state-only, so for any account with a diary the ONLY
+              live entry to the reclaim flow was Browse → Past Shows → a
+              tertiary "Or scan…" link: a non-default tab behind a mode toggle.
+              @tinsley has 7 logged shows, so every empty state is gone and the
+              feature that opens the demo is effectively unreachable by someone
+              exploring alone.
+              It belongs here because this is the screen about what your agent
+              has done — "do more" is the obvious next sentence. Unconditional
+              on purpose: it is an offer of work, not a claim that work happened,
+              so the empty-room rule does not apply to it. */}
+          <section aria-labelledby="briefing-more" className="mt-10 border-t border-white/10 pt-8">
+            <SectionTitle
+              eyebrow="Whenever you like"
+              id="briefing-more"
+              title="Rebuild more of your history"
+            />
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-[#2A2521] p-5">
+              <p className="text-sm leading-6 text-[#8A8177]">
+                Point your agent at your camera roll again and it will look for nights it
+                has not seen. Nothing reaches your diary without you.
+              </p>
+              <button
+                className="shrink-0 border border-[#2A2521] px-4 py-2 text-xs font-black text-[#4EC98F]"
+                onClick={onOpenBackfill}
+                type="button"
+              >
+                Scan your camera roll
+              </button>
+            </div>
+          </section>
         </>
       )}
     </div>
