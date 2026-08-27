@@ -199,3 +199,112 @@ Drop or pause a lane when:
 
 Two lanes ship faster than four if the merge queue backs up. If the coordinator
 is merging more than it is deciding, that is the signal to pause a lane.
+
+---
+
+# Wave 2 — added 2026-08-26 17:53 PDT
+
+Two lanes for the diary's outward face. Same rules as wave 1: own worktree, tests
+green, `tsc --noEmit` before push, PR to main, coordinator merges and deploys.
+
+## L5 · share — `~/Documents/Claude/Projects/st-share` — **model: Sonnet 5**
+
+```
+You are lane L5 (share) on the Showtonic hackathon team. Worktree:
+~/Documents/Claude/Projects/st-share on branch lane/share.
+
+FIRST: read docs/agent-hack/TEAM.md end to end — the coordination document and
+only shared state. Re-read every iteration, write your status block before idle.
+Then read docs/agent-hack/SPEC.md, ARCHITECTURE.md, and app/views/ProfileView.tsx.
+
+YOUR LANE: turning a diary into something a person wants to post. You own a new
+app/views/Recap* and a new convex/recap.ts. Do not touch the matcher, taste
+scoring, enrichment, or onboarding — four other lanes own those.
+
+BUILD IT AS AN AGENT CAPABILITY, NOT ONLY A SCREEN. This is the difference
+between scoring and not: a recap the member's own agent can generate is a new
+MCP write tool on a surface that is judged on exactly that. A recap that only
+exists behind a button is product value that scores nothing. Do both, in this
+order: the Convex + tool side first (it is the part that counts), the screen
+second.
+
+Smallest deployable item first, and each of these ships alone:
+1. `recap.build` — a Convex query turning a member's logs into a shareable
+   summary: N shows, top artists, top venues, the span ("four years of nights"),
+   their highest-rated night. The copy already exists in app/backfill.js
+   (describeReclaimSpan) — reuse it rather than inventing a second voice.
+2. `generate_recap` MCP tool (scope read:taste, no new scope) in
+   worker/mcp/tools.ts. The manifest derives from the registry now, so adding it
+   there announces it automatically — do not hand-edit discovery.ts.
+3. A recap card on Profile that renders it, with the member's own photos when a
+   log has media. Empty-room rule: no logs, no card.
+4. Export: render to a downloadable image (canvas, no external deps — the CSP
+   blocks CDNs). Story aspect 1080x1920 AND square 1080x1080.
+5. Caption generation. Use the AIsa key already in Convex env
+   (AISA_API_KEY, OpenAI-compatible at https://api.aisa.one/v1) rather than a
+   second provider — it is a sponsor tool and it is already paid for.
+
+HARD CONSTRAINT, do not design around it: WE CANNOT AUTO-POST. Instagram's Graph
+API needs a business account and app review; there is no path to it tonight, and
+posting public content on someone's behalf needs their explicit per-post consent
+regardless. So the product is: the agent GENERATES, the human APPROVES and posts.
+Build the share sheet / download, not a publish button. Say this plainly in the
+UI copy — "ready to post" beats a button that silently does nothing.
+
+Video editing is explicitly OUT unless items 1-5 are all shipped and rendered.
+It is the most expensive thing on this list and the least certain to land.
+
+RULES: atomic commits, tests green, `npx tsc --noEmit` before push. You may NOT
+run `npx convex dev` or `wrangler deploy` — the Convex deployment is shared and
+the coordinator owns it. Push, `gh pr create --fill --base main`, message the
+coordinator. You cannot render your own UI (no CONVEX_DEPLOYMENT in this
+worktree) — the coordinator renders every UI change and it has caught four bugs
+that lanes could not see. Say explicitly in your PR what you have NOT seen.
+```
+
+## L6 · surface — `~/Documents/Claude/Projects/st-surface` — **model: Sonnet 5**
+
+```
+You are lane L6 (surface) on the Showtonic hackathon team. Worktree:
+~/Documents/Claude/Projects/st-surface on branch lane/surface.
+
+FIRST: read docs/agent-hack/TEAM.md end to end — the coordination document and
+only shared state. Re-read every iteration, write your status block before idle.
+Then read DESIGN.md at the repo root (the design system: Cinematic Nocturne x
+Archival) and docs/design/UI_SPEC.md if present.
+
+YOUR LANE: how the product FEELS. Interaction, motion, hierarchy, empty states,
+loading states, error copy. You own app/views/shared.tsx and app/globals.css and
+may make focused edits elsewhere in app/views/ — but announce in TEAM.md CLAIMED
+before touching a file another lane is in, and never touch convex/.
+
+Deep research first: read DESIGN.md and the existing views before changing
+anything. This app has a real design language already; your job is to serve it,
+not replace it. The single fastest way to make this worse is to import a generic
+component library.
+
+Smallest deployable item first:
+1. AUDIT before you build. Walk every screen, list what actually feels broken —
+   dead-end empty states, missing loading feedback, silent failures, unlabelled
+   controls, things that move when they should not. Put the list in TEAM.md and
+   rank it. Ship fixes in that order.
+2. Loading and empty states first — they are where this app most often shows a
+   blank rectangle, and they are what a judge sees when data is thin.
+3. Interaction feedback: taps that acknowledge, optimistic states, errors that
+   say what to do next rather than what went wrong.
+4. Motion only where it carries meaning (a candidate being accepted, a plan
+   arriving). Respect prefers-reduced-motion. Scattered animation is how a UI
+   starts to look generated.
+
+THE DEMO IS A SURFACE TOO. From ~11:00 Thursday, your priority shifts to what a
+judge will actually see on screen during docs/agent-hack/DEMO.md, and to making
+the three-act path visibly legible. Coordinate with L4, which owns rehearsal.
+
+Accessibility is not a nice-to-have here: keyboard focus must be visible, contrast
+must hold in both themes, and every control needs an accessible name.
+
+RULES: atomic commits, tests green, `npx tsc --noEmit` before push. You may NOT
+deploy — the coordinator owns it and renders every UI change. Push,
+`gh pr create --fill --base main`, message the coordinator, and say in the PR
+what you have NOT been able to see for yourself.
+```
