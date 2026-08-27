@@ -395,3 +395,33 @@ test("corrections match on the statement, whatever its spacing or case", () => {
   );
   assert.deepEqual(kept, []);
 });
+
+test("a run with a different support act each night is still one act", () => {
+  // The live catalog, San Francisco: Osees play The Chapel three nights and
+  // every night exists twice with a different support list — "Osees, Traps
+  // PS, Brigid Dawson" against "Osees, Brigid Dawson". Keying on the whole
+  // bill made those different keys, and two cards reading "Osees at The
+  // Chapel" landed next to each other in the live briefing.
+  const chapel = [
+    show({ showId: "a", title: "Osees at The Chapel", date: "2026-08-27", artistNames: ["Osees", "Traps PS", "Brigid Dawson"] }),
+    show({ showId: "b", title: "Osees w/ Brigid Dawson", date: "2026-08-27", artistNames: ["Osees", "Brigid Dawson"] }),
+    show({ showId: "c", title: "Osees at The Chapel", date: "2026-08-28", artistNames: ["Osees", "Traps PS", "Brigid Dawson", "Gumby's Junk"] }),
+    show({ showId: "d", title: "Osees", date: "2026-08-28", artistNames: ["Osees"] }),
+  ];
+
+  const finds = scoreFinds(chapel, { logs: diary(8), today: "2026-08-27" });
+  assert.equal(finds.length, 1);
+  assert.equal(finds[0].date, "2026-08-27");
+});
+
+test("a festival with no named artists still dedupes on its name", () => {
+  const portola = [
+    show({ showId: "p1", title: "Portola", date: "2026-09-26", venueName: "Pier 80 Warehouse", artistNames: [] }),
+    show({ showId: "p2", title: "Portola", date: "2026-09-27", venueName: "Pier 80 Warehouse", artistNames: [] }),
+  ];
+
+  const catalogGenres = [["punk"], ...Array.from({ length: 19 }, () => ["jazz"])];
+  const finds = scoreFinds(portola, { logs: diary(8), today: "2026-08-27", catalogGenres });
+  assert.equal(finds.length, 1);
+  assert.equal(finds[0].date, "2026-09-26");
+});

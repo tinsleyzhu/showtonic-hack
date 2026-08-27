@@ -1801,3 +1801,49 @@ cards are verified by real-metric geometry, real PNG encodes (150KB / 170KB,
 both shapes) and unit tests — not by a human looking at them. If anyone has a
 working screenshot path, the reclaim card at the end of the demo camera-roll
 flow is the one shot worth taking before we go on stage.
+### L3 taste · 2026-08-27T10:45Z
+state:    shipped
+now:      seam check against the DEPLOYED briefing; one duplicate slipped my own fix
+shipped:  PR to follow (344/344 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; watching for L6's flip
+
+**My one-card-per-act rule was keyed on the wrong thing, and the live
+briefing shows it.** Ran `briefing:forUser` against the deployment for all
+three seeded members. maya's slate: five finds, four acts — "Osees at The
+Chapel" twice, 27th and 28th.
+
+The catalog explains it. Osees play The Chapel three nights and **every night
+exists twice with a different support list** — `["Osees", "Traps PS",
+"Brigid Dawson"]` against `["Osees", "Brigid Dawson"]`. I keyed on the whole
+bill, so those were different keys and both cards shipped. The card shows the
+*headliner*, so the headliner is what makes two cards look the same to the
+person reading them. Keyed on that now, with the title as the fallback for a
+bill the catalog never named artists for — which is how festivals arrive, so
+Portola dedupes too. Both cases are tests, drawn from those exact rows.
+
+**Seam notes for L6, from reading PR #21 against what the query actually
+returns:**
+
+1. `briefingSurface.visibleFinds` filters unevidenced finds — belt and braces,
+   since the query cannot emit one, and I would keep it exactly as it is.
+2. `briefingIsEmpty` matches what a missing user returns from `forUser`
+   (`{decisionsOwed: 0, finds: [], beliefs: [], activity: []}`), so that path
+   is right. **But there is a real middle state to design for:** the second
+   seeded member returns 0 finds, 0 beliefs and 1 activity item — not empty,
+   and not a full briefing either. A page that renders one lonely activity row
+   under four headings is the case to look at.
+3. `timeAgo(at, now)` is safe against my `at` values — every source column
+   (`backfillCandidates.createdAt`, `logs.createdAt`, `squadPlans.createdAt`)
+   is required by the schema, so the `?? 0` fallbacks in `deriveActivity`
+   never fire in practice. If one ever did you would see "20692d ago", which
+   is at least loud rather than subtle.
+4. **The correction verbs are not in PR #21** — it predates wave 2. When you
+   wire them: `briefing.correctBelief({ userId, statement, basisAtTime, verdict })`
+   where `basisAtTime` is `belief.basis` **as displayed**, because the
+   "only comes back when the evidence changed" comparison needs the number the
+   member was actually looking at.
+5. ⚠️ **Your branch reintroduces the old `app/briefing.ts`** including the
+   "under 500 cap" belief the coordinator replaced after I flagged it as
+   underivable. That is a merge artifact of branching before the contract
+   landed — worth resolving toward main's version rather than yours.

@@ -297,11 +297,20 @@ export function scoreFinds(shows, taste = {}) {
   return slate;
 }
 
-// What makes two cards the same recommendation: the act, not the row. The
-// title is the fallback for a bill the catalog never named an artist for.
+// What makes two cards the same recommendation: the HEADLINER, not the row.
+//
+// Keying on the whole bill was not enough, and the live catalog showed why.
+// Osees play The Chapel three nights and every night exists twice with a
+// different support list — "Osees, Traps PS, Brigid Dawson" against "Osees,
+// Brigid Dawson" — so the bills differ, the keys differed, and two cards
+// reading "Osees at The Chapel" landed next to each other. The card shows the
+// headliner, so the headliner is what makes two cards look the same.
+//
+// The title is the fallback for a bill the catalog never named an artist for,
+// which is how festivals arrive.
 function billKey(find) {
-  const artists = (find.evidence ?? []).length > 0 ? find.billArtists ?? [] : [];
-  if (artists.length > 0) return artists.map(normalize).sort().join("|");
+  const [headliner] = find.billArtists ?? [];
+  if (headliner) return normalize(headliner);
   return normalize(find.title).replace(/\s*\(.*\)$/, "").replace(/ at .*$/, "");
 }
 
