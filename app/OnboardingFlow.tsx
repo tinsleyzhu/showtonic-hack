@@ -287,7 +287,7 @@ export function Onboarding({
 
         {step === "identity" && (
           <section className="flex flex-1 flex-col">
-            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step 1 of 4</p>
+            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step {stepNumber} of {wizardSteps.length}</p>
             <h1 className="font-display mt-3 text-4xl leading-[1.05]">What should we call your music diary?</h1>
             <p className="mt-3 text-sm leading-6 text-[#8A8177]">
               This becomes the handle on your public profile and shareable show cards. You can change it later.
@@ -349,10 +349,11 @@ export function Onboarding({
 
         {step === "taste" && (
           <section className="flex flex-1 flex-col">
-            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step 2 of 4</p>
+            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step {stepNumber} of {wizardSteps.length}</p>
             <h1 className="font-display mt-3 text-4xl leading-[1.05]">Start with artists you&apos;d cross town to see.</h1>
             <p className="mt-3 text-sm leading-6 text-[#8A8177]">
               Pick at least {TASTE_SEED_MIN}. This makes Discover useful before your history is ready.
+              {homeCity ? ` Genres below are what's actually playing in ${homeCity} soon.` : ""}
             </p>
             {!!onboardingGenres?.length && (
               <div className="hide-scrollbar mt-6 flex gap-2 overflow-x-auto">
@@ -420,7 +421,7 @@ export function Onboarding({
 
         {step === "homebase" && (
           <section className="flex flex-1 flex-col">
-            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step 3 of 4 · location is optional</p>
+            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step {stepNumber} of {wizardSteps.length} · location is optional</p>
             <h1 className="font-display mt-3 text-4xl leading-[1.05]">Find the shows worth leaving home for.</h1>
             <p className="mt-3 text-sm leading-6 text-[#8A8177]">
               Location powers nearby concerts and your default city. It is never shown on your public profile.
@@ -472,7 +473,7 @@ export function Onboarding({
 
         {step === "handoff" && (
           <section className="flex flex-1 flex-col">
-            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step 4 of 4</p>
+            <p className="mt-8 text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">Step {stepNumber} of {wizardSteps.length}</p>
             <h1 className="font-display mt-3 text-4xl leading-[1.05]">Your diary is ready, @{handleValidation.handle}.</h1>
             <p className="mt-3 text-sm leading-6 text-[#8A8177]">
               Start with the night you remember best, or see what&apos;s coming to {homeCity || "your city"} first.

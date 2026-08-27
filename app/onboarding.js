@@ -19,7 +19,14 @@ const ONBOARDING_ARTISTS = [
 
 // The 5-step wizard (design exports 01–07). "welcome" doubles as the sign-in
 // gate; "handoff" becomes the backfill offer in Phase 2.
-const ONBOARDING_STEPS = ["welcome", "identity", "taste", "homebase", "handoff"];
+//
+// Home base comes BEFORE taste, and that ordering is load-bearing rather than
+// cosmetic: the taste step ranks genres by what is playing near you, so asking
+// it first meant ranking by the whole catalog. With two cities loaded, New
+// York's larger listing outvoted San Francisco's and a first-run SF member was
+// offered the New York Philharmonic. Location is still skippable — skipping
+// just returns the picker to a citywide ranking, which is the honest fallback.
+const ONBOARDING_STEPS = ["welcome", "identity", "homebase", "taste", "handoff"];
 
 // Design 04: "Pick at least five" — the UI gate for leaving the taste step.
 const TASTE_SEED_MIN = 5;

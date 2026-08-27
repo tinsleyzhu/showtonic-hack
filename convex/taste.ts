@@ -308,6 +308,10 @@ export const genresForOnboarding = query({
         homeCity: args.homeCity ?? "",
         today: args.today,
         limit: args.limit ?? 12,
+        // Per-ARTIST genre lists, so subgenre relationships are learned from
+        // artists rather than from bills. Two unrelated acts sharing a night
+        // must not look like evidence their genres belong together.
+        genreSets: [...genresByArtist.values()],
       },
     );
   },
