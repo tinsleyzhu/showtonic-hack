@@ -70,3 +70,12 @@ Tavily, Cotal, AIsa — and Hacker Bob pentested the surface we opened, today."
   Agents do the archaeology and the coordination; the diary stays human.
 - **"What's fake?"** (Answer honestly from what shipped: e.g., mock checkout if AIsa
   didn't land, vision agent cut if it was.) Have this list written down at 17:00.
+
+## Demo-operations: seeds are consumed
+
+The matcher refuses to re-propose a night already in the diary, so EVERY
+rehearsal consumes its candidates. Before stage: fresh seed via
+agents:reclaimCameraRoll on an account whose diary does not already hold those
+nights. @walkthrough exists for rehearsals; the on-stage account needs its own
+untouched seed. Also on the laptop checklist: disable extensions (Immersive
+Translate causes a visible hydration warning in the console).
