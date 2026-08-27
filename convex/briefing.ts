@@ -20,6 +20,7 @@ import { rankCompatiblePeers } from "./tasteMath.js";
 // either indexed or explicitly capped.
 const SHOW_READ_CAP = 1500;
 const SQUAD_PLAN_READ_CAP = 200;
+const CANDIDATE_READ_CAP = 20;
 // Friend-going evidence is the most expensive row on a card, so it is bounded
 // on three axes rather than left to the size of the catalog.
 const PEER_SHOW_LOOKUPS = 6;
@@ -64,6 +65,24 @@ export const forUser = query({
         .withIndex("by_user", (q) => q.eq("userId", args.userId))
         .collect(),
     ]);
+
+    // backfillCandidates does not denormalize the show, so the nights that
+    // have one are joined here — capped, newest first, because the feed shows
+    // ten items and a long-lived account can hold hundreds of resolved rows.
+    const recentCandidates = [...candidates]
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .slice(0, CANDIDATE_READ_CAP);
+    const candidateShows = new Map(
+      (
+        await Promise.all(
+          [...new Set(recentCandidates.map((candidate) => candidate.showId).filter(Boolean))].map(
+            (showId) => ctx.db.get(showId as Id<"shows">),
+          ),
+        )
+      )
+        .filter((show): show is NonNullable<typeof show> => show !== null)
+        .map((show) => [show._id, show]),
+    );
 
     const squadPlans = (await ctx.db.query("squadPlans").take(SQUAD_PLAN_READ_CAP)).filter((plan) =>
       plan.userIds.some((id) => id === args.userId),
@@ -150,10 +169,10 @@ export const forUser = query({
       finds,
       beliefs: narrateBeliefs(briefingLogs, shows),
       activity: deriveActivity(
-        candidates.map((candidate) => ({
+        recentCandidates.map((candidate) => ({
           clusterDate: candidate.clusterDate,
-          showTitle: undefined as string | undefined,
-          venueName: undefined as string | undefined,
+          showTitle: candidate.showId ? candidateShows.get(candidate.showId)?.title : undefined,
+          venueName: candidate.showId ? candidateShows.get(candidate.showId)?.venueName : undefined,
           photoCount: candidate.photoCount,
           confidence: candidate.confidence,
           evidence: candidate.evidence,
