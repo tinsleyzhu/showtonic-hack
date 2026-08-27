@@ -69,6 +69,42 @@ button:disabled {
   color: #0a0908;
 }
 
+/*
+ * Focus is part of this design language, not a browser default.
+ *
+ * Several inputs across app/views set `outline-none` inline and never replace
+ * it, so a keyboard user tabbing Discover's filter row could not see where they
+ * were. These rules are UNLAYERED on purpose: Tailwind's utilities live in
+ * `@layer utilities`, and unlayered declarations beat layered ones regardless of
+ * specificity, so this wins over `outline-none` at every call site without
+ * editing files four other lanes are working in.
+ *
+ * Ember, square, offset by 2px — the same accent and the same right angles the
+ * rest of the app is built from. Nothing new is being invented here.
+ */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid #ff7a50;
+  outline-offset: 2px;
+}
+
+/* Inside a raised surface the offset ring can be clipped by the parent's
+   overflow, so tuck it in rather than letting it disappear. */
+:where(.hide-scrollbar, [class*="overflow-"]) :where(button, a):focus-visible {
+  outline-offset: -2px;
+}
+
+/*
+ * Placeholder contrast. #6B6258 on the ink canvas is ~3.3:1, under the 4.5:1 AA
+ * floor for 14px text, and it was the placeholder colour in every search and
+ * filter field. #8A8177 is ~5.2:1 and is already the app's muted token, so this
+ * is a contrast fix rather than a palette change. Unlayered for the same reason
+ * as above — it corrects `placeholder:text-[#6B6258]` in place.
+ */
+::placeholder {
+  color: #8a8177;
+  opacity: 1;
+}
+
 @keyframes onboarding-reveal {
   from {
     opacity: 0;
@@ -89,12 +125,81 @@ button:disabled {
   background: rgb(0 0 0 / 75%);
 }
 
+/*
+ * Motion carries meaning or it does not ship. Two moments earn it: a candidate
+ * being accepted in the reclaim flow, and a plan arriving. Both are single,
+ * short, and land on one element — nothing ambient, nothing looping.
+ */
+@keyframes surface-settle {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.surface-settle {
+  animation: surface-settle 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes surface-accept {
+  0% {
+    transform: scale(1);
+  }
+
+  45% {
+    transform: scale(1.04);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.surface-accept {
+  animation: surface-accept 280ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/*
+ * Skeletons. A pulse, not a sweeping shimmer — the app has one accent and a lot
+ * of stillness, and a travelling gradient would be the loudest thing on screen.
+ */
+@keyframes surface-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.surface-skeleton {
+  background: #1a1713;
+  animation: surface-pulse 1.6s ease-in-out infinite;
+}
+
+/*
+ * One reduced-motion rule for the whole app rather than a per-animation list
+ * that a future animation would silently escape. Skeletons keep their shape and
+ * simply stop pulsing.
+ */
 @media (prefers-reduced-motion: reduce) {
-  .onboarding-reveal,
-  .onboarding-reveal *,
-  .onboarding-progress {
-    animation: none !important;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-    transition: none !important;
+  }
+
+  .surface-skeleton {
+    opacity: 0.75;
   }
 }

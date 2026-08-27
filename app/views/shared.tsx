@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ArrowLeft, Star } from "lucide-react";
 import type { Show } from "../data";
 import { toShow } from "../liveData.js";
@@ -115,12 +116,20 @@ export function ReviewRow({ log }: { log: ShowDetailPayload["logs"][number] | Ar
   return <div className="flex gap-3 py-4"><Avatar color={log.user?.avatarColor} name={log.user?.handle ?? "showgoer"} /><div className="flex-1"><div className="flex items-center justify-between"><b className="text-sm">@{log.user?.handle ?? "showgoer"}</b><span className="flex items-center gap-1 text-xs text-[#4EC98F]"><Star className="h-3 w-3 fill-current" /> {log.rating}</span></div><p className="mt-2 text-sm text-[#C9C1B4]">{log.note || "Verified attendance"}</p>{log.vibes.length > 0 && <p className="mt-2 text-[10px] uppercase tracking-wide text-[#8A8177]">{log.vibes.join(" · ")}</p>}</div></div>;
 }
 
+// Read-only stars are one image with one label, not five disabled buttons —
+// disabled controls are five pieces of noise where a screen reader needs one
+// fact. Interactive stars announce which one is actually chosen (aria-pressed
+// on the exact star), because "3 stars, pressed" on stars one through three
+// tells you the rating is somewhere between one and three.
 export function RatingStars({ value, interactive = false, onChange }: { value: number; interactive?: boolean; onChange?: (value: number) => void }) {
-  return <div aria-label={`${value} out of 5 stars`} className="flex gap-1">{[1, 2, 3, 4, 5].map((star) => <button aria-label={`${star} stars`} className={interactive ? "cursor-pointer" : "cursor-default"} disabled={!interactive} key={star} onClick={() => onChange?.(star)} type="button"><Star className={`h-7 w-7 ${value >= star ? "fill-[#4EC98F] text-[#4EC98F]" : "text-[#6B6258]"}`} /></button>)}</div>;
+  if (!interactive) {
+    return <span aria-label={value > 0 ? `Rated ${value} out of 5` : "Not rated"} className="flex gap-1" role="img">{[1, 2, 3, 4, 5].map((star) => <Star aria-hidden className={`h-7 w-7 ${value >= star ? "fill-[#4EC98F] text-[#4EC98F]" : "text-[#6B6258]"}`} key={star} />)}</span>;
+  }
+  return <div aria-label="Rate this show out of 5" className="flex gap-1" role="group">{[1, 2, 3, 4, 5].map((star) => <button aria-label={`Rate ${star} out of 5`} aria-pressed={value === star} className="cursor-pointer" key={star} onClick={() => onChange?.(star)} type="button"><Star className={`h-7 w-7 transition-transform ${value >= star ? "fill-[#4EC98F] text-[#4EC98F]" : "text-[#6B6258]"} ${value === star ? "scale-110" : ""}`} /></button>)}</div>;
 }
 
 export function StatusPanel({ title, detail, loading = false }: { title: string; detail: string; loading?: boolean }) {
-  return <main className="flex min-h-screen items-center justify-center bg-[#0A0908] px-6 text-[#F5F1E8]"><section className="max-w-xl border border-[#2A2521] bg-[#141210] p-8"><p className="text-xs font-black uppercase tracking-[0.2em] text-[#FF7A50]">{loading ? "Live sync" : "Showtonic"}</p><h1 className="font-display mt-3 text-3xl">{title}</h1><p className="mt-4 leading-7 text-[#C9C1B4]">{detail}</p>{loading && <div className="mt-6 h-1 overflow-hidden bg-[#2A2521]"><div className="h-full w-1/2 animate-pulse bg-[#FF7A50]" /></div>}</section></main>;
+  return <main className="flex min-h-screen items-center justify-center bg-[#0A0908] px-6 text-[#F5F1E8]"><section aria-live="polite" className="max-w-xl border border-[#2A2521] bg-[#141210] p-8" role="status"><p className="text-xs font-black uppercase tracking-[0.2em] text-[#FF7A50]">{loading ? "Live sync" : "Showtonic"}</p><h1 className="font-display mt-3 text-3xl">{title}</h1><p className="mt-4 leading-7 text-[#C9C1B4]">{detail}</p>{loading && <div className="mt-6 h-1 overflow-hidden bg-[#2A2521]"><div className="h-full w-1/2 animate-pulse bg-[#FF7A50]" /></div>}</section></main>;
 }
 
 export function SectionTitle({ title, eyebrow }: { title: string; eyebrow: string }) {
@@ -136,13 +145,57 @@ export function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function Avatar({ name, color }: { name: string; color?: string }) {
-  return <span aria-label={name} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#141210] text-xs font-black text-black" style={{ backgroundColor: color ?? "#FF7A50" }}>{name.slice(0, 1).toUpperCase()}</span>;
+  return <span aria-label={name} role="img" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#141210] text-xs font-black text-black" style={{ backgroundColor: color ?? "#FF7A50" }}>{name.slice(0, 1).toUpperCase()}</span>;
 }
 
 export function BackButton({ onClick, label = "Back to show" }: { onClick: () => void; label?: string }) {
   return <button className="flex items-center gap-2 text-sm text-[#8A8177]" onClick={onClick} type="button"><ArrowLeft className="h-4 w-4" /> {label}</button>;
 }
 
-export function EmptyLine({ text }: { text: string }) {
-  return <p className="mt-4 border border-dashed border-[#2A2521] p-5 text-sm text-[#8A8177]">{text}</p>;
+// An empty state is either terminal ("no reviews yet" — nothing to do but wait)
+// or a dead end with a way out. Passing an action turns it into the latter;
+// without one the render is byte-for-byte what it always was.
+export function EmptyLine({ text, actionLabel, onAction }: { text: string; actionLabel?: string; onAction?: () => void }) {
+  if (!actionLabel || !onAction) {
+    return <p className="mt-4 border border-dashed border-[#2A2521] p-5 text-sm text-[#8A8177]">{text}</p>;
+  }
+  return <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-dashed border-[#2A2521] p-5 text-sm text-[#8A8177]"><span>{text}</span><button className="shrink-0 border border-[#2A2521] px-4 py-2 text-xs font-black text-[#4EC98F]" onClick={onAction} type="button">{actionLabel}</button></div>;
+}
+
+// Announced status text. The app writes plenty of "saved" / "could not save"
+// copy and, before this, none of it reached assistive tech at all.
+export function LiveMessage({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "error" }) {
+  const error = tone === "error";
+  return <p aria-live={error ? "assertive" : "polite"} className={error ? "border border-red-400/60 bg-red-950/30 p-3 text-sm text-red-200" : "text-sm text-[#C9C1B4]"} role={error ? "alert" : "status"}>{children}</p>;
+}
+
+// Loading that keeps the chrome. The app's detail views blank the whole screen
+// — header and tab bar included — on the way in; these render inside the layout
+// so nothing moves that should not.
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <span aria-hidden className={`surface-skeleton block ${className}`} />;
+}
+
+export function SkeletonRail({ label }: { label: string }) {
+  return <section aria-label={label} aria-live="polite" className="mt-10" role="status">
+    <Skeleton className="h-3 w-32" />
+    <Skeleton className="mt-2 h-7 w-56" />
+    <div className="mt-4 flex gap-3 overflow-hidden">{[0, 1, 2, 3, 4].map((index) => <span className="w-44 shrink-0 sm:w-52" key={index}><Skeleton className="aspect-[2/3] w-full" /><Skeleton className="mt-3 h-4 w-3/4" /><Skeleton className="mt-2 h-3 w-1/2" /></span>)}</div>
+    <span className="sr-only">{label}</span>
+  </section>;
+}
+
+// A detail page mid-load: hero block, stat strip, two rails. Same silhouette as
+// the real thing, so the page settles instead of jumping.
+export function DetailSkeleton({ label }: { label: string }) {
+  return <div aria-live="polite" role="status">
+    <Skeleton className="h-[38vh] w-full" />
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      <Skeleton className="h-3 w-40" />
+      <Skeleton className="mt-3 h-10 w-2/3" />
+      <Skeleton className="mt-6 h-24 w-full" />
+      <SkeletonRail label={label} />
+    </div>
+    <span className="sr-only">{label}</span>
+  </div>;
 }
