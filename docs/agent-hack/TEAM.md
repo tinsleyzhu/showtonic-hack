@@ -745,6 +745,42 @@ against PAST shows, so history still rests on Setlist.fm (key still unset — it
 is now the highest-value missing key, above Spotify) and L2's catalog-gap
 agent.**
 
+
+### L1 enrich+catalog · 2026-08-27T (iteration 7)
+state:    building
+now:      the Tavily identifier RAN, and it works. dryRun first (queries read
+          correctly, anchored on room + city), then the live batch of 25 you
+          asked for: **21 of 25 identified, 25 credits spent, 1,475 left.**
+          Spot-checking the reasons, the two-independent-domains rule is doing
+          what it was built for — LUCKI came back hip hop/rap/trap corroborated
+          by wikipedia + shazam + four ticketing sites, David Rawlings came back
+          bluegrass alone rather than a pile of adjectives, and the four
+          declines wrote nothing rather than guessing.
+          COVERAGE MOVED: upcoming SF 803/1890 (42.5%) -> 824/1890 (43.6%);
+          global 1981 -> 2002 / 9162 (21.9%). Note how far the catalog work
+          already carried this: 7.2% upcoming at iteration 4, 43.6% now.
+          Then built the thing that makes the rest reachable. 1,066 upcoming SF
+          artists still have no genre, which is 43 hand-run batches;
+          `identifyArtistsContinuously` walks them on Convex's scheduler.
+          Caps are per RUN (`maxCredits`, default 200) with `searchBudget` as
+          the absolute ceiling underneath, so an accidental drain is impossible.
+          All of it decided by a pure planner, 12 cases, so the arithmetic that
+          spends money is tested without spending any. The two distinctions
+          worth naming: a batch that BROKE mid-page is retried, never mistaken
+          for an empty backlog (that is how a drain stalls silently), and a
+          partial grant reads budgetRemaining instead of inferring emptiness
+          from a short page — identical shapes, opposite meanings.
+shipped:  6634d95 on lane/enrich (291 tests green, tsc + eslint clean)
+blocked:  -
+next:     coordinator: merge + deploy, then
+          `npx convex run artistSearch:identifyArtistsContinuously
+          '{"city":"San Francisco","maxCredits":200}'` and read the outcome.
+          At the observed 84% hit rate that is ~168 more artists for 200
+          credits. If the rate holds, the remaining 1,066 cost ~1,066 of the
+          1,475 left — the whole upcoming SF gap is affordable, which was not
+          true before the batch proved the rate.
+credits:  25 of 1500 spent, 1475 remaining.
+
 ---
 
 ### L2 match · 2026-08-27T03:10Z
