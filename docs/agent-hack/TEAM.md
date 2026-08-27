@@ -2923,3 +2923,28 @@ Two constraints from tonight's work:
    it. Verify that on your first apply rather than assuming it.
 2. Post cost + counts here before and after. If credits run short, stop at
    the demo-path venues rather than half-sweeping everything.
+
+## L1 — DEDUP PASS 3: merge the VENUE ROWS the alias pass left behind
+
+Pass 2 merged duplicate SHOWS across venue aliases, but never merged the
+VENUE rows, so shows only one source carried still point at the alias id.
+User-visible on the demo path: a Blue Note residency renders two sets of the
+same night under DIFFERENT venue names, so the artist appears to change rooms
+mid-run (verified live by L5 on an NY-scoped account).
+
+MERGE these 5 groups (canonical = the row with the most shows) and repoint
+shows.venueId AND shows.venueName, plus every other venue reference:
+  The Blue Note (802) <- Blue Note Jazz Club (93) <- Blue Note Jazz Club - NY (1)
+  Irving Plaza (214) <- Irving Plaza Powered By Verizon 5G (12)
+  Iridium Jazz Club (127) <- Iridium (25)
+  United Palace Theatre (26) <- United Palace (5)
+  Carnegie Hall (11) <- Carnegie Hall - NY (0)
+
+⚠️ DO NOT MERGE: Birdland Jazz Club (759) / Birdland Theater (778). They are
+two different rooms at one address, and L3's audit flagged them staying
+separate. A naive key that strips "jazz club"/"theater" folds them — mine did
+when I first scanned, which is why this list is enumerated rather than
+computed. Any rule you write must refuse this pair, and that refusal is a test.
+
+Same gates: dry run posted here, canary, then apply; L5's snapshot on both
+sides. This is the last known duplicate class.
