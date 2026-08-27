@@ -2562,3 +2562,67 @@ are two different rooms and my rule does not touch them.
 4 activity, four distinct venues, and the belief correction round-trips —
 "Friday is your night · 3 of 7 logged shows fell on a Friday — and you
 confirmed it".
+
+## L3 → L1: the pass-2 signoff list, generated from live rows
+
+`scripts/venue-alias-audit.mjs` (run it from the linked worktree — it needs a
+`CONVEX_DEPLOYMENT`, so lanes cannot). It walks the catalog a season at a time,
+because `shows:listCatalog` caps at 250 rows and the cap is on the read rather
+than on the truth, and prints the two piles separately.
+
+**Both cities, run just now. 9 safe shapes, 17 subset pairs, and five of the
+seventeen are over-merges.**
+
+*A. Safe shapes — mergeable without a human (9).* Case, curly quotes, a
+leading article, a sponsor suffix, a city tag. None of those can name a
+different room.
+
+```
+SF   Cafe du Nord · Cafe Du Nord          Castro Theatre · The Castro Theatre
+     Bimbo’s 365 Club · Bimbo's 365 Club  The Warfield · Warfield
+     Feinstein’s at The Nikko · Feinstein's at The Nikko
+     The Palace of Fine Arts · Palace of Fine Arts
+NY   Irving Plaza · Irving Plaza Powered By Verizon 5G
+     The Gramercy Theatre · Gramercy Theatre     Lucinda’s · Lucinda's
+```
+
+*B. Token-subset pairs — every one needs an eye (17).* **These five are
+different rooms and merging them deletes a venue:**
+
+```
+City Winery            <->  The Loft at City Winery
+Madison Square Garden  <->  Infosys Theater at Madison Square Garden
+Lincoln Center         <->  Rose Theater at Lincoln Center
+Lincoln Center         <->  David Geffen Hall at Lincoln Center
+Bill Graham Civic Auditorium <-> The Theater at Bill Graham Civic Auditorium
+The Chapel             <->  The Chapel’s Outdoor Stage
+```
+
+**The direction of the containment is the whole signal**, and it is why this
+pile cannot be automated away. Compare two pairs that share a name:
+
+- `David Geffen Hall` ⊂ `David Geffen Hall at Lincoln Center` — one room
+  gaining its campus. **Same room.**
+- `Lincoln Center` ⊂ `David Geffen Hall at Lincoln Center` — a campus and one
+  hall inside it. **Different.**
+
+Identical subset relation, opposite answers. The script encodes that as a
+hint — *"X at <the shorter name>" reads as a nested room*, and so does an
+added `stage`/`loft`/`balcony`/`annex`/`room`/`lounge` — and it gets all six
+above right, but it is a **hint for a human**, not a rule to apply. The
+remainder ("Iridium / Iridium Jazz Club", "Racket / Racket NYC", "United
+Palace / United Palace Theatre", "Hill Country Live / Hill Country Live NY")
+look like true aliases to me, and "The Apollo's Victoria Theater **1**" has a
+trailing digit I cannot read from here — screen number, or a data artifact.
+
+Why I did this rather than wait: a missed alias leaves a duplicate someone can
+ignore, and a false merge destroys a show nobody can get back. **Thirty per
+cent of the pile is the dangerous kind**, which is more than I would have
+guessed and, I think, more than a spec written without the rows would assume.
+
+### L3 taste · 2026-08-27T14:30Z
+state:    shipped
+now:      generated L1's pass-2 signoff list from live rows; NY assertion holds
+shipped:  PR to follow — script + docs only, no deploy
+blocked:  -
+next:     re-read the NY fixture assertion once pass 2 lands
