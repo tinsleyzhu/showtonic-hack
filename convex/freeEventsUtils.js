@@ -349,6 +349,100 @@ function inferGenresFromContext({ venueNames = [], titles = [] } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Date-window math for catalog expansion.
+//
+// Ticketmaster documents a hard paging cap — "we only support retrieving the
+// 1000th item. i.e. ( size * page < 1000 )" — so a city with more upcoming
+// shows than that cannot be paged through at all. The catalog import walks the
+// horizon in date windows instead and halves any window too dense to page.
+// Kept pure here because the boundary math is where this goes quietly wrong.
+// ---------------------------------------------------------------------------
+
+function addDaysIso(date, days) {
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString().slice(0, 10);
+}
+
+function daysBetweenIso(start, end) {
+  return Math.round(
+    (Date.parse(`${end}T12:00:00Z`) - Date.parse(`${start}T12:00:00Z`)) / 86_400_000,
+  );
+}
+
+// Half-open [start, end) windows covering the horizon, the last one clamped so
+// it never reaches past `end`.
+function dateWindows(start, end, windowDays) {
+  const size = Math.max(1, Math.floor(windowDays));
+  const windows = [];
+  let cursor = start;
+  while (cursor < end) {
+    const next = addDaysIso(cursor, size);
+    windows.push([cursor, next < end ? next : end]);
+    cursor = next;
+  }
+  return windows;
+}
+
+// Halve a window. Returns null when it is already a single day and therefore
+// cannot be narrowed any further — the caller has to accept truncation.
+function splitDateWindow([start, end]) {
+  const span = daysBetweenIso(start, end);
+  if (span <= 1) return null;
+  const mid = addDaysIso(start, Math.floor(span / 2));
+  return [
+    [start, mid],
+    [mid, end],
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Ticketmaster classifications -> artist genres.
+//
+// Every TM event carries a genre/subGenre, so the upcoming-catalog import
+// yields real genre data for free — no extra request, no rate limit, and it is
+// sourced rather than inferred. `_genres` used to be computed and then dropped
+// by toImportEvents; these helpers turn it into artist tags instead.
+// ---------------------------------------------------------------------------
+
+// Spotify and MusicBrainz tags are lowercase; Ticketmaster returns Title Case
+// and compound names ("Hip-Hop/Rap", "Pop / Electro Pop"). Without normalizing,
+// the genre tally fragments into "Pop" and "pop" and a genre picker shows both.
+function normalizeGenreTags(names) {
+  const tags = [];
+  for (const name of Array.isArray(names) ? names : []) {
+    for (const part of String(name ?? "").split("/")) {
+      const tag = part.trim().toLowerCase();
+      if (tag && tag !== "undefined" && !tags.includes(tag)) tags.push(tag);
+    }
+  }
+  return tags.slice(0, 5);
+}
+
+// Collapse a page of normalized events into one genre set per artist id.
+// A TM classification describes the EVENT, so on a multi-artist bill every
+// attraction inherits it — right for a co-headline, loose for a festival, and
+// still far better evidence than the venue-name inference it precedes.
+function artistGenreUpdatesFromEvents(events) {
+  const byArtist = new Map();
+  for (const event of Array.isArray(events) ? events : []) {
+    const genres = normalizeGenreTags(event?._genres);
+    if (!genres.length) continue;
+    const artistIds = Array.isArray(event?.artistJambaseIds) ? event.artistJambaseIds : [];
+    for (const artistJambaseId of artistIds) {
+      if (typeof artistJambaseId !== "string" || !artistJambaseId) continue;
+      if (!byArtist.has(artistJambaseId)) byArtist.set(artistJambaseId, new Set());
+      const set = byArtist.get(artistJambaseId);
+      for (const genre of genres) set.add(genre);
+    }
+  }
+  return [...byArtist.entries()].map(([artistJambaseId, set]) => ({
+    artistJambaseId,
+    genres: [...set].slice(0, 5),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Cleanup of the low-precision venue tags written before 6ea0240.
 //
 // An earlier version of the inference above tagged artists from broad rooms
@@ -428,5 +522,9 @@ export {
   musicbrainzArtistFields,
   inferGenresFromContext,
   looksLikeDroppedVenueInference,
+  normalizeGenreTags,
+  artistGenreUpdatesFromEvents,
+  dateWindows,
+  splitDateWindow,
   toImportEvents,
 };

@@ -8,6 +8,9 @@ import {
   spotifyArtistFields,
   musicbrainzArtistFields,
   inferGenresFromContext,
+  artistGenreUpdatesFromEvents,
+  dateWindows,
+  splitDateWindow,
   toImportEvents,
 } from "./freeEventsUtils.js";
 import type { NormalizedFreeEvent } from "./freeEventsUtils.js";
@@ -46,18 +49,28 @@ type ImportSummary = {
   updated: number;
   pages: number;
   truncated: boolean;
+  // Artists that got genres from the source's event classifications.
+  genreArtists: number;
 };
 
 function emptySummary(): ImportSummary {
-  return { available: 0, fetched: 0, inserted: 0, updated: 0, pages: 0, truncated: false };
+  return {
+    available: 0,
+    fetched: 0,
+    inserted: 0,
+    updated: 0,
+    pages: 0,
+    truncated: false,
+    genreArtists: 0,
+  };
 }
 
 async function sink(
   ctx: Pick<ActionCtx, "runMutation">,
   events: NormalizedFreeEvent[],
   dryRun: boolean,
-): Promise<{ inserted: number; updated: number }> {
-  if (dryRun || events.length === 0) return { inserted: 0, updated: 0 };
+): Promise<{ inserted: number; updated: number; genreArtists: number }> {
+  if (dryRun || events.length === 0) return { inserted: 0, updated: 0, genreArtists: 0 };
   const importable = toImportEvents(events);
   let inserted = 0;
   let updated = 0;
@@ -68,12 +81,46 @@ async function sink(
     inserted += result.inserted;
     updated += result.updated;
   }
-  return { inserted, updated };
+
+  // Harvest the genre/subGenre the events already carried. Runs after the
+  // import so the artist rows it keys off exist. Sourced, free, and it never
+  // clobbers a richer Spotify/MusicBrainz tag.
+  let genreArtists = 0;
+  const updates = artistGenreUpdatesFromEvents(events);
+  for (let i = 0; i < updates.length; i += 50) {
+    const result = await ctx.runMutation(api.artists.applyEventGenres, {
+      updates: updates.slice(i, i + 50),
+    });
+    genreArtists += result.patched;
+  }
+  return { inserted, updated, genreArtists };
 }
 
 // ---------------------------------------------------------------------------
 // Ticketmaster Discovery — future shows for a city (the "upcoming" sync).
 // ---------------------------------------------------------------------------
+
+// Ticketmaster's own docs disagree on the per-second limit: Getting Started
+// says 5 req/s, the FAQ says 2 req/s. Both agree on 5,000/day. We pace to the
+// conservative bound — a 429 here costs us the way the JamBase quota did.
+const TICKETMASTER_PACING_MS = 500;
+
+// Officially documented: "we only support retrieving the 1000th item.
+// i.e. ( size * page < 1000 )". A city with more upcoming shows than this
+// cannot be paged through — it has to be sliced into narrower date windows.
+const TICKETMASTER_ITEM_CAP = 1000;
+const TICKETMASTER_PAGE_SIZE = 100;
+
+// A 429 is not a transient error to retry through — the daily quota may be
+// gone. Distinguish it so callers can stop cleanly and report partial work.
+class TicketmasterRateLimited extends Error {
+  resetAt?: string;
+  constructor(resetAt?: string) {
+    super("Ticketmaster returned 429 (rate limit or daily quota reached)");
+    this.name = "TicketmasterRateLimited";
+    this.resetAt = resetAt;
+  }
+}
 
 async function fetchTicketmaster(params: URLSearchParams) {
   const apiKey = process.env.TICKETMASTER_API_KEY;
@@ -82,6 +129,10 @@ async function fetchTicketmaster(params: URLSearchParams) {
   const response = await fetch(`${TICKETMASTER_ORIGIN}/events.json?${params.toString()}`, {
     headers: { Accept: "application/json", "User-Agent": USER_AGENT },
   });
+  if (response.status === 429) {
+    // No Retry-After is documented; Rate-Limit-Reset is a UTC timestamp.
+    throw new TicketmasterRateLimited(response.headers.get("Rate-Limit-Reset") ?? undefined);
+  }
   if (!response.ok) {
     throw new Error(`Ticketmaster fetch failed with status ${response.status}`);
   }
@@ -118,17 +169,134 @@ async function importTicketmasterUpcoming(
       return true;
     });
     summary.fetched += events.length;
-    const { inserted, updated } = await sink(ctx, events, dryRun);
+    const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
     summary.inserted += inserted;
     summary.updated += updated;
+    summary.genreArtists += genreArtists;
     summary.pages += 1;
     if (dryRun) break;
     page += 1;
-    await sleep(250); // stay well under 5 req/s
+    await sleep(TICKETMASTER_PACING_MS);
   } while (page < totalPages && page < maxPages);
 
   summary.truncated = totalPages > maxPages;
   return summary;
+}
+
+// ---------------------------------------------------------------------------
+// Windowed catalog expansion.
+//
+// `importTicketmasterUpcoming` above pages one open-ended query, which tops out
+// at the documented 1000-item cap — fine for a city with 807 upcoming shows,
+// silently lossy for one with 2,011. This walks a date horizon in windows
+// instead, splitting any window that reports more items than can be paged, so
+// the whole catalog is reachable. Nothing here writes past `shows.importUpcoming`
+// and every id stays namespaced `tm:`.
+// ---------------------------------------------------------------------------
+
+type WindowedResult = ImportSummary & {
+  windows: number;
+  requests: number;
+  splits: number;
+  rateLimited: boolean;
+  budgetExhausted: boolean;
+};
+
+async function importTicketmasterWindow(
+  ctx: Pick<ActionCtx, "runMutation">,
+  city: string,
+  horizonStart: string,
+  horizonEnd: string,
+  windowDays: number,
+  maxRequests: number,
+  dryRun: boolean,
+  seen: Set<string>,
+): Promise<WindowedResult> {
+  const result: WindowedResult = {
+    ...emptySummary(),
+    windows: 0,
+    requests: 0,
+    splits: 0,
+    rateLimited: false,
+    budgetExhausted: false,
+  };
+  const maxPages = Math.floor(TICKETMASTER_ITEM_CAP / TICKETMASTER_PAGE_SIZE);
+
+  // Queue of [start, end) date windows; a window too dense to page is split.
+  const queue: [string, string][] = dateWindows(horizonStart, horizonEnd, windowDays);
+
+  const query = (start: string, end: string, page: number) =>
+    new URLSearchParams({
+      city,
+      classificationName: "Music",
+      startDateTime: `${start}T00:00:00Z`,
+      endDateTime: `${end}T00:00:00Z`,
+      size: String(TICKETMASTER_PAGE_SIZE),
+      page: String(page),
+      sort: "date,asc",
+    });
+
+  try {
+    while (queue.length > 0) {
+      if (result.requests >= maxRequests) {
+        result.budgetExhausted = true;
+        break;
+      }
+      const [start, end] = queue.shift()!;
+
+      const first = await fetchTicketmaster(query(start, end, 0));
+      result.requests += 1;
+      const total = Number(first?.page?.totalElements ?? 0);
+
+      // Too dense to page through: halve the window and try each half. A
+      // single-day window that still overflows is genuinely unreachable, so
+      // take what we can page and record the truncation honestly.
+      const halves = total > TICKETMASTER_ITEM_CAP ? splitDateWindow([start, end]) : null;
+      if (halves) {
+        queue.unshift(...halves);
+        result.splits += 1;
+        await sleep(TICKETMASTER_PACING_MS);
+        continue;
+      }
+      if (total > TICKETMASTER_ITEM_CAP) result.truncated = true;
+
+      result.windows += 1;
+      result.available += total;
+      const totalPages = Number(first?.page?.totalPages ?? 1);
+
+      let payload = first;
+      for (let page = 0; page < Math.min(totalPages, maxPages); page += 1) {
+        if (page > 0) {
+          if (result.requests >= maxRequests) {
+            result.budgetExhausted = true;
+            break;
+          }
+          await sleep(TICKETMASTER_PACING_MS);
+          payload = await fetchTicketmaster(query(start, end, page));
+          result.requests += 1;
+        }
+        const events = normalizeTicketmasterEvents(payload).filter((event) => {
+          if (seen.has(event.jambaseId)) return false;
+          seen.add(event.jambaseId);
+          return true;
+        });
+        result.fetched += events.length;
+        const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
+        result.inserted += inserted;
+        result.updated += updated;
+        result.genreArtists += genreArtists;
+        result.pages += 1;
+      }
+      await sleep(TICKETMASTER_PACING_MS);
+    }
+  } catch (error) {
+    if (!(error instanceof TicketmasterRateLimited)) throw error;
+    // Stop cleanly and keep everything already imported — the run is resumable
+    // because importUpcoming upserts by id.
+    result.rateLimited = true;
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,9 +366,10 @@ async function importSetlistFmHistory(
           return true;
         });
       summary.fetched += events.length;
-      const { inserted, updated } = await sink(ctx, events, dryRun);
+      const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
       summary.inserted += inserted;
       summary.updated += updated;
+      summary.genreArtists += genreArtists;
       summary.pages += 1;
 
       // Setlists are newest-first; once a page is entirely older than the
@@ -250,9 +419,10 @@ async function importBandsintownUpcoming(
         });
       summary.available += events.length;
       summary.fetched += events.length;
-      const { inserted, updated } = await sink(ctx, events, dryRun);
+      const { inserted, updated, genreArtists } = await sink(ctx, events, dryRun);
       summary.inserted += inserted;
       summary.updated += updated;
+      summary.genreArtists += genreArtists;
     }
     await sleep(300);
   }
@@ -328,6 +498,7 @@ export const syncFreeCatalog = action({
       upcoming.inserted += bit.inserted;
       upcoming.updated += bit.updated;
       upcoming.pages += bit.pages;
+      upcoming.genreArtists += bit.genreArtists;
       upcomingSources.push("bandsintown");
     }
 
@@ -351,6 +522,7 @@ export const syncFreeCatalog = action({
         updated: result.updated,
         pages: result.pages,
         truncated: result.truncated,
+        genreArtists: result.genreArtists,
       };
     }
 
@@ -360,6 +532,86 @@ export const syncFreeCatalog = action({
       historicalArtists,
       sources: { upcoming: upcomingSources, historical: "setlist.fm" },
     };
+  },
+});
+
+// Catalog expansion: import every upcoming music event across one or more
+// cities, walking a date horizon in windows so the documented 1000-item paging
+// cap cannot silently truncate a dense city.
+//
+// Resumable and idempotent — `shows.importUpcoming` upserts by id, so a run cut
+// short by the rate limit or the request budget can simply be run again.
+// `maxRequests` is a guard against the 5,000/day quota, not a target.
+export const syncUpcomingCatalog = action({
+  args: {
+    cities: v.array(v.string()),
+    today: v.optional(v.string()),
+    horizonDays: v.optional(v.number()),
+    windowDays: v.optional(v.number()),
+    maxRequests: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    totals: WindowedResult;
+    byCity: (WindowedResult & { city: string })[];
+    horizon: { start: string; end: string; windowDays: number };
+  }> => {
+    const today = args.today ?? isoDate(new Date());
+    const horizonDays = Math.min(Math.max(args.horizonDays ?? 180, 1), 730);
+    const windowDays = Math.min(Math.max(args.windowDays ?? 30, 1), 180);
+    const maxRequests = Math.min(Math.max(args.maxRequests ?? 400, 1), 4000);
+    const dryRun = args.dryRun ?? false;
+    const horizonEnd = isoDate(addDays(new Date(`${today}T12:00:00Z`), horizonDays));
+
+    const seen = new Set<string>();
+    const byCity: (WindowedResult & { city: string })[] = [];
+    const totals: WindowedResult = {
+      ...emptySummary(),
+      windows: 0,
+      requests: 0,
+      splits: 0,
+      rateLimited: false,
+      budgetExhausted: false,
+    };
+
+    for (const city of args.cities) {
+      // Share the request budget across cities so one dense city cannot spend
+      // the whole daily quota before the others are touched.
+      const remaining = maxRequests - totals.requests;
+      if (remaining <= 0) {
+        totals.budgetExhausted = true;
+        break;
+      }
+      const result = await importTicketmasterWindow(
+        ctx,
+        city,
+        today,
+        horizonEnd,
+        windowDays,
+        remaining,
+        dryRun,
+        seen,
+      );
+      byCity.push({ city, ...result });
+      totals.available += result.available;
+      totals.fetched += result.fetched;
+      totals.inserted += result.inserted;
+      totals.updated += result.updated;
+      totals.pages += result.pages;
+      totals.genreArtists += result.genreArtists;
+      totals.windows += result.windows;
+      totals.requests += result.requests;
+      totals.splits += result.splits;
+      totals.truncated ||= result.truncated;
+      totals.rateLimited ||= result.rateLimited;
+      totals.budgetExhausted ||= result.budgetExhausted;
+      if (result.rateLimited) break; // quota is shared; stop touching the API
+    }
+
+    return { totals, byCity, horizon: { start: today, end: horizonEnd, windowDays } };
   },
 });
 

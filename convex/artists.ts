@@ -54,6 +54,40 @@ export const listNeedingEnrichment = query({
 });
 
 
+// Apply genres harvested from Ticketmaster event classifications, keyed by the
+// artist's namespaced source id (`tm-attraction:…`). This is sourced data
+// rather than inference and it costs no extra request — every event in the
+// upcoming-catalog import already carries a genre/subGenre.
+//
+// Never clobbers: an artist that already has genres keeps them, so a Spotify
+// or MusicBrainz tag always outranks the coarser TM classification.
+export const applyEventGenres = mutation({
+  args: {
+    updates: v.array(v.object({ artistJambaseId: v.string(), genres: v.array(v.string()) })),
+  },
+  handler: async (ctx, args) => {
+    let patched = 0;
+    let skipped = 0;
+    for (const update of args.updates) {
+      if (update.genres.length === 0) {
+        skipped += 1;
+        continue;
+      }
+      const artist = await ctx.db
+        .query("artists")
+        .withIndex("by_jambase", (q) => q.eq("jambaseId", update.artistJambaseId))
+        .unique();
+      if (!artist || artist.genres.length > 0) {
+        skipped += 1;
+        continue;
+      }
+      await ctx.db.patch(artist._id, { genres: update.genres });
+      patched += 1;
+    }
+    return { patched, skipped };
+  },
+});
+
 // One-shot cleanup of the low-precision venue tags written before 6ea0240,
 // when inference still tagged artists from broad rooms that book every genre
 // (a support act at the Fillmore recorded as rock/pop on no evidence). A wrong
