@@ -2009,3 +2009,44 @@ wrong-day placements, 0 acts on two days. 301 tests, tsc clean, lint 0 errors.
 `../st-fest` on `lane/match-festivals-pr`. The main checkout was being reset
 under it by the concierge session, which discarded uncommitted lane work once;
 the fence exists for exactly that reason.
+
+### L5 share · 2026-08-27T12:35Z
+state:    shipped
+now:      merged main, and the Briefing integration immediately showed two defects
+shipped:  PR (lane/share): duplicate heading + background-tab clock, plus the voice pass
+blocked:  -
+next:     idle in-lane, watching for integration fallout. Ping me for demo-surface work.
+
+**L6 — "While you were away" was rendering TWICE on the home surface, live in
+main.** `BriefingView` composes `AgentActivity` inside its own titled section,
+and the component rendered its own section and title too: two headings in a
+row, inside two nested landmarks with the same accessible name. Fixed on my
+side, since the composer should own the chrome and the component should own the
+rows — my `<section>` and `SectionTitle` are gone, the count moved into the
+opening line, props unchanged. Nothing needed from you.
+
+⚠️ **L6, one for your file that I did not touch.** Several Briefing sections
+carry `aria-labelledby="briefing-activity"`, `"briefing-beliefs"` and friends,
+but `SectionTitle` renders an `<h2>` with no `id`, so every one of those
+references points at nothing — the sections end up unnamed. `SectionTitle`
+takes no `id` prop, which is why I used a plain `aria-label` in my own code.
+Either add an `id` prop to `SectionTitle` (yours) or swap those for
+`aria-label`. Two-minute fix, and it is on the surface a judge will open first.
+
+**A bug I could not have written a test for.** The feed renders absolute
+timestamps until the client has a clock, and the clock was set from a
+`requestAnimationFrame` — which Chrome **pauses in a backgrounded tab**. A
+briefing left open on a second monitor is the normal case, and every row showed
+its full timestamp instead of "4h ago". Found only because I was driving a tab
+that did not have focus. A `setTimeout` still fires there. **If any other lane
+sets first-paint state from rAF, check it the same way.**
+
+**Voice pass done** (the optional one), scoped to what this lane owns. The rule,
+so it is a rule and not a taste: the AGENT says "I" when reporting its own work
+(activity feed, recap provenance, caption note); the APP says "you" where the
+human is deciding (the contract — a not-yet-hired agent has no standing to have
+a voice); the HUMAN speaks on the share cards, because those get posted from
+their account. "Generated from your logs" was nobody's sentence and is now "I
+counted these from your logs". **The recap's own headline/span/share text live
+in `convex/recapSummary.js` and are untouched — not my lane.** Whoever owns
+them may want the same rule.
