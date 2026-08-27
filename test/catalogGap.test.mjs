@@ -610,3 +610,29 @@ test("a room inside a venue is its own room", () => {
   const bimbos = [{ name: "Bimbo's 365 Club", city: "San Francisco" }];
   assert.equal(canonicalVenue("Bimbo’s 365 Club", "San Francisco", bimbos)?.name, "Bimbo's 365 Club");
 });
+
+test("two rooms at one address are two rooms, whatever their names share", () => {
+  // Birdland Jazz Club and Birdland Theater are different rooms in one
+  // building. Any key that treats "jazz club" and "theater" as noise folds
+  // them, which is why this refusal is a test and not a comment.
+  const birdland = [
+    { name: "Birdland Jazz Club", city: "New York" },
+    { name: "Birdland Theater", city: "New York" },
+  ];
+  assert.equal(canonicalVenue("Birdland Theater", "New York", birdland)?.name, "Birdland Theater");
+  assert.equal(
+    canonicalVenue("Birdland Jazz Club", "New York", birdland)?.name,
+    "Birdland Jazz Club",
+  );
+  // A source that wrote only "Birdland" has not said which room, and neither
+  // has anything else. Picking one is a coin flip that puts a show in a room
+  // it was not in, so nothing is written but what the source said.
+  assert.equal(canonicalVenue("Birdland", "New York", birdland), null);
+  // The same name against a catalog that knows only one of the rooms is still
+  // refused when the other room is the one the source meant — a theater is not
+  // a jazz club, and neither name is a longer spelling of the other.
+  assert.equal(
+    canonicalVenue("Birdland Theater", "New York", [birdland[0]]),
+    null,
+  );
+});
