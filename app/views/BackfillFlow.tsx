@@ -320,8 +320,8 @@ export function BackfillFlow({
             </div>
             <div className="flex-1" />
             <label className="mt-8 block w-full cursor-pointer bg-[#FF7A50] px-5 py-4 text-center text-sm font-black text-black">
-              Choose photos to scan
-              <input accept="image/*" className="sr-only" multiple onChange={(event) => void scanFiles(event.target.files)} type="file" />
+              Choose photos or videos to scan
+              <input accept="image/*,video/*" className="sr-only" multiple onChange={(event) => void scanFiles(event.target.files)} type="file" />
             </label>
             <label className="mt-3 block w-full cursor-pointer border border-[#2A2521] px-5 py-4 text-center text-sm font-black">
               Scan a whole folder
@@ -336,7 +336,7 @@ export function BackfillFlow({
                 onChange={(event) => {
                   const all = Array.from(event.target.files ?? []);
                   const images = all.filter((file) =>
-                    /\.(jpe?g|heic|heif|png|tiff?|webp|dng|avif)$/i.test(file.name),
+                    /\.(jpe?g|heic|heif|png|tiff?|webp|dng|avif|mov|mp4|m4v)$/i.test(file.name),
                   );
                   if (images.length) {
                     const list = new DataTransfer();
