@@ -1,6 +1,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { genreWeights, LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
+import { rankOnboardingGenres } from "./onboardingGenres.js";
 
 function unique(values: string[]) {
   return [...new Set(values)];
@@ -265,6 +266,48 @@ export const compatiblePeers = query({
           ...buildProfile(logsByUser.get(user._id) ?? []),
         })),
       args.limit,
+    );
+  },
+});
+
+// Genre-first onboarding (design 04's taste step, genre variant).
+//
+// Ranking by raw catalog counts would offer a San Franciscan twelve flavours
+// of jazz, which is a fact about the city rather than a question about them.
+// This asks the narrower, more useful question — what could you go and see
+// soon, near you — and caps how many slots one genre family may take. The
+// ranking itself is pure and tested in convex/onboardingGenres.js.
+export const genresForOnboarding = query({
+  args: {
+    homeCity: v.optional(v.string()),
+    today: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const upcoming = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", args.today))
+      .take(4000);
+
+    // Shows denormalize artist names but not genres, so join once per artist
+    // rather than once per show.
+    const artistIds = [...new Set(upcoming.flatMap((show) => show.artistIds))];
+    const artists = await Promise.all(artistIds.map((artistId) => ctx.db.get(artistId)));
+    const genresByArtist = new Map(
+      artists.filter(Boolean).map((artist) => [artist!._id, artist!.genres ?? []]),
+    );
+
+    return rankOnboardingGenres(
+      upcoming.map((show) => ({
+        date: show.date,
+        city: show.city,
+        genres: show.artistIds.flatMap((artistId) => genresByArtist.get(artistId) ?? []),
+      })),
+      {
+        homeCity: args.homeCity ?? "",
+        today: args.today,
+        limit: args.limit ?? 12,
+      },
     );
   },
 });
