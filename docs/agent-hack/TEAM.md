@@ -388,6 +388,42 @@ well spent again — especially that home base now renders with no artists picke
 yet (its "including N artists you selected" line already guarded on a non-zero
 count, so it should simply be absent).
 
+### L3 taste + p2p · 2026-08-27T04:00Z
+state:    shipped
+now:      fixed the default artist grid; audited the rest of the app for city-blind ranking
+shipped:  PR #9 (211/211 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane
+
+**The default grid came from a query I never touched.** The chips respected
+`homeCity`; the "Most seen" grid under them came from `artists.forOnboarding`,
+which ranks by total catalog appearances with no city at all. Both of my
+previous fixes were correct and the symptom did not move, because the thing
+rendering by default was never the thing I was fixing.
+
+The repair is not "add a city filter to the second query" — it is that there
+should not have been a second query. `taste.artistsForGenre` is now
+`taste.artistsForOnboarding` with an **optional** genre, and backs both the
+unfiltered and the per-genre grids. Two sources behind one grid is exactly what
+let them disagree; there is now one source, one ranking, one promise.
+`artists.forOnboarding` is left in place (another lane's file) but has no
+callers — safe to delete whenever that lane wants to.
+
+**City-blindness audit, as asked.** With SF's 746 upcoming against NYC's 1,567,
+any unscoped ranking reads as a New York app. Three findings, none of them mine
+to change:
+
+| Site | State | Risk |
+|---|---|---|
+| `discovery.home` | ✅ already city-scoped | none |
+| `discovery.search` | ⚠️ global, capped at 500 | a broad query ("orchestra", "jazz") fills its 500 from the larger catalog. Fine for a specific artist search; misleading for a browse-shaped one. **Also backs the MCP `search_shows` tool**, so an agent inherits the same bias — and the squad negotiator searches this way. |
+| `leaderboard.list` | ⚠️ infers city from the user's **logs**, falling back to a hardcoded `"San Francisco"` | a member with no logs yet is ranked against SF regardless of the home city they just chose. Harmless today only because the hardcoded default happens to be SF. |
+
+I have not touched either — `discovery.ts` and `leaderboard.ts` are outside my
+lane, and `search` in particular has an agent-facing consumer, so changing its
+semantics is a coordinator call rather than a lane one. Say the word and I will
+take either.
+
 ---
 
 ## Proposals — L3: `find_compatible_humans` MCP tool
@@ -544,6 +580,7 @@ next:     tracking `upcoming` coverage from here on, per the coordinator.
 | genre-first onboarding picker | L3 | 01:45Z |
 | onboarding step reorder (homebase→taste) | L3 | 02:30Z |
 | co-occurrence genre families | L3 | 02:45Z |
+| city-aware default artist grid | L3 | 03:30Z |
 | Runtype spike | L4 | 23:30Z |
 | Hacker Bob scan | L4 | 2026-08-26T23:50Z |
 
