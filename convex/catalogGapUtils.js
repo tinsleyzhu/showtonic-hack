@@ -105,6 +105,17 @@ const NOISE_WORDS = new Set([
 const PROMO_PHRASES =
   /\b(register|presale|pre-?sale|on sale|sold out|rsvp|announce|announcing|lineup drop|full bloom|link in bio|swipe|szn|giveaway|doors at|tickets? (?:are |now )?(?:live|available|on sale))\b/i;
 
+// News prose reads like a bill once it is split on commas: "Charli xcx, Megan
+// Thee Stallion, the festival wrote, Missy Elliott". These are the words that
+// give a sentence away — no act is billed with a verb in its name.
+const PROSE_WORDS =
+  /\b(?:wrote|said|says|announced|announces|scheduled|will|returns?|includ(?:e|es|ed|ing)|featur(?:e|es|ed|ing)|perform(?:s|ed|ance|ances)?|headlin(?:e|es|ed|ing)|culminat(?:e|es|ed)|many more|and more|others|other artists|full lineup)\b/i;
+
+// Listings pages count things next to the names they count: "625 attendances by
+// 114 users", "14 setlists". A name is not a statistic.
+const STATISTIC_PHRASES =
+  /\b\d+\s+(?:attendances?|users?|setlists?|comments?|fans?|photos?|videos?|reviews?|shows?|concerts?|tickets?)\b/i;
+
 function looksLikePromoProse(value) {
   const text = String(value ?? "");
   if (PROMO_PHRASES.test(text)) return true;
@@ -116,6 +127,11 @@ function looksLikePromoProse(value) {
   if (text.trim().split(/\s+/).length > 6) return true;
   // A truncated snippet is not a name.
   if (/(?:\.\.\.|…)$/.test(text.trim())) return true;
+  // Learned on the festival path and carried back here: a verb in the name
+  // means a sentence was parsed as a bill, and a count next to it means a
+  // listings page's own statistics were.
+  if (PROSE_WORDS.test(text)) return true;
+  if (STATISTIC_PHRASES.test(text)) return true;
   return false;
 }
 
@@ -981,12 +997,6 @@ function isFestivalFurniture(value) {
   return words.every((word) => FESTIVAL_FURNITURE.has(word) || NOISE_WORDS.has(word));
 }
 
-// News prose reads like a bill once it is split on commas: "Charli xcx, Megan
-// Thee Stallion, the festival wrote, Missy Elliott". These are the words that
-// give a sentence away — no act is billed with a verb in its name.
-const PROSE_WORDS =
-  /\b(?:wrote|said|says|announced|announces|scheduled|will|returns?|includ(?:e|es|ed|ing)|featur(?:e|es|ed|ing)|perform(?:s|ed|ance|ances)?|headlin(?:e|es|ed|ing)|culminat(?:e|es|ed)|many more|and more|others|other artists|full lineup)\b/i;
-
 function looksLikeArtistName(value) {
   const name = String(value ?? "").trim();
   if (name.length < 2 || name.length > 40) return false;
@@ -1002,10 +1012,7 @@ function looksLikeArtistName(value) {
   if (PROSE_WORDS.test(name)) return false;
   // A fragment that opens with a year is the tail of a date, not an act.
   if (/^(?:19|20)\d{2}\b/.test(name.trim())) return false;
-  // Listings pages count things next to the names they count: "625 attendances
-  // by 114 users", "14 setlists". A name is not a statistic.
-  if (/\b\d+\s+(?:attendances?|users?|setlists?|comments?|fans?|photos?|videos?|reviews?|shows?|concerts?|tickets?)\b/i.test(name))
-    return false;
+  if (STATISTIC_PHRASES.test(name)) return false;
   // "Lands End Stage", "Panhandle Tent" — a festival page names its rooms in
   // the same lists as its acts, and a stage that becomes an artist is a row
   // every later match can land on.
