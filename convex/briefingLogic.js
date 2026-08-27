@@ -304,7 +304,7 @@ export function scoreFinds(shows, taste = {}) {
     // A concierge that recommends one bar five ways is not scouting. Four of
     // five live finds were The Midway at 25-26% fit; the ceiling hands those
     // slots to somewhere else.
-    const venue = normalize(find.venueName);
+    const venue = venueKey(find.venueName);
     if ((perVenue.get(venue) ?? 0) >= MAX_FINDS_PER_VENUE) continue;
     perVenue.set(venue, (perVenue.get(venue) ?? 0) + 1);
 
@@ -324,13 +324,38 @@ export function scoreFinds(shows, taste = {}) {
 // the catalog talking about itself.
 const MAX_FINDS_PER_VENUE = 2;
 
+// The same room under two spellings.
+//
+// The live SF catalog holds "Castro Theatre" and "The Castro Theatre", "Cafe
+// Du Nord" and "Cafe du Nord", "Palace of Fine Arts" and "The Palace of Fine
+// Arts"; L1 reports the same pattern in New York with "Blue Note Jazz Club -
+// NY" and "Irving Plaza Powered By Verizon 5G". Case and spacing already fall
+// out of `normalize`; a leading article and those two suffix shapes are the
+// rest of it.
+//
+// Token-SUBSET matching was considered for this and REJECTED on the evidence:
+// it merges "Bill Graham Civic Auditorium" with "The Theater at Bill Graham
+// Civic Auditorium", which are a 7,000-capacity arena and a small room inside
+// it. A rule that cannot tell those apart would suppress a real
+// recommendation, so the two-per-venue ceiling stays conservative and lets a
+// genuinely missed alias through rather than hiding a genuinely different
+// room. L1's data pass is the right place to canonicalise; this only has to
+// stop the ceiling being evaded by an article.
+function venueKey(name) {
+  return normalize(name)
+    .replace(/^the\s+/, "")
+    .replace(/\s+powered by .*$/, "")
+    .replace(/\s+-\s+[a-z]{2}$/, "")
+    .trim();
+}
+
 // The same event arriving twice under different headliners: same room, same
 // date, same start time, and at least one artist in common. All four, because
 // two genuinely different bills can share a room and a date (two stages, an
 // early and a late set), and a shared support act across two nights is not a
 // duplicate either.
 function isSameEvent(left, right) {
-  if (normalize(left.venueName) !== normalize(right.venueName)) return false;
+  if (venueKey(left.venueName) !== venueKey(right.venueName)) return false;
   if (left.date !== right.date) return false;
   if (normalize(left.startTime ?? "") !== normalize(right.startTime ?? "")) return false;
   const bill = new Set((left.billArtists ?? []).map(normalize));

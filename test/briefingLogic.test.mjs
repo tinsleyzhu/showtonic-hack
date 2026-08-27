@@ -523,3 +523,34 @@ test("a shared support act across two nights is not a duplicate", () => {
   const finds = scoreFinds(twoNights, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
   assert.equal(finds.length, 2);
 });
+
+test("the two-per-venue ceiling cannot be evaded by an article", () => {
+  // Real spellings from the live San Francisco catalog: "Castro Theatre" and
+  // "The Castro Theatre" are one room, and the ceiling has to know that or a
+  // monoculture returns wearing a definite article.
+  const castro = [
+    show({ showId: "c1", title: "Act One", artistNames: ["Act One"], venueName: "Castro Theatre", date: "2026-09-01" }),
+    show({ showId: "c2", title: "Act Two", artistNames: ["Act Two"], venueName: "The Castro Theatre", date: "2026-09-02" }),
+    show({ showId: "c3", title: "Act Three", artistNames: ["Act Three"], venueName: "Castro Theatre", date: "2026-09-03" }),
+  ];
+  const other = show({ showId: "o", title: "Act Four", artistNames: ["Act Four"], venueName: "Bottom of the Hill", date: "2026-09-04" });
+
+  const finds = scoreFinds([...castro, other], { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.filter((find) => /Castro/.test(find.venueName)).length, 2);
+  assert.ok(finds.some((find) => find.venueName === "Bottom of the Hill"));
+});
+
+test("a small room inside a big one is still a different room", () => {
+  // "Bill Graham Civic Auditorium" and "The Theater at Bill Graham Civic
+  // Auditorium" are both in the live catalog and are an arena and a side room.
+  // Token-subset matching would merge them and suppress a real find; this is
+  // the counterexample that kept the venue rule conservative.
+  const both = [
+    show({ showId: "b1", title: "Arena Act", artistNames: ["Arena Act"], venueName: "Bill Graham Civic Auditorium", date: "2026-09-01" }),
+    show({ showId: "b2", title: "Side Room Act", artistNames: ["Side Room Act"], venueName: "The Theater at Bill Graham Civic Auditorium", date: "2026-09-02" }),
+    show({ showId: "b3", title: "Arena Act Two", artistNames: ["Arena Act Two"], venueName: "Bill Graham Civic Auditorium", date: "2026-09-03" }),
+  ];
+
+  const finds = scoreFinds(both, { logs: diary(8), today: "2026-08-27", catalogGenres: RARE_PUNK });
+  assert.equal(finds.length, 3, "the side room keeps its slot");
+});

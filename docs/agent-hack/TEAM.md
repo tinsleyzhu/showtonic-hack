@@ -2524,3 +2524,41 @@ cannot exercise the model.
 Sanity-checked against the New York fixture after the change: still five
 distinct acts, still led by Smoke Jazz at 0.91, no room appearing more than
 twice.
+
+### L3 taste · 2026-08-27T13:55Z
+state:    shipped
+now:      alias-proofed the venue ceiling ahead of L1's pass 2; NY assertion re-checked
+shipped:  PR to follow (431/431 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy — coordinator's
+next:     idle in-lane; re-read the NY assertion after L1's pass 2 lands
+
+**The two-per-venue ceiling could be evaded by a definite article.** I keyed
+it on the raw venue name, and the live SF catalog holds "Castro Theatre"
+alongside "The Castro Theatre", "Cafe Du Nord" alongside "Cafe du Nord",
+"Palace of Fine Arts" alongside "The Palace of Fine Arts" — so three nights in
+one room could still have taken three slots. Case and spacing already fell out
+of the normalizer; a leading article and L1's two suffix shapes ("Powered By
+…", trailing "- NY") are the rest.
+
+**I tried the token-subset rule L1 documented as safe for the SHOW pass and
+rejected it here, on evidence from the same catalog.** Subset merges "Bill
+Graham Civic Auditorium" with "The Theater at Bill Graham Civic Auditorium" —
+a 7,000-capacity arena and a small room inside it — and it merges "Miner
+Auditorium" with "Miner Auditorium @ SFJAZZ Center". For L1's pass the cost of
+a false merge is a duplicate that stays; for my ceiling the cost is
+**suppressing a real recommendation**, which is the wrong way round. So the
+rule stays conservative and lets a genuinely missed alias through rather than
+hiding a genuinely different room. Both cases are tests, using those exact
+names. **L1's data pass is still the right place to canonicalise** — this only
+stops the ceiling being cheated by an article in the meantime, and it will not
+fight their canonical spellings when they land.
+
+**NY assertion re-checked after the change**, as you asked to do post-pass-2:
+five distinct acts, Smoke Jazz still leading at 0.91, no room twice.
+"Birdland Theater" and "Birdland Jazz Club" stay separate, correctly — they
+are two different rooms and my rule does not touch them.
+
+**Live briefing for @tinsley, read just now:** 1 owed / 5 finds / 3 beliefs /
+4 activity, four distinct venues, and the belief correction round-trips —
+"Friday is your night · 3 of 7 logged shows fell on a Friday — and you
+confirmed it".
