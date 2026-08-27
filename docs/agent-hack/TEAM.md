@@ -443,6 +443,9 @@ next:     waiting on the deployed `upcoming` coverage number to decide where
       `~/Library/Developer` 18G (Xcode DerivedData), Spotify cache 2.3G,
       Codex cache 1.9G, `~/.npm` 933M. L2 did not delete anything — that is a
       human's call.
+- [ ] Runtype MCP OAuth: run `claude mcp login runtype` in an interactive terminal with
+      a browser (CLI account already authenticated as tinsleyzhu@gmail.com). Unblocks the
+      $500 bounty spike — L4 has ~40 min left in its timebox once this lands.
 
 ## CLAIMED — take a line before you start, so two lanes never collide
 
@@ -457,3 +460,85 @@ next:     waiting on the deployed `upcoming` coverage number to decide where
 | genre rarity weighting (jazz skew) | L3 | 01:20Z |
 | genre-first onboarding picker | L3 | 01:45Z |
 | Runtype spike | L4 | 23:30Z |
+| Hacker Bob scan | L4 | 2026-08-26T23:50Z |
+
+### L4 sponsors · 2026-08-27T00:10Z
+state:    blocked
+now:      Hacker Bob installed clean into st-sponsors (agents, /bob-evaluate command, MCP
+          server in .mcp.json). Its MCP tools only register on a fresh Claude Code
+          session start — this running session can't pick up a mid-session .mcp.json
+          change. Human is restarting the st-sponsors session now to pick it up.
+shipped:  6a42b4d (TEAM.md), pending: .gitignore commit below
+blocked:  waiting on session restart (human doing it now) to run `/bob-evaluate` against
+          https://showtonic-hack.showtonic.workers.dev
+next:     once restarted, run `/bob-evaluate https://showtonic-hack.showtonic.workers.dev`,
+          triage findings, fix cheap ones, record the rest here
+
+**Hacker Bob install notes:** hit two environmental snags worth knowing about if any
+other lane runs sponsor CLIs today:
+1. Root volume was at 99% (see above) — installs failed with ENOSPC mid-extraction,
+   which left a *corrupted* npx cache entry for hacker-bob (missing its own
+   `node_modules/@anthropic-ai/claude-agent-sdk` despite being a declared dependency).
+   Second install attempt reused the broken cache silently and gave a misleading
+   "Runtime dependency ... is missing; run npm install" error even after `npm install`
+   succeeded in the project. Fix was `rm -rf ~/.npm/_npx/<hash>` to force a clean
+   re-extract, not `npm install` in the project (their own dependency, not ours).
+2. `.mcp.json` that `hacker-bob install` writes bakes in an absolute, machine-specific
+   path (`/Users/.../mcp/server.js`) and drags in a 254M vendored runtime — added
+   `.hacker-bob/`, `/mcp/`, `/testing/`, `.mcp.json` to `.gitignore` rather than commit
+   it. Each teammate who wants Bob's MCP tools should run their own
+   `npx -y hacker-bob@latest install .` locally.
+
+**Runtype ($500) — dropped, honestly, within the 1-hour timebox:**
+CLI auth completed clean (`runtype auth register --email` → email OTP → `runtype auth
+verify` → full account). `runtype install-mcp --agent claude-code --no-login` installed
+the user-level MCP config and 6 skills. But the MCP connection itself needs interactive
+browser OAuth (`claude mcp login runtype`) — this headless lane session has no browser,
+and the human declined to do it manually right now. Without the MCP connection, the
+`runtype-build-product` skill's own guardrail ("never invent schemas or model IDs; fetch
+docs and model configs") can't be honored — building blind against the raw CLI
+(`flows create` / `agents create` / `dispatch`) would mean guessing at schemas, which
+SPONSOR_SETUP.md explicitly warns against. Forcing it in reads worse than skipping it.
+**Unblock:** anyone with a browser can run `claude mcp login runtype` (creds are already
+authenticated under tinsleyzhu@gmail.com) and this becomes a ~20 min build from there.
+Flagging under NEEDS-HUMAN below rather than blocking on it.
+
+**Also found:** this machine's root volume was at 99% (119Mi free) when I started —
+would have blocked npm installs for every lane. Cleared `~/.npm` cache (933Mi, safe/
+regenerable) to buy headroom; did not touch other apps' caches (Spotify/Codex/Google/
+Firefox were the bigger hogs but out of scope for this repo). Now at 830Mi free — still
+tight, worth knowing if lanes start hitting ENOSPC again.
+
+### L4 sponsors · 2026-08-27T00:09Z
+state:    building
+now:      Bob still blocked (its MCP tools need a session STARTED in st-sponsors; this
+          session was launched from showtonic-hack, so `/bob-evaluate` can't run here).
+          Switched per rule #4: ran a manual demo-surface drill + mini-scan against the
+          live worker — the honest stand-in for the blocked Bob run, and it hardens Act 1.
+shipped:  - (findings below; no code change)
+blocked:  /bob-evaluate needs a fresh Claude Code session opened inside st-sponsors/
+next:     hand the two untested boundaries (scope + cross-tenant) to Bob once a
+          st-sponsors session exists; else demo-record Act 1 as Wi-Fi backup
+
+**Manual MCP surface drill (read-only, our own infra) — all green:**
+- Discovery `/.well-known/mcp.json` → 200, well-formed, scopes documented. `ai-agent.json` also 200.
+- `initialize` + `tools/list` → 200; 10 tools present and matching DEMO.md Act 1/2/3
+  (search_shows, get_taste_profile, find_compatible_humans, reclaim_camera_roll,
+  get_pending_candidates, resolve_candidate, set_attendance, log_show, checkout_tickets,
+  record_squad_plan).
+- **Auth boundary holds** (the "no backdoor" Q&A claim, verified live): no-token AND
+  bogus-token `sho_deadbeef...` both rejected `no_token` on a read tool (search_shows)
+  AND write tools (set_attendance, log_show). No scope leaks whether a token is merely
+  malformed vs unknown — good.
+- Robustness: malformed JSON → -32700, unknown method → -32601, unknown tool
+  ("drop_tables") → -32602, GET on the POST endpoint → 405. No 500s, no stack traces.
+
+**Two boundaries the manual drill CANNOT reach without a real minted token — these are
+the higher-value checks and the reason the Bob run is still worth doing:**
+1. Inter-scope enforcement: a `read:shows`-only token being correctly refused a
+   `write:logs` call. Manifest promises per-scope gating; I only proved "some token
+   required," not "correct scope required."
+2. Cross-tenant isolation: owner A's token cannot `resolve_candidate` into owner B's
+   diary. This is the one that would actually hurt if wrong.
+Both are exactly what Bob's auth-differential profile tests. Mint one `sho_` token from
+the app's "Connect your agent" screen and Bob (or a 5-min manual differential) closes them.
