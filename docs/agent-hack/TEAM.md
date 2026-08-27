@@ -2435,3 +2435,71 @@ headings — ② explains its own emptiness and ③ carries the row. That reads 
 **All three states rendered before and after** (empty · middle · live @tinsley).
 PR #28 now carries: the fixture flip, belief corrections, the doubled
 "While you were away", and this.
+
+### L5 share · 2026-08-27T02:40Z — post-migration walk
+state:    idle
+now:      after-snapshot, diff, and a walk over Briefing / diary / recap / catalog
+shipped:  - (report only)
+blocked:  one item needs eyes I can't provide (below)
+next:     re-walk on request; standing by.
+
+**The diff exits 0. No broken references.** 11 changes, every one a repoint or a
+legitimate count move. Both accounts: recap 7 shows, diary 7 entries, **0
+dangling**, 5 finds, all evidenced. MCP agrees with the screen (12 tools,
+`generate_recap` and `get_briefing` both answering, 7 shows either way). Cities:
+SF 935→806, NY 8014→7745.
+
+**FIRST, A CORRECTION OF MY OWN — I nearly filed a false alarm against L1.**
+My first residual-duplicate scan reported **43 pairs** and I was about to report
+that "residual excess zero" was wrong. It was my scan that was wrong: I grouped
+by date+venue and ignored **startTime**. Smoke Jazz runs 18:30 / 20:30 / 22:00
+sets, so three rows with an identical title and the same four artists are three
+real shows, not three copies. Rescanned with start time in the key: **1 pair in
+500 rows.** `showKey` is right, and the comment above it already said exactly
+why — I should have read it before scanning, not after. L1: residual excess is
+genuinely ~zero and your key's under-merge case is the correct trade.
+
+**FINDING A — the one real residual, and it is on the demo screen.**
+`The Midway · 2026-09-05 · 15:00`, two rows, three shared artists of three:
+- "Purple Disco Machine at The Midway" (headliner: Purple Disco Machine)
+- "Electroluxx Pride Party (21 and Over)" (headliner: Electroluxx Pride Party)
+
+One party ingested twice by sources that disagree about which name is the
+headliner. **Not fixable by widening the key** — the headliner has to stay in it
+or multi-room venues collapse — so this is a presenter-side problem, not a
+catalog one. It matters because both currently appear in @tinsley's "What your
+agent found" as two separate nights. A judge reading section ② sees the same
+party recommended twice. Cheapest fix is in the finds list, not the data: drop a
+find whose (venue, date, startTime) already appears above it with an overlapping
+bill. L3/L6's call, and only worth it if it is genuinely cheap.
+
+**FINDING B — venue name twins survived, in the denormalised field.**
+The venues TABLE merged (298→290), but `show.venueName` is a denormalised string
+and was not rewritten. Still present across a 110-venue sample:
+`Bimbo's 365 Club` / `Bimbo’s 365 Club`, `Lucinda's` / `Lucinda’s`, and a case
+twin `Cafe Du Nord` / `Cafe du Nord`. The Browse venue filter is built from these
+strings, so it should still show the twins I filed earlier — **I could not
+confirm that on screen** (see below). L1: if the sweep re-runs, rewriting
+`venueName` on show rows to the canonical venue's name closes this.
+
+**FINDING C — the repointed diary entry now leads to a festival, not a set.**
+@tinsley's 5★ night repointed from a Charli XCX row to the canonical
+`Outside Lands` row, which carries **94 artists**. The recap is unharmed and
+still says "Best night: Charli XCX" — `recap:build` reads the log's own stored
+fields, not the show row, which is exactly the decoupling that saved it. But
+"Open show" from that diary entry now lands on a festival page with a 94-name
+bill. Correct data, and possibly the intended shape post-L2 — flagging it only
+because it is Act 1's highest-rated night and someone should decide on purpose
+whether tapping it should show the festival.
+
+**FINDING D — taste, not correctness: section ② is a Midway monoculture.**
+Four of @tinsley's five finds are at The Midway, and the fits are 26 / 25 / 25 /
+25 / 25 — flat enough that the ranking is close to arbitrary and the visible
+result is one venue five times. Post-dedup this got worse (before: one Midway of
+five). A one-line venue diversity rule in the finds list would fix the optics.
+
+⚠️ **What I could not verify: the venue filter on screen.** My browser tab went
+`document.hidden` again mid-walk and stopped accepting clicks, so Finding B's UI
+consequence is inferred from the data, not seen. Coordinator, it is a ten-second
+look: Browse → Past Shows → venue dropdown → search "Bimbo". Everything else
+above is verified server-side or read from the rendered DOM before the tab froze.
