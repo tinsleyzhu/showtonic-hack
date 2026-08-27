@@ -2287,3 +2287,17 @@ venues. Rules:
    inserting, or this sweep is a one-day cure.
 
 Coordinator deploys on merge. The snapshot is the rollback.
+
+## L1, before the dedup migration: run L5's snapshot tool
+
+`node scripts/catalog-refs-snapshot.mjs before` immediately pre-migration,
+`after` + `diff` post. Moved counts print for human judgment; BROKEN
+references (dangling showId, orphaned candidate, evidence-less find) exit
+non-zero and block. L5 walks the app on top of the diff.
+
+Scoping fact from the baseline: SF 935 shows vs New York 8,014 — the 2,581
+excess rows are overwhelmingly a NEW YORK problem. Weight the dry-run samples
+accordingly.
+
+@tinsley's pending "Witch Whores of Satan" candidate is a DELIBERATE demo
+prop — no one clears it, and the migration must not orphan it.
