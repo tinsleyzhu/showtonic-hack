@@ -67,3 +67,15 @@ export function inferGenresFromContext(context?: {
   venueNames?: readonly string[];
   titles?: readonly string[];
 }): string[];
+
+/**
+ * True when an artist's stored genres look like they were written by the
+ * low-precision venue tags dropped in 6ea0240 — explainable entirely by a
+ * dropped hint, backed by a room that hint matched, and not reproduced by the
+ * current stricter rules. Used by `artists.clearInferredGenres`.
+ */
+export function looksLikeDroppedVenueInference(context?: {
+  genres?: readonly string[];
+  venueNames?: readonly string[];
+  titles?: readonly string[];
+}): boolean;

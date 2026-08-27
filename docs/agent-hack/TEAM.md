@@ -427,6 +427,35 @@ next:     waiting on the deployed `upcoming` coverage number to decide where
           dropped in 6ea0240 — that one deletes data, so it is the
           coordinator's call, not mine.
 
+### L1 enrich · 2026-08-27T (iteration 4)
+state:    building
+now:      shipped the approved one-shot cleanup, `artists:clearInferredGenres`.
+          `artists` has no provenance column, so it identifies rows by
+          signature: stored genres must be explainable ENTIRELY by a hint I
+          dropped in 6ea0240, the artist must actually have played a room that
+          hint matched, AND the current stricter rules must not reproduce the
+          tag. A real Spotify tag ("hyperpop", "dance pop") fails that test and
+          is left alone; so does a partially-explainable set like
+          ["indie","shoegaze"]. Idempotent (a cleared artist has empty genres
+          and stops matching) and recoverable (it lands back on
+          listNeedingEnrichment for a real API lookup), so a false positive
+          costs one re-lookup, not data. dryRun supported; 6 predicate tests.
+          Now on a real toolchain — disk recovered, `npm ci` clean, tsc run
+          natively rather than through a symlink.
+
+          BASELINE BEFORE CLEANUP (coordinator's deployed numbers):
+            global      309 / 7191   (229 distinct)
+            upcoming SF  78 / 1087 = 7.2%   missing 1009
+          Both numbers WILL FALL when this runs. That is the intended
+          outcome, not a regression: the rows being removed were tags we had
+          no evidence for. The after-numbers go here once it has run.
+shipped:  56bbda0 on lane/enrich — PR to follow (178 tests green, tsc clean)
+blocked:  -
+next:     tracking `upcoming` coverage from here on, per the coordinator.
+          After the cleanup lands, the honest way back up is real API data:
+          Spotify remains unset and is still the single biggest lever
+          (~9x faster than MusicBrainz and richer tags) — see NEEDS-HUMAN.
+
 ---
 
 ## NEEDS-HUMAN — coordinator relays these; do not block on them
