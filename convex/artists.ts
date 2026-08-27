@@ -220,6 +220,12 @@ export const get = query({
     }
 
     const today = new Date().toISOString().slice(0, 10);
+    // Collect the whole window, THEN filter, THEN cap. A `.take()` before the
+    // artist filter truncates by date ascending — the oldest 3,000 rows of the
+    // window — so an artist whose shows are recent filtered down to zero and
+    // the page went blank. Same bug class discovery.search fixed the other
+    // way round: the cap must never run before the scope. One call, ~9k docs
+    // scanned, well inside the 32k-scan and 16MiB ceilings.
     const scanned = await ctx.db
       .query("shows")
       .withIndex("by_date", (q) =>
@@ -227,8 +233,10 @@ export const get = query({
           .gte("date", shiftIsoDate(today, -ARTIST_WINDOW_DAYS_BACK))
           .lte("date", shiftIsoDate(today, ARTIST_WINDOW_DAYS_FORWARD)),
       )
-      .take(ARTIST_MAX_SHOWS);
-    const shows = scanned.filter((show) => show.artistIds.includes(args.artistId));
+      .collect();
+    const shows = scanned
+      .filter((show) => show.artistIds.includes(args.artistId))
+      .slice(0, ARTIST_MAX_SHOWS);
     const showIds = shows.map((show) => show._id);
 
     // Indexed per show instead of reading every log and every photo in the
