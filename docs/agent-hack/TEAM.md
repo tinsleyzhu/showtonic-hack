@@ -292,6 +292,48 @@ Verified: `npm test` 130/130, `npx tsc --noEmit` clean, `npm run lint` 0 errors
 these worktrees ship without `node_modules`, so `npm ci` first if you want a
 typecheck; tests alone only cover the pure modules.
 
+### L3 taste + p2p · 2026-08-27T02:10Z
+state:    shipped
+now:      answered the coordinator's jazz-skew note — rarity weighting + genre-first onboarding
+shipped:  PR #3, now 8 commits (merged main in; 198/198 tests, tsc clean, lint 0 errors)
+blocked:  needs Convex + wrangler deploy — coordinator's call. Cannot dogfood the onboarding UI (no CONVEX_DEPLOYMENT here)
+next:     idle in-lane; will keep hardening negotiation and taste tests
+
+**The jazz skew was a real bug in what I had already shipped, not just an
+onboarding problem.** Under a plain jaccard, "you both like jazz" scored nearly
+as high as a genuine overlap — on a catalog where jazz sits on 154 of the first
+220 enriched artists, that is close to "you both like music". Two fixes:
+
+1. **Rarity-weighted genre overlap** (`genreWeights`, standard IDF over the
+   population being compared). A genre everyone has weighs 0; a genre one person
+   has weighs 1. When the whole weighted union is zero — every genre in play is
+   universal — `tasteScore` treats that as NO genre signal and falls back to
+   artists and venues, rather than scoring a zero and dragging the match down.
+   `matchDetail` now measures rarity over the same population as `similar`,
+   because two different percentages for one pair of people is how a match page
+   reads as broken.
+2. **Genre-first onboarding** (`taste.genresForOnboarding` +
+   `taste.artistsForGenre`, ranking pure and tested in
+   `convex/onboardingGenres.js`). Ranked by *upcoming* shows weighted toward the
+   member's city — a genre you cannot buy a ticket for is a dead slot — and
+   capped per genre family, since "jazz" / "vocal jazz" / "jazz fusion" taking
+   three slots says nothing "jazz" alone did not. Families are derived from the
+   corpus rather than a hardcoded taxonomy (a genre joins a family when a MORE
+   COMMON genre appears inside it as a whole word), so a house-heavy city behaves
+   identically and a rare genre like "core" never swallows "hardcore". The chips
+   lead the taste step; tapping one swaps the artist grid. Persistence is
+   unchanged — the step still produces `favoriteArtists`, so every downstream
+   consumer keeps working.
+
+⚠️ **Two honest caveats for the coordinator.**
+- The onboarding UI is **type-checked and lint-clean but never rendered** — this
+  worktree has no `CONVEX_DEPLOYMENT`, so I could not run the app and click
+  through the taste step. Worth thirty seconds of your eyes after deploy.
+- The taste step runs *before* the home-base step, so at first-run onboarding
+  `homeCity` is empty and the city weighting is inert; it only bites for
+  returning users. Reordering the wizard would fix that but changes a flow I do
+  not own — say the word if you want it.
+
 ---
 
 ## Proposals — L3: `find_compatible_humans` MCP tool
@@ -412,4 +454,6 @@ next:     waiting on the deployed `upcoming` coverage number to decide where
 | find_compatible_humans MCP tool (p2p discovery) | L3 | 00:15Z |
 | squad negotiation v2 (N agents, splits, refusal) | L3 | 00:40Z |
 | squad plan + transcript in app UI | L3 | 00:50Z |
+| genre rarity weighting (jazz skew) | L3 | 01:20Z |
+| genre-first onboarding picker | L3 | 01:45Z |
 | Runtype spike | L4 | 23:30Z |
