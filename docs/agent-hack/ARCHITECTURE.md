@@ -147,8 +147,8 @@ it is the same public URL the browser already ships, not a secret.
 | `backfillCandidates` | ✅ extended with `evidence[]` (`kind`/`detail`/`delta`) and `draft{caption,vibes[]}` |
 | `venues` | ✅ `latitude`/`longitude` now populated — JamBase schema.org geo, plus Nominatim for the rest |
 | `catalogProposals` | ✅ built — `clusterDate`, `venueName?`, `city?`, `artistNames[]`, `sourceUrl`, `sourceTitle?`, `corroboratingUrls[]?`, `confidence`, `evidence[]?`, `proposedBy`, `requestedByUserId?`, `status`, `showId?`, `createdAt`; indexes `by_status`, `by_date`, `by_date_status` |
-| `squadPlans` | ❌ not built — phase 4 |
-| `catalogProposals` | ❌ not built — catalog-gap agent still to come |
+| `squadPlans` | ✅ built — plan plus the negotiation transcript, denormalized, because the transcript IS the artefact a human without an agent reads |
+| `catalogProposals` | ✅ built — a row is a CLAIM, not a fact: it carries its source URL and stays `pending` until a human approves it. Nothing treats a proposal as catalog data, which is why it is its own table. |
 | `squadPlans` | ✅ built — `userIds[]`, `showId`, denormalized show fields, `status`, `settlement`/`paymentRef`/`amountCents`/`payerUserId`, `transcript[]`; index `by_show`. Rendered on Profile by `app/views/SquadPlan.tsx` |
 
 Hashing happens at the **edge** (browser at mint, Worker at verify), never in a

@@ -28,6 +28,7 @@ import type * as leaderboard from "../leaderboard.js";
 import type * as logs from "../logs.js";
 import type * as media from "../media.js";
 import type * as mediaUtils from "../mediaUtils.js";
+import type * as onboardingArtists from "../onboardingArtists.js";
 import type * as onboardingGenres from "../onboardingGenres.js";
 import type * as seed from "../seed.js";
 import type * as seedData from "../seedData.js";
@@ -67,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   logs: typeof logs;
   media: typeof media;
   mediaUtils: typeof mediaUtils;
+  onboardingArtists: typeof onboardingArtists;
   onboardingGenres: typeof onboardingGenres;
   seed: typeof seed;
   seedData: typeof seedData;

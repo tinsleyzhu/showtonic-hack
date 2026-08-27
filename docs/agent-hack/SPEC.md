@@ -267,3 +267,34 @@ it improperly breaks a promise the product makes in writing.
 Cut, deliberately. The accuracy gain does not outrank the promise, and
 "we decided not to look at your photos" is a better answer to a judge than a
 caveat.
+
+---
+
+## As-shipped, 2026-08-27 — verified by rendering, not by tests alone
+
+The onboarding work below was type-checked and unit-tested inside a lane four
+separate times while still being visibly wrong in the browser. Each fix was
+correct and the symptom did not move, because the thing rendering by default was
+never the thing being fixed. Recorded because the lesson generalises: a lane
+without a deployment cannot see its own output.
+
+| Round | Lane believed | Render showed |
+|---|---|---|
+| 1 | genre chips ship | chips fine, artist grid all New York |
+| 2 | reorder fixes it | home base moved; grid byte-identical |
+| 3 | one source fixes it | grid changed, NY Philharmonic still first |
+| 4 | city gate fixes it | **fixed** — NY Phil gone, grid genuinely SF |
+
+Round 3's cause, quantified: `artistsForOnboarding` WEIGHTED by city (×4) rather
+than gating on it. The New York Philharmonic plays 234 New York shows and zero in
+San Francisco; no multiplier beats a residency. Presence had to become a gate.
+
+**Shipped and rendered:** home base precedes taste; genre chips ranked by what is
+actually playing in the member's city, with families derived from co-occurrence
+so `jazz fusion` and `hard bop` fold into jazz instead of taking three chips to
+say one thing; artists gated on having an upcoming show in that city; one query
+behind both the default and per-genre grids so they cannot disagree again.
+
+**`search` stays global when `city` is omitted.** It backs the published
+`search_shows` tool, and narrowing a documented tool underneath agents that have
+already read the manifest is the same drift we fixed in the manifest itself.
