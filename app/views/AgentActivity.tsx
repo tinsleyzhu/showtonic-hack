@@ -10,7 +10,6 @@ import {
   orderActivity,
   refusalReason,
 } from "../activityFeed.js";
-import { SectionTitle } from "./shared";
 
 // "While you were away" — section ③ of the briefing.
 //
@@ -102,13 +101,16 @@ function ActivityRow({ item, now }: { item: AgentActivityItem; now: number | nul
 export function AgentActivity({ items }: { items: AgentActivityItem[] }) {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    // On a frame rather than synchronously: setting state in the effect body
-    // cascades an extra render. The interval keeps "12m ago" honest while the
-    // briefing sits open on a second monitor, which is where it will sit.
-    const frame = requestAnimationFrame(() => setNow(Date.now()));
+    // Deferred rather than set synchronously: setting state in the effect body
+    // cascades an extra render. A timeout and not requestAnimationFrame —
+    // rAF is paused in a background tab, so the briefing left open on a second
+    // monitor (exactly where it will sit) never got its clock and showed every
+    // row's full timestamp instead of "4h ago". Caught by rendering it in a
+    // tab that did not have focus.
+    const first = setTimeout(() => setNow(Date.now()), 0);
     const tick = setInterval(() => setNow(Date.now()), 60_000);
     return () => {
-      cancelAnimationFrame(frame);
+      clearTimeout(first);
       clearInterval(tick);
     };
   }, []);
@@ -120,22 +122,26 @@ export function AgentActivity({ items }: { items: AgentActivityItem[] }) {
 
   const held = ordered.filter((item) => describeActivityKind(item.kind).restraint).length;
 
+  // No <section> and no heading of its own. BriefingView composes this inside
+  // its own titled section, and when both rendered one, "While you were away"
+  // appeared TWICE on the home surface, inside two nested landmarks with the
+  // same name — a duplicate on screen and a maze for a screen reader.
+  //
+  // The composer owns the chrome; this owns the rows. The count moved into the
+  // opening line so nothing was lost with the eyebrow.
   return (
-    <section aria-label="While you were away" className="surface-settle mt-10 border-t border-white/10 pt-8">
-      <SectionTitle
-        eyebrow={`${ordered.length} ${ordered.length === 1 ? "thing" : "things"}, newest first`}
-        title="While you were away"
-      />
-      <p className="mt-3 max-w-xl text-sm leading-6 text-[#8A8177]">
+    <div className="surface-settle">
+      <p className="max-w-xl text-sm leading-6 text-[#8A8177]">
+        {ordered.length} {ordered.length === 1 ? "thing" : "things"}, newest first.{" "}
         {held > 0
           ? "Everything I did on my own, including the parts where I stopped. I would rather leave a night blank than fill it with a guess."
           : "Everything I did on my own. None of it touched your diary without you."}
       </p>
-      <ol className="mt-5 space-y-3">
+      <ol aria-label="What your agent did while you were away" className="mt-5 space-y-3">
         {ordered.map((item) => (
           <ActivityRow item={item} key={`${item.at}-${item.kind}-${item.summary}`} now={now} />
         ))}
       </ol>
-    </section>
+    </div>
   );
 }
