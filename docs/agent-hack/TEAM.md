@@ -134,8 +134,12 @@ produces no candidates at all. Three options, none of which I should pick
 alone: (a) leave it, declining is correct; (b) match the festival rather than
 the set, which needs `festivalId` threaded into the matcher and a product
 answer about what a festival diary entry even is; (c) match the headliner and
-say so in the evidence card. I have pinned the current behaviour in a test so
-it stays deliberate. Say which and I will build it.
+say so in the evidence card. **Resolved: (a) for tonight, (b) is the product answer.** The human's framing —
+festivals should have ONE page, not sixty — turns this from a matcher problem
+into a data-model one. Nothing ships tonight; the design is written up in
+SPEC.md under "Named future work — a festival is one thing, not sixty", so the
+demo answer is backed by a plan rather than improvised. Current declining
+behaviour stays pinned by a test.
 
 **Numbers, before → after.** The matcher is unchanged: 88% accuracy, 0 false
 matches, against date-only's 38%. What is new is a scoreboard for the layer
@@ -184,14 +188,14 @@ Accuracy is unchanged — the night it now declines is one it previously got
 *wrong*, not one it got right. Precision is the promise this feature actually
 makes, and it is now perfect on the fixture set.
 
-**Vision evidence (SPEC 1c) — not shipped, and this is a decision, not a
-shortfall.** The app promises on screen that photos never leave the device.
+**Vision evidence (SPEC 1c) — CUT, confirmed by the human 2026-08-27.** Not a
+shortfall, a decision, and it is now written into SPEC.md as one. The app promises on screen that photos never leave the device.
 Doing it properly means a per-night consent step with copy that admits the
 exception, a ≤3-photo cap, and deletion after analysis — a UI change in L4's
 and the coordinator's territory, not a scoring change in mine. Shipping it
 without that consent step would break a promise the product makes in writing,
-and the accuracy it buys does not outrank that. Available on request if the
-coordinator wants to own the consent screen.
+and the accuracy it buys does not outrank that. Confirmed closed — not building the
+analysis side.
 
 **For the coordinator, at deploy:** `convex/_generated/api.d.ts` has hand-added
 entries for `catalogGap`/`catalogGapUtils` so the lane typechecks without a
