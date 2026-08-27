@@ -1,6 +1,7 @@
 import { action, mutation, query, type ActionCtx } from "./_generated/server";
 import { api } from "./_generated/api";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import {
   buildArtistSearchQuery,
   decideArtistGenres,
@@ -127,17 +128,23 @@ export const listUpcomingArtistsNeedingIdentity = query({
     const today = args.today ?? new Date(Date.now()).toISOString().slice(0, 10);
     const cityNeedle = args.city?.trim().toLowerCase();
 
-    const [artists, shows] = await Promise.all([
-      ctx.db.query("artists").collect(),
-      ctx.db.query("shows").collect(),
-    ]);
+    // Read the upcoming slice by index rather than collecting every show: the
+    // driver calls this once per batch, and a full scan of both tables is what
+    // made a single call time out. Past shows can never anchor a query here —
+    // the point is an artist someone can still go and see.
+    const shows = await ctx.db
+      .query("shows")
+      .withIndex("by_date", (q) => q.gte("date", today))
+      .collect();
 
     // Best anchor per artist: the soonest upcoming show, whose venue and city
     // are what make the query specific enough to trust.
     const anchor = new Map<string, { date: string; venueName: string; city: string }>();
     const weight = new Map<string, number>();
     for (const show of shows) {
-      if (show.date < today) continue;
+      // City is matched case-insensitively in JS rather than through
+      // by_city_date, because an exact-case index miss would return an empty
+      // page and the driver would read that as "backlog empty" and stop.
       if (cityNeedle && show.city.toLowerCase() !== cityNeedle) continue;
       for (const artistId of show.artistIds) {
         weight.set(artistId, (weight.get(artistId) ?? 0) + 1);
@@ -148,17 +155,36 @@ export const listUpcomingArtistsNeedingIdentity = query({
       }
     }
 
-    return artists
-      .filter((artist) => (artist.genres ?? []).length === 0)
-      .filter((artist) => anchor.has(artist._id))
-      .sort((left, right) => (weight.get(right._id) ?? 0) - (weight.get(left._id) ?? 0))
-      .slice(0, limit)
-      .map((artist) => ({
-        _id: artist._id,
-        name: artist.name,
-        venueName: anchor.get(artist._id)!.venueName,
-        city: anchor.get(artist._id)!.city,
-      }));
+    // Hydrate only the artists an upcoming show actually anchors — not the
+    // whole table. Every one of them is fetched (not just the first page)
+    // because a bounded scan that runs out mid-page returns a short page, and
+    // a short page is the driver's signal that the backlog is empty. Cheap
+    // ranking first, then the reads.
+    const ranked = [...anchor.keys()].sort(
+      (left, right) => (weight.get(right) ?? 0) - (weight.get(left) ?? 0),
+    );
+
+    // Fetched a chunk at a time so a tail pass over ~1,900 anchored artists is
+    // not 1,900 sequential round trips, and stopping as soon as the page is
+    // full so the common case reads barely more than `limit` documents.
+    const CHUNK = 50;
+    const candidates: { _id: Id<"artists">; name: string; venueName: string; city: string }[] = [];
+    for (let start = 0; start < ranked.length && candidates.length < limit; start += CHUNK) {
+      const chunk = await Promise.all(
+        ranked.slice(start, start + CHUNK).map((artistId) => ctx.db.get(artistId as Id<"artists">)),
+      );
+      for (const artist of chunk) {
+        if (candidates.length >= limit) break;
+        if (!artist || (artist.genres ?? []).length > 0) continue;
+        candidates.push({
+          _id: artist._id,
+          name: artist.name,
+          venueName: anchor.get(artist._id)!.venueName,
+          city: anchor.get(artist._id)!.city,
+        });
+      }
+    }
+    return candidates;
   },
 });
 
