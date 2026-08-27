@@ -127,7 +127,10 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
         {pending.length === 0
           ? accepted.length === 1
             ? "That night is in your diary now. Nothing was added that you did not confirm."
-            : `All ${accepted.length} are in your diary now. Nothing was added that you did not confirm.`
+            : accepted.length === 2
+              // "All 2" is not a sentence anyone says out loud.
+              ? "Both are in your diary now. Nothing was added that you did not confirm."
+              : `All ${accepted.length} are in your diary now. Nothing was added that you did not confirm.`
           : "Nothing here is in your diary yet. Each one shows the evidence it was matched on, so you are confirming a case rather than trusting a number."}
       </p>
 
