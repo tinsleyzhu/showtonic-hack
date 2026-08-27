@@ -697,6 +697,7 @@ agent.**
 | empty-state actions + share fallback (DiscoverView, ProfileView, ShowView StubCard) | L6 | 07:10Z |
 | interaction feedback: BackfillFlow accept, ShowView attendance/watchlist, AgentAccess revoke, ActivityView like/save | L6 | 07:35Z |
 | surface-settle/surface-accept motion at candidate-accept and plan-arrival (SquadPlan.tsx) | L6 | 07:35Z |
+| onboarding a11y: aria-pressed on taste/genre/city selection, announced errors (app/OnboardingFlow.tsx) | L6 | 08:05Z |
 
 ### L4 sponsors · 2026-08-27T00:10Z
 state:    blocked
