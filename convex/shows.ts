@@ -372,6 +372,13 @@ export const importUpcoming = mutation({
         });
       }
 
+      // A new show adopts the room's stored spelling. Without this the display
+      // string re-forks on the very next insert: the venue ROW is matched
+      // correctly by normalized key, but shows.venueName is denormalized, so a
+      // sweep writing "Brick & Mortar Music Hall" would put the retired
+      // spelling straight back into the Browse dropdown.
+      const canonicalVenueName = existingVenue?.name ?? event.venueName;
+
       const payload = {
         title: event.title,
         date: event.date,
@@ -379,7 +386,7 @@ export const importUpcoming = mutation({
         time: displayTime(event.startTime),
         startTime: event.startTime,
         venueId,
-        venueName: event.venueName,
+        venueName: canonicalVenueName,
         city: event.city,
         region: event.region,
         image: event.image,

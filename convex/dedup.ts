@@ -668,6 +668,26 @@ export const rewriteVenueNamesPage = internalMutation({
   },
 });
 
+// The venues row has to move too. Ingest gives a new show the room's stored
+// spelling, so leaving the record on a retired spelling would quietly undo
+// this pass for every row written afterwards — the twins would come back one
+// history sweep at a time.
+export const rewriteVenueRowNames = internalMutation({
+  args: { renames: v.array(v.object({ from: v.string(), to: v.string() })) },
+  handler: async (ctx, args) => {
+    const lookup = new Map(args.renames.map((rename) => [rename.from, rename.to]));
+    const venues = await ctx.db.query("venues").collect();
+    let patched = 0;
+    for (const venue of venues) {
+      const replacement = lookup.get(venue.name);
+      if (!replacement || replacement === venue.name) continue;
+      await ctx.db.patch(venue._id, { name: replacement, dedupKey: venueKey({ ...venue, name: replacement }) });
+      patched += 1;
+    }
+    return { patched };
+  },
+});
+
 export const canonicalizeVenueNames = action({
   args: { apply: v.optional(v.boolean()) },
   handler: async (
@@ -678,6 +698,7 @@ export const canonicalizeVenueNames = action({
     roomCount: number;
     spellingCount: number;
     rewritten: number;
+    venueRowsRenamed: number;
     renames: { keep: string; replace: string[] }[];
   }> => {
     const [shows, venues] = await Promise.all([
@@ -691,6 +712,7 @@ export const canonicalizeVenueNames = action({
       roomCount: plan.roomCount,
       spellingCount: plan.spellingCount,
       rewritten: 0,
+      venueRowsRenamed: 0,
       renames: plan.renames.map((rename) => ({ keep: rename.keep, replace: rename.replace })),
     };
     if (!args.apply) return summary;
@@ -710,6 +732,12 @@ export const canonicalizeVenueNames = action({
       if (page.isDone) break;
       cursor = page.cursor;
     }
+
+    const venueResult: { patched: number } = await ctx.runMutation(
+      internal.dedup.rewriteVenueRowNames,
+      { renames: pairs },
+    );
+    summary.venueRowsRenamed = venueResult.patched;
 
     return summary;
   },
