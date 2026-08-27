@@ -10,7 +10,7 @@ import { briefingIsEmpty, visibleFinds } from "../briefingSurface.js";
 import { PendingCandidates } from "./PendingCandidates";
 import { SquadPlanCard } from "./SquadPlan";
 import { AgentActivity } from "./AgentActivity";
-import { DetailSkeleton, EmptyLine, formatDate, LiveMessage, SectionTitle, todayIso } from "./shared";
+import { DetailSkeleton, formatDate, LiveMessage, SectionTitle, todayIso } from "./shared";
 
 // The Briefing — the home surface.
 //
@@ -162,6 +162,47 @@ function FindCard({
   );
 }
 
+// The way out of an empty briefing, offered identically wherever the briefing is
+// thin.
+//
+// It exists because the two thin states had drifted: a member with NOTHING was
+// offered the camera-roll scan, and a member with almost nothing — one activity
+// row, no finds — was offered only "browse what's on", under a sentence that
+// says "log three nights". The member with less data got the better route. The
+// scan is the primary because it is the one that actually produces history;
+// browsing is how you find one specific night, which is a different job.
+function NextStep({
+  text,
+  onOpenBackfill,
+  onBrowse,
+}: {
+  text: string;
+  onOpenBackfill: () => void;
+  onBrowse: () => void;
+}) {
+  return (
+    <div className="mt-4 border border-dashed border-[#2A2521] p-5">
+      <p className="text-sm leading-6 text-[#8A8177]">{text}</p>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          className="bg-[#FF7A50] px-4 py-2 text-xs font-black text-black"
+          onClick={onOpenBackfill}
+          type="button"
+        >
+          Scan your camera roll
+        </button>
+        <button
+          className="border border-[#2A2521] px-4 py-2 text-xs font-black text-[#4EC98F]"
+          onClick={onBrowse}
+          type="button"
+        >
+          Browse what&rsquo;s on
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // A belief you can argue with.
 //
 // The whole section is a claim the app makes about you, and a claim you cannot
@@ -309,9 +350,9 @@ export function BriefingView({
       {nothingYet ? (
         // The empty room, stated once and honestly, instead of four headings
         // that imply an agent has been working when none has.
-        <EmptyLine
-          actionLabel="Scan your camera roll"
-          onAction={onOpenBackfill}
+        <NextStep
+          onBrowse={onBrowse}
+          onOpenBackfill={onOpenBackfill}
           text="Your agent has nothing to report yet. Give it your history and it can start scouting."
         />
       ) : (
@@ -352,9 +393,9 @@ export function BriefingView({
             ) : (
               // Says WHY it is empty, per CONCIERGE.md. An empty recommender
               // that explains itself is a working one; a silent one looks broken.
-              <EmptyLine
-                actionLabel="Browse what's on"
-                onAction={onBrowse}
+              <NextStep
+                onBrowse={onBrowse}
+                onOpenBackfill={onOpenBackfill}
                 text="Log three nights and your agent has enough to scout with. Until then it would be guessing, so it doesn't."
               />
             )}
