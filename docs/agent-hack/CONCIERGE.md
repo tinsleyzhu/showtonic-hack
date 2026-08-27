@@ -26,7 +26,7 @@ of what you have already done.*
 ```
 
 Empty-room rule holds everywhere: a fresh account renders none of these, and
-section ② explains *why* it's empty ("log 3 nights and I can start scouting").
+section ② explains *why* it's empty ("log 5 nights and I can start scouting").
 
 Discover's browse grid survives as a secondary tab. It is demoted, not deleted.
 

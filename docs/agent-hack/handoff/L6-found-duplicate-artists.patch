@@ -1,0 +1,179 @@
+diff --git a/.gitignore b/.gitignore
+index a7187a1..e680363 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -61,3 +61,4 @@ agents/squad.tokens.json
+ /mcp/
+ /testing/
+ .mcp.json
++.gstack/
+diff --git a/convex/onboardingArtists.js b/convex/onboardingArtists.js
+index ce6b23b..46cd9fb 100644
+--- a/convex/onboardingArtists.js
++++ b/convex/onboardingArtists.js
+@@ -17,6 +17,67 @@ function normalize(value) {
+   return String(value ?? "").trim().toLowerCase();
+ }
+ 
++/**
++ * Two ingest sources, one artist. The catalog carries a separate `artists` row
++ * per source, so San Francisco's grid offered "My Morning Jacket" twice — one
++ * row from JamBase, one from Ticketmaster, different photos, same band. Nine of
++ * the top forty-eight SF names were doubled like this.
++ *
++ * Collapsing by name is the right layer for it: whatever the cause upstream, a
++ * member picking artists they love is never served by reading the same name
++ * twice. It also repairs an enrichment gap for free — "Alex G" existed as an
++ * enriched row and a bare one, and the union of their genres is what the taste
++ * profile downstream is actually built from.
++ *
++ * Counts merge by MAX, never by sum. The two rows may describe the very same
++ * concerts under two ids; adding them would invent shows that do not exist and
++ * inflate the artist up the ranking. Max says "at least this many", which is
++ * the only claim the data supports.
++ */
++function collapseByName(entries) {
++  const groups = new Map();
++  for (const entry of entries) {
++    const key = normalize(entry.name);
++    if (!key) continue;
++    const group = groups.get(key);
++    if (group) group.push(entry);
++    else groups.set(key, [entry]);
++  }
++
++  return [...groups.values()].map((group) => {
++    if (group.length === 1) return group[0];
++
++    // The richest row wins the identity: most present in the member's city,
++    // then in the catalog, then whichever one actually has a photo.
++    const best = group.reduce((left, right) => {
++      const better =
++        right.homeCityShows - left.homeCityShows ||
++        right.otherCityShows - left.otherCityShows ||
++        (right.image ? 1 : 0) - (left.image ? 1 : 0);
++      return better > 0 ? right : left;
++    });
++
++    const genres = [];
++    const seen = new Set();
++    for (const entry of group) {
++      for (const genre of entry.genres ?? []) {
++        const key = normalize(genre);
++        if (!key || seen.has(key)) continue;
++        seen.add(key);
++        genres.push(genre);
++      }
++    }
++
++    return {
++      ...best,
++      genres,
++      image: best.image ?? group.find((entry) => entry.image)?.image,
++      homeCityShows: Math.max(...group.map((entry) => entry.homeCityShows)),
++      otherCityShows: Math.max(...group.map((entry) => entry.otherCityShows)),
++    };
++  });
++}
++
+ /**
+  * @param entries one per artist:
+  *   { name, image?, genres?, homeCityShows, otherCityShows }
+@@ -27,7 +88,7 @@ export function rankOnboardingArtists(entries, options = {}) {
+   const { homeCity = "", limit = 18 } = options;
+   const scoped = normalize(homeCity).length > 0;
+ 
+-  return entries
++  return collapseByName(entries)
+     // The gate. An artist with nothing upcoming in your city is not a weak
+     // suggestion, it is a wrong one.
+     .filter((entry) => (scoped ? entry.homeCityShows > 0 : true))
+diff --git a/test/onboardingArtists.test.mjs b/test/onboardingArtists.test.mjs
+index ad83894..5fb262b 100644
+--- a/test/onboardingArtists.test.mjs
++++ b/test/onboardingArtists.test.mjs
+@@ -98,3 +98,84 @@ test("home city matching ignores case and stray whitespace", () => {
+ 
+   assert.equal(ranked.length, 1);
+ });
++
++test("one artist ingested by two sources is offered once, not twice", () => {
++  // The real grid: San Francisco's top forty-eight carried nine doubled names.
++  // "My Morning Jacket" appeared as a JamBase row and a Ticketmaster row, two
++  // different photos, same band, adjacent on screen.
++  const ranked = rankOnboardingArtists(
++    [
++      { name: "My Morning Jacket", homeCityShows: 8, otherCityShows: 0, image: "jambase.jpg" },
++      { name: "My Morning Jacket", homeCityShows: 8, otherCityShows: 0, image: "ticketmaster.jpg" },
++      artist("Osees", 3),
++    ],
++    { homeCity: "San Francisco" },
++  );
++
++  assert.deepEqual(
++    ranked.map((entry) => entry.name),
++    ["My Morning Jacket", "Osees"],
++  );
++});
++
++test("merged rows keep the union of their genres, which repairs a half-enriched artist", () => {
++  // "Alex G" existed twice: one row enriched, one bare. Genres are what the
++  // taste profile is built from downstream, so the union is the whole point of
++  // merging rather than picking a winner and discarding the other.
++  const [alex] = rankOnboardingArtists(
++    [
++      { name: "Alex G", homeCityShows: 2, otherCityShows: 0, genres: [] },
++      { name: "Alex G", homeCityShows: 1, otherCityShows: 0, genres: ["indie rock", "lo-fi"] },
++    ],
++    { homeCity: "San Francisco" },
++  );
++
++  assert.deepEqual(alex.genres, ["indie rock", "lo-fi"]);
++});
++
++test("merged counts take the max, because summing would invent concerts", () => {
++  // The two rows may well describe the very same eight nights under two ids.
++  // Summing them to sixteen would push the artist up the ranking on the
++  // strength of shows nobody can attend.
++  const [act] = rankOnboardingArtists(
++    [artist("Doubled Act", 8, 2), artist("Doubled Act", 8, 5)],
++    { homeCity: "San Francisco" },
++  );
++
++  assert.equal(act.homeCityShows, 8);
++  assert.equal(act.otherCityShows, 5);
++});
++
++test("a merged artist keeps a photo even when the most present row has none", () => {
++  const [act] = rankOnboardingArtists(
++    [
++      { name: "Doubled Act", homeCityShows: 9, otherCityShows: 0 },
++      { name: "Doubled Act", homeCityShows: 2, otherCityShows: 0, image: "poster.jpg" },
++    ],
++    { homeCity: "San Francisco" },
++  );
++
++  assert.equal(act.image, "poster.jpg");
++});
++
++test("collapsing runs before the city gate, so a local row rescues its own out-of-town twin", () => {
++  // The Ticketmaster row knows about fifty shows elsewhere and none here; the
++  // JamBase row knows about three here. Gating first would drop the former and
++  // lose its reach; the member should see one artist who plays SF and tours.
++  const [act] = rankOnboardingArtists(
++    [artist("Touring Local", 0, 50), artist("Touring Local", 3, 0)],
++    { homeCity: "San Francisco" },
++  );
++
++  assert.equal(act.homeCityShows, 3);
++  assert.equal(act.otherCityShows, 50);
++});
++
++test("names collapse on case and whitespace, since the two sources punctuate differently", () => {
++  const ranked = rankOnboardingArtists(
++    [artist("Osees", 3), artist("  osees  ", 2)],
++    { homeCity: "San Francisco" },
++  );
++
++  assert.equal(ranked.length, 1);
++});

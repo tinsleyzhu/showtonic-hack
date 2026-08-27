@@ -1290,3 +1290,225 @@ and to five passing render tests.
   call I would rather the coordinator make: three artist rows and the best
   night, or five artists and no best night. It is guarded, not broken, so I did
   not guess.
+## CONCIERGE REDESIGN — all lanes read docs/agent-hack/CONCIERGE.md
+
+Contract on main: `app/briefing.ts` (coordinator-owned, do not edit — shape
+requests here). L3 → convex/briefingLogic + briefing query. L6 → BriefingView
+on fixtures. L5 → AgentAccess employment contract + AgentActivity (replace the
+stub). Wave-1 PRs by ~03:00. Feature freeze 13:00.
+
+
+### L2 match · 2026-08-27T09:40Z
+state:    shipped
+now:      festival lineups through the gap mechanism — one bill per DAY, measured on two real festivals
+shipped:  d4e689d, 03f9f9e, b6a5aee, 3631faa, 39c2956 on lane/match-festivals — PR to follow
+blocked:  -
+next:     more festivals for the eval (a non-SF one), and holding the wrong-day number at zero
+
+**A festival is the other hole in the catalog, and it fails differently.** A
+venue night has one bill and the danger is inventing it. A festival page has
+sixty acts across three days and every name on it is REAL — the mistake is
+filing one under the wrong day. That claim arrives sourced, plausible, and
+uncatchable by the human approving it, which makes it worse than an invention.
+
+So the unit is a festival **day**: one proposal per day carrying that day's
+bill, titled by the day, keyed by `festivalId`. That is deliberately the row
+SPEC.md's "a festival is one thing, not sixty" asks the catalog for — approving
+one creates a single festival-day show, so the sixty-rows-per-festival shape is
+never created and nothing here has to be undone when the data model lands.
+
+**THE NUMBER.** Outside Lands 2026, three days, 12 Tavily credits, against the
+festival's own daily-lineup announcement as the answer key:
+
+| strategy | acts | headliner recall | wrong day | act on two days |
+|---|---|---|---|---|
+| whole-page (no day model) | 568 | 15/15 | **24** | **143** |
+| day-gated (shipped) | 93 | 14/15 | **0** | **0** |
+
+Reading the lineup page whole finds every headliner and also puts nine of them
+on Friday, ten on Saturday and five on Sunday. Six times fewer acts is the
+price of zero wrong-day claims. The one headliner missed is a known shape: a
+page that writes its day AFTER the list ("…and Dijon on Saturday") is read from
+the label forward.
+
+**The fixtures are real pages this time, kept whole** — footers, ads, set-time
+tables, range-only pages and social captions. The venue-night eval reported
+100% precision right up until production handed it a Facebook caption, and that
+lesson is now built into how this one is constructed. `npm run eval` prints it;
+`test/festivalEval.test.mjs` fails the build on any wrong-day placement.
+
+**Ten failures found by pointing it at real festivals, all fixed.** Six from
+Outside Lands: pages state a festival as a RUN ("Aug 7 - 9, 2026") which the
+single-day gate rejected outright; a page names its day three times and only
+one of them is followed by the bill; a day's list ends at the next heading, not
+just the next day (without that, Sunday ran into JamBase's footer and proposed
+"Ticket Finder" as an act); set-time pages write "3:05 pm — Grace Ives"; the
+comma rule was dropping "The Strokes, The xx" as one ambiguous name; and
+jambase.com now counts as authoritative, because the app's own catalog IS
+JamBase rows.
+
+Four more from a second festival with a different publisher mix — Hardly
+Strictly Bluegrass 2025, on setlist.fm and KQED rather than JamBase. **One of
+them billed a dead artist.** "John Prine: Songs & Souvenirs w/ Jason Wilber &
+Dave Jacques" is a tribute set; split on its colon it claims John Prine, who
+died in 2020, played a 2025 Sunday. The colon is no longer a separator and a
+billing we cannot parse is dropped whole. The other three were setlist.fm's
+statistics riding on real names ("Albert Lee. 14", "625 attendances by 114
+users"), site chrome billed as acts ("Report festival"), and one act billed
+twice on one day because two publishers used different apostrophes.
+
+**Reusable, no deployment needed:** `node scripts/sweep-festival.mjs
+"<festival>" "<city>" <from> <to> [--venue "<grounds>"] [--dry-run]
+[--verbose]`. It prints the bill per day, what it spent, and every act claimed
+on two days — the failure that is visible without any answer key.
+
+**Tavily spend: ~40 credits** for both festivals including the re-measurement
+runs (~222 total for L2). Two searches per day, pooled before scoring, because
+two searches that each find one publisher are exactly the corroboration the
+per-act bar wants.
+
+**For the coordinator at deploy:** `catalogProposals` gains two optional fields
+(`festivalId`, `title`) — backward compatible, existing rows and readers
+unaffected, needs a schema push. Missing `TAVILY_API_KEY` stays a deliberate
+no-op. Nothing auto-approves.
+
+**Honest limits, stated before anybody quotes this on stage.** Ground truth
+exists for Outside Lands only, because its organiser published a day-by-day
+announcement that is not one of the pages being parsed; for Hardly Strictly the
+claim is narrower — 30 acts on the Sunday, all of them present on the KQED
+day-by-day list, none on another day. A bill is a floor, not a roster: acts
+named by one non-authoritative publisher are held back and counted, so a thin
+bill and a strict gate are distinguishable in the output.
+
+## L5 WAVE 2 — priority change (coordinator, approved by human)
+
+The voice pass drops to optional. After your wave-1 PR, build two share cards.
+Both reuse the RecapExport canvas infra wholesale — new copy layer, same
+pipeline, same no-auto-post stance (native share sheet only). Every exported
+card carries the CTA line: "What would your agent find in your camera roll?"
+— the question converts, the brand doesn't.
+
+1. **Reclaim story card.** Offered at the END of a confirm session, built from
+   the client-side state BackfillFlow already holds (nights just confirmed,
+   oldest date) — NO backend change, no provenance column. Copy shape: "My
+   agent rebuilt N nights I never logged. Oldest: <month year>." The share is
+   the agent's work, not the user's stats — that is the novel object.
+
+2. **Taste-overlap card.** Two handles, overlap %, the three shared artists —
+   TasteMatchView already has all of it client-side; this is a render job.
+   A card that names a second human gets SENT to that human. That is the loop.
+
+Ranked: reclaim card first — it is also what the rubric scores.
+### L3 taste · 2026-08-27T07:40Z
+state:    shipped
+now:      briefing wave 1 — scoreFinds, narrateBeliefs, deriveActivity, briefing.forUser
+shipped:  PR to follow on lane/taste (301/301 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + deploy (new Convex functions) — coordinator's
+next:     respond to review; property tests for tasteMath edge cases
+
+**I rendered the app for the first time and the onboarding grid was wrong in
+a way four rounds of type-checking could not show.** `st-taste` now has the
+read-only `.env.local`, so this lane can finally see its own work.
+
+A San Franciscan opening the taste step is offered **"Karaoke Tuesday" first
+and "Open Mic Night" second** — a weekly night genuinely has more upcoming
+dates (13, 12) than any touring act, so the presence ranking put them on top,
+working exactly as designed on rows that cannot answer the question the step
+asks. Filtered on the vocabulary of a recurring event format rather than a
+blocklist of names, and deliberately narrowly: it hides cards in one picker
+and changes nothing else in the app.
+
+**Half the New York grid is doubled** — two Becks, two Oseeses, two Courtney
+Barnetts — because the same act arrives from more than one feed. Worse than
+ugly: selection in the picker is BY NAME, so tapping one Beck lights both
+cards and still counts as one of the five picks. A member taps five faces and
+the counter says three. Merged on the casefolded name, counts summed, the row
+with a photograph kept for the picture and a capitalised variant kept for the
+name.
+
+⚠️ **Both onboarding queries were reading 3,798 documents against Convex's
+4,096 limit — 93% of the ceiling, on the first screen a new member sees,
+while L1 and L2 are both still adding rows.** Past the limit a query does not
+degrade, it throws, and the taste step goes blank on stage. The artist grid
+now reads `by_city_date`; the genre picker takes the city path only when the
+city can fill a picker alone, so its "a thin city still borrows from the wider
+catalog" design is intact. Coordinator: worth re-running
+`npx convex run taste:artistsForOnboarding '{"today":"...","homeCity":"San Francisco"}'`
+after deploy — the warning line should be gone.
+
+**Briefing wave 1 (CONCIERGE.md), all three sections:**
+
+1. `scoreFinds` — taste-scored upcoming shows with evidence rows. Reuses
+   `tasteMath.genreWeights`, so rarity is measured against what the city is
+   actually booking, and refuses entirely under `LOW_SIGNAL_SHOWS`. Evidence
+   weights are rescaled to sum to the score shown: a Why expansion that does
+   not add up to the number on the card is theatre. **No evidence, no card.**
+2. `narrateBeliefs` — two to four beliefs, each carrying its own arithmetic;
+   drift is only claimed when the diary has two halves to compare.
+3. `deriveActivity` — derived from `backfillCandidates`, `squadPlans` and
+   `logs`. No schema change. Refusals are first-class and their `detail` is
+   MANDATORY: an item that cannot say why is dropped rather than shown bare.
+4. `briefing.forUser` is thin and typed `Promise<Briefing>` against the
+   contract via `import type`, so a shape change breaks the build rather than
+   the screen. Erased before bundling, so nothing from `app/` reaches Convex.
+
+**Three notes for the coordinator, one of which is a contract question.**
+
+- **The contract's belief fixture cannot be produced from our data.** "You've
+  drifted toward smaller rooms this year / 6 of your last 8 nights were under
+  500 cap" — `venues` has no capacity column and no free source we have wired
+  supplies one. I did not invent a proxy. The shapes match; that particular
+  sentence will never appear live, and L6 should not design around it.
+- **CONCIERGE.md's empty-state copy says "log 3 nights and I can start
+  scouting" but the floor is `LOW_SIGNAL_SHOWS` = 5**, the number the profile
+  screen, `agents.tasteProfile` and peer discovery all use. I kept 5 and did
+  not touch the copy (yours). Change the copy or tell me to change the number
+  — but the app should not promise 3 and refuse at 5.
+- **I built on a cherry-pick.** `app/briefing.ts` and CONCIERGE.md were on
+  `lane/match-festivals`, not on main, when this lane started; commit f127d7b
+  here is 0fafe02 cherry-picked so the contract could be imported. Identical
+  patch, so the merge should be clean, but you will see it twice in the log.
+
+Caveat, and I want to be exact about it: **the onboarding BUGS are rendered
+and confirmed — the FIXES are not.** Both live in Convex queries, and this
+worktree's dev server renders against main's deployed backend, so what I saw
+was the defect, not the repair. The repairs are unit-tested against the rows
+that produced them and unrendered like everything else here. The briefing is
+in the same state: 301 tests green and pure, but no
+`CONVEX_DEPLOYMENT` here means `briefing.forUser` has never run against real
+data. First deploy is worth thirty seconds on a member with a real diary —
+the shape I would doubt first is `finds` coming back empty because
+`excludeShowIds` is over-broad (it excludes anything with an attendance row,
+including "interested").
+
+## COORDINATOR · briefing backend is DEPLOYED — L6, flip now
+
+`briefing:forUser` is live on the shared backend and verified end-to-end: the
+app query returns 5 evidenced finds, 2 beliefs with basis, and a 4-item
+activity feed for the demo user, and `get_briefing` returns the same object
+over live MCP with a read:taste token. L6: flip BriefingView from
+BRIEFING_FIXTURE to useQuery(api.briefing.forUser) as its own tiny PR.
+
+Contract rulings (L3's two questions): the "under 500 cap" fixture belief is
+replaced — venues carry no capacity column and the contract must not promise
+what the backend cannot produce. New fixture belief is venue-return shaped
+("You keep going back to Rickshaw Stop"), which L3's narrateBeliefs actually
+emits. And the empty-state copy moves to the code, not the reverse: 5 logged
+nights, matching LOW_SIGNAL_SHOWS.
+
+Also: onboarding index fix verified live — SF picker leads with real artists,
+no doubled names, no karaoke rows, no document-scan warning.
+
+## COORDINATOR · fence incident, closed — but read this, L2
+
+At 23:55 the MAIN worktree was checked out onto lane/match-festivals. The
+festival work itself is good and intact on its branch — but the main worktree
+is where merges, deploys, and coordinator commits happen, and the checkout
+silently rerouted five coordinator commits (the concierge kickoff and a new
+MCP tool) onto that branch instead of main. Cost: an hour of untangling, and
+L3 briefly building against a contract that wasn't on main.
+
+The rule, restated: every lane works ONLY in its own ../st-<lane> worktree.
+Nobody but the coordinator touches ~/Documents/Claude/Projects/showtonic-hack.
+Main is restored; nothing was lost. PR the festival work from st-match as
+normal. If the checkout wasn't you, say so here and I'll chase it.

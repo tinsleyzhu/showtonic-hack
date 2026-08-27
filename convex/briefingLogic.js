@@ -1,0 +1,512 @@
+// The briefing's three new sections, as pure functions.
+//
+// The app inverts here: it stops being a catalog with agent features bolted on
+// and becomes the place you review what your agent did. That only works if
+// every card can be checked by the human reading it, so the rule from the
+// matcher carries over unchanged — NO EVIDENCE, NO CARD. A find with nothing
+// to point at is not a weak recommendation, it is a guess wearing a score.
+//
+// Nothing here invents a second taste model. Rarity weighting comes from
+// `tasteMath.genreWeights` and the low-signal floor from `LOW_SIGNAL_SHOWS`,
+// so the briefing, the profile screen, the MCP surface and peer discovery all
+// go quiet at the same diary length. One promise, one number.
+
+import { genreWeights, LOW_SIGNAL_SHOWS } from "./tasteMath.js";
+
+function normalize(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function unique(values) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function round(value, places = 2) {
+  const factor = 10 ** places;
+  return Math.round(value * factor) / factor;
+}
+
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+// Whole days between two ISO dates, positive when `later` is later. Dates in
+// this catalog are date-only strings, so this stays off Date's timezone edges.
+function daysBetween(earlier, later) {
+  const parse = (value) => Date.parse(`${String(value ?? "").slice(0, 10)}T00:00:00Z`);
+  const from = parse(earlier);
+  const to = parse(later);
+  if (Number.isNaN(from) || Number.isNaN(to)) return null;
+  return Math.round((to - from) / 86_400_000);
+}
+
+function monthsAgo(days) {
+  if (days < 45) return `${plural(Math.max(1, Math.round(days / 7)), "week")} ago`;
+  if (days < 365) return `${plural(Math.round(days / 30), "month")} ago`;
+  return `${plural(Math.max(1, Math.round(days / 365)), "year")} ago`;
+}
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function weekdayOf(isoDate) {
+  const parsed = Date.parse(`${String(isoDate ?? "").slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(parsed) ? null : WEEKDAYS[new Date(parsed).getUTCDay()];
+}
+
+// ---------------------------------------------------------------------------
+// ② WHAT YOUR AGENT FOUND
+// ---------------------------------------------------------------------------
+
+// Evidence weights are shares of the score, not points on top of it: the Why
+// expansion has to add up to the number on the card or it is theatre. Each
+// signal earns a raw contribution below, and the set is rescaled at the end so
+// the rows sum to exactly the score shown.
+const CONTRIBUTION = {
+  followedArtist: 0.28,
+  loggedArtist: 0.2,
+  venueNight: 0.08,
+  venueLoved: 0.05,
+  genreFit: 0.3,
+  recency: 0.12,
+  friendGoing: 0.16,
+};
+
+const CAP = {
+  artists: 0.5,
+  venue: 0.32,
+  genre: 0.3,
+  friends: 0.26,
+};
+
+function buildDiary(logs) {
+  const artistNights = new Map();
+  const venueNights = new Map();
+  const genreNights = new Map();
+  let lastSeenByArtist = new Map();
+
+  for (const log of logs) {
+    for (const name of unique(log.artistNames ?? [])) {
+      const key = normalize(name);
+      artistNights.set(key, (artistNights.get(key) ?? 0) + 1);
+      const existing = lastSeenByArtist.get(key);
+      if (!existing || String(log.showDate ?? "") > existing.date) {
+        lastSeenByArtist.set(key, { date: String(log.showDate ?? ""), name });
+      }
+    }
+    const venue = normalize(log.venueName);
+    if (venue) {
+      const entry = venueNights.get(venue) ?? { nights: 0, loved: 0, name: log.venueName };
+      entry.nights += 1;
+      if ((log.rating ?? 0) >= 4) entry.loved += 1;
+      venueNights.set(venue, entry);
+    }
+    for (const genre of unique(log.artistGenres ?? [])) {
+      const key = normalize(genre);
+      genreNights.set(key, (genreNights.get(key) ?? 0) + 1);
+    }
+  }
+
+  return { artistNights, venueNights, genreNights, lastSeenByArtist };
+}
+
+/**
+ * Taste-score upcoming shows into the briefing's "what your agent found".
+ *
+ * Refuses entirely under `LOW_SIGNAL_SHOWS` logged nights — scouting from
+ * three data points is the same "implying a pattern" the profile screen and
+ * the agent surface already refuse to do. The caller renders the reason.
+ */
+export function scoreFinds(shows, taste = {}) {
+  const {
+    logs = [],
+    followedArtistNames = [],
+    excludeShowIds = [],
+    peersGoing = {},
+    catalogGenres,
+    today = "",
+    limit = 5,
+  } = taste;
+
+  if (logs.length < LOW_SIGNAL_SHOWS) return [];
+
+  const diary = buildDiary(logs);
+  const followed = new Set(followedArtistNames.map(normalize));
+  const excluded = new Set(excludeShowIds.map(String));
+  // Rarity measured against what the city is actually offering, so "you both
+  // like jazz" stops being a compliment in a jazz-heavy catalog.
+  const weights = genreWeights(catalogGenres ?? shows.map((show) => show.genres ?? []));
+  const loggedNights = logs.length;
+
+  const finds = [];
+
+  for (const show of shows) {
+    if (excluded.has(String(show.showId))) continue;
+
+    const evidence = [];
+    const artistNames = unique(show.artistNames ?? []);
+
+    const followedOnBill = artistNames.filter((name) => followed.has(normalize(name)));
+    const seenBefore = artistNames.filter(
+      (name) => !followed.has(normalize(name)) && diary.artistNights.has(normalize(name)),
+    );
+
+    if (followedOnBill.length > 0) {
+      evidence.push({
+        kind: "artist-overlap",
+        detail:
+          followedOnBill.length === 1
+            ? `${followedOnBill[0]} is on the bill and you follow them`
+            : `Bill overlaps ${plural(followedOnBill.length, "artist")} you follow`,
+        weight: Math.min(CAP.artists, followedOnBill.length * CONTRIBUTION.followedArtist),
+      });
+    }
+
+    if (seenBefore.length > 0) {
+      const nights = seenBefore.reduce(
+        (total, name) => total + (diary.artistNights.get(normalize(name)) ?? 0),
+        0,
+      );
+      evidence.push({
+        kind: "artist-overlap",
+        detail:
+          seenBefore.length === 1
+            ? `You've logged ${seenBefore[0]} ${plural(nights, "time")}`
+            : `${plural(seenBefore.length, "artist")} on this bill are already in your diary`,
+        weight: Math.min(CAP.artists, seenBefore.length * CONTRIBUTION.loggedArtist),
+      });
+    }
+
+    const venue = diary.venueNights.get(normalize(show.venueName));
+    if (venue) {
+      evidence.push({
+        kind: "venue-history",
+        detail:
+          venue.loved > 0
+            ? `${plural(venue.loved, "night")} at this venue rated 4★ or higher`
+            : `${plural(venue.nights, "night")} at this venue in your diary`,
+        weight: Math.min(
+          CAP.venue,
+          venue.nights * CONTRIBUTION.venueNight + venue.loved * CONTRIBUTION.venueLoved,
+        ),
+      });
+    }
+
+    const showGenres = unique(show.genres ?? []);
+    let bestGenre = null;
+    for (const genre of showGenres) {
+      const key = normalize(genre);
+      const nights = diary.genreNights.get(key) ?? 0;
+      if (nights === 0) continue;
+      const rarity = weights[key] === undefined ? 1 : weights[key];
+      const share = nights / loggedNights;
+      const value = rarity * share;
+      if (!bestGenre || value > bestGenre.value) {
+        bestGenre = { genre, nights, value };
+      }
+    }
+    if (bestGenre && bestGenre.value > 0) {
+      evidence.push({
+        kind: "genre-fit",
+        detail: `${bestGenre.genre} on ${plural(bestGenre.nights, "night")} of your ${loggedNights}`,
+        weight: Math.min(CAP.genre, bestGenre.value * CONTRIBUTION.genreFit * 3),
+      });
+    }
+
+    if (today) {
+      let mostRecent = null;
+      for (const name of artistNames) {
+        const seen = diary.lastSeenByArtist.get(normalize(name));
+        if (!seen) continue;
+        const days = daysBetween(seen.date, today);
+        if (days === null || days < 0) continue;
+        if (!mostRecent || days < mostRecent.days) mostRecent = { ...seen, days };
+      }
+      if (mostRecent && mostRecent.days <= 365) {
+        evidence.push({
+          kind: "recency",
+          detail: `You saw ${mostRecent.name} ${monthsAgo(mostRecent.days)}`,
+          weight: CONTRIBUTION.recency,
+        });
+      }
+    }
+
+    const going = peersGoing[String(show.showId)] ?? [];
+    if (going.length > 0) {
+      const best = going.reduce((top, peer) => (peer.matchPercent > top.matchPercent ? peer : top));
+      evidence.push({
+        kind: "friend-going",
+        detail:
+          going.length === 1
+            ? `1 person with ${best.matchPercent}% taste overlap is going`
+            : `${going.length} people are going, the closest at ${best.matchPercent}% taste overlap`,
+        weight: Math.min(CAP.friends, CONTRIBUTION.friendGoing * going.length),
+      });
+    }
+
+    // The rule, and the reason this function can be trusted on stage: a show
+    // we cannot explain does not get a card, however plausible it looks.
+    if (evidence.length === 0) continue;
+
+    const raw = evidence.reduce((total, row) => total + row.weight, 0);
+    const score = clamp01(Math.min(0.99, raw));
+    // Rescale so the Why expansion adds up to the number on the card.
+    const scaled = evidence
+      .map((row) => ({ ...row, weight: round((row.weight / raw) * score) }))
+      .sort((left, right) => right.weight - left.weight);
+
+    finds.push({
+      showId: String(show.showId),
+      title: show.title,
+      date: show.date,
+      venueName: show.venueName,
+      city: show.city,
+      ...(show.image ? { image: show.image } : {}),
+      score: round(score),
+      evidence: scaled,
+    });
+  }
+
+  return finds
+    .sort((left, right) => right.score - left.score || left.date.localeCompare(right.date))
+    .slice(0, Math.max(1, Math.min(limit, 5)));
+}
+
+// ---------------------------------------------------------------------------
+// ④ WHAT IT BELIEVES
+// ---------------------------------------------------------------------------
+
+/**
+ * Narrate 2–4 beliefs about a member, each with the count that produced it.
+ *
+ * A belief you cannot state a basis for does not ship, so every candidate here
+ * carries its own arithmetic. `shows` is the upcoming catalog, used only to
+ * measure how unusual a taste is in the city the member is standing in — the
+ * same rarity weighting the peer matcher uses.
+ */
+export function narrateBeliefs(logs = [], shows = []) {
+  if (logs.length < LOW_SIGNAL_SHOWS) return [];
+
+  const diary = buildDiary(logs);
+  const total = logs.length;
+  const weights = genreWeights(shows.map((show) => show.genres ?? []));
+  const candidates = [];
+
+  // 1. Genre, weighted by how ordinary it is in this city's listings.
+  const genres = [...diary.genreNights.entries()].sort((left, right) => right[1] - left[1]);
+  if (genres.length > 0) {
+    const [genre, nights] = genres[0];
+    const share = nights / total;
+    const rarity = weights[genre] === undefined ? 1 : weights[genre];
+    if (nights >= 3 && share >= 0.25) {
+      candidates.push({
+        rank: share * (0.5 + rarity),
+        statement:
+          rarity >= 0.35
+            ? `${titleCase(genre)} is what you actually go out for, and this city barely books it`
+            : `${titleCase(genre)} is the thread through your diary`,
+        basis: `${nights} of your ${total} logged nights were ${genre} bills`,
+        strength: nights >= 6 && share >= 0.4 ? "strong" : "forming",
+      });
+    }
+  }
+
+  // 2. The night of the week you actually go out.
+  const weekdays = new Map();
+  for (const log of logs) {
+    const day = weekdayOf(log.showDate);
+    if (day) weekdays.set(day, (weekdays.get(day) ?? 0) + 1);
+  }
+  const topDay = [...weekdays.entries()].sort((left, right) => right[1] - left[1])[0];
+  if (topDay && topDay[1] >= 3 && topDay[1] / total >= 0.35) {
+    candidates.push({
+      rank: topDay[1] / total,
+      statement: `${topDay[0]} is your night`,
+      basis: `${topDay[1]} of ${total} logged shows fell on a ${topDay[0]}`,
+      strength: topDay[1] / total >= 0.5 ? "strong" : "forming",
+    });
+  }
+
+  // 3. A room you keep going back to.
+  const venue = [...diary.venueNights.values()].sort((left, right) => right.nights - left.nights)[0];
+  if (venue && venue.nights >= 3) {
+    candidates.push({
+      rank: venue.nights / total,
+      statement: `You keep going back to ${venue.name}`,
+      basis:
+        venue.loved > 0
+          ? `${plural(venue.nights, "night")} there, ${venue.loved} of them rated 4★ or higher`
+          : `${plural(venue.nights, "night")} there across your diary`,
+      strength: venue.nights >= 5 ? "strong" : "forming",
+    });
+  }
+
+  // 4. Drift: the recent half of the diary against the older half. Stated only
+  //    when the diary is long enough to HAVE two halves worth comparing.
+  const drift = describeDrift(logs);
+  if (drift) candidates.push(drift);
+
+  // 5. An artist you follow with your feet rather than a button.
+  const repeat = [...diary.artistNights.entries()]
+    .filter(([, nights]) => nights >= 3)
+    .sort((left, right) => right[1] - left[1])[0];
+  if (repeat) {
+    const name = diary.lastSeenByArtist.get(repeat[0])?.name ?? repeat[0];
+    candidates.push({
+      rank: repeat[1] / total,
+      statement: `You see ${name} whenever they play`,
+      basis: `${plural(repeat[1], "night")} with them in a diary of ${total}`,
+      strength: repeat[1] >= 4 ? "strong" : "forming",
+    });
+  }
+
+  return candidates
+    .sort((left, right) => right.rank - left.rank)
+    .slice(0, 4)
+    .map(({ statement, basis, strength }) => ({ statement, basis, strength }));
+}
+
+function titleCase(value) {
+  return String(value ?? "").replace(/(^|\s)\S/g, (character) => character.toUpperCase());
+}
+
+function describeDrift(logs) {
+  const dated = logs
+    .filter((log) => String(log.showDate ?? "").length >= 10)
+    .sort((left, right) => String(left.showDate).localeCompare(String(right.showDate)));
+  if (dated.length < 8) return null;
+
+  const half = Math.floor(dated.length / 2);
+  const older = dated.slice(0, half);
+  const recent = dated.slice(dated.length - half);
+  const shareOf = (window, genre) =>
+    window.filter((log) => unique(log.artistGenres ?? []).some((value) => normalize(value) === genre))
+      .length / window.length;
+
+  let best = null;
+  const genres = new Set(
+    recent.flatMap((log) => unique(log.artistGenres ?? []).map(normalize)).filter(Boolean),
+  );
+  for (const genre of genres) {
+    const now = shareOf(recent, genre);
+    const before = shareOf(older, genre);
+    if (now < 0.5 || now - before < 0.25) continue;
+    if (!best || now - before > best.delta) {
+      best = { genre, delta: now - before, now, before };
+    }
+  }
+  if (!best) return null;
+
+  const nowCount = Math.round(best.now * recent.length);
+  const beforeCount = Math.round(best.before * older.length);
+  return {
+    rank: best.delta + 0.2,
+    statement: `You've moved toward ${best.genre} this year`,
+    basis: `${nowCount} of your last ${recent.length} nights were ${best.genre}, against ${beforeCount} of the ${older.length} before`,
+    strength: best.delta >= 0.4 ? "strong" : "forming",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ③ WHILE YOU WERE AWAY
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive the activity feed from tables that already exist — no new writes, no
+ * schema change, and therefore nothing that can drift from what happened.
+ *
+ * Refusals are first-class items and their `detail` is MANDATORY: a refusal
+ * without a stated reason is indistinguishable from a failure, and the whole
+ * point of showing them is that declining is a decision the agent made and can
+ * defend. An item that cannot say why is dropped rather than shown bare.
+ */
+export function deriveActivity(candidates = [], squadPlans = [], logs = [], options = {}) {
+  const { limit = 10, userId } = options;
+  const items = [];
+
+  for (const candidate of candidates) {
+    const night = String(candidate.clusterDate ?? "").slice(0, 10);
+    const photos = candidate.photoCount ?? 0;
+    const confidence = Math.round((candidate.confidence ?? 0) * 100);
+    const where = candidate.showTitle
+      ? `${candidate.showTitle}${candidate.venueName ? ` at ${candidate.venueName}` : ""}`
+      : null;
+
+    if (candidate.status === "pending" && where) {
+      items.push({
+        at: candidate.createdAt ?? 0,
+        kind: "reclaimed",
+        summary: `Rebuilt ${night} from ${plural(photos, "photo")}: ${where}, ${confidence}%`,
+        detail: "Waiting on you in Decisions.",
+      });
+      continue;
+    }
+
+    if (candidate.status === "accepted" && where) {
+      items.push({
+        at: candidate.createdAt ?? 0,
+        kind: "reclaimed",
+        summary: `You confirmed ${where} — ${night} is in your diary`,
+      });
+      continue;
+    }
+
+    // No show attached: the matcher found a night it could not name. That is a
+    // refusal, and it only ships if the evidence says why.
+    const why = firstDetail(candidate.evidence);
+    if (!where && why) {
+      items.push({
+        at: candidate.createdAt ?? 0,
+        kind: "refused",
+        summary: `Declined to name the night of ${night}`,
+        detail: why,
+      });
+    }
+  }
+
+  for (const plan of squadPlans) {
+    if (userId && Array.isArray(plan.userIds) && !plan.userIds.some((id) => String(id) === String(userId))) {
+      continue;
+    }
+    const transcript = Array.isArray(plan.transcript) ? plan.transcript : [];
+    const closing = transcript[transcript.length - 1];
+    const settled =
+      plan.settlement === "simulated"
+        ? "Payment was simulated — no ticketing API here sells to agents."
+        : undefined;
+
+    items.push({
+      at: plan.createdAt ?? closing?.at ?? 0,
+      kind: "squad",
+      summary: `${plural(plan.userIds?.length ?? 0, "agent")} agreed on ${plan.showTitle}${
+        plan.showDate ? ` on ${plan.showDate}` : ""
+      }`,
+      detail: closing ? `${closing.agent}: "${closing.message}"` : settled,
+    });
+  }
+
+  for (const log of logs) {
+    if (log.source !== "reclaim" && log.source !== "backfill") continue;
+    items.push({
+      at: log.createdAt ?? 0,
+      kind: "reclaimed",
+      summary: `Added ${log.showTitle} (${String(log.showDate ?? "").slice(0, 10)}) to your diary`,
+      detail: log.source === "reclaim" ? "Rebuilt from your camera roll, with your confirmation." : undefined,
+    });
+  }
+
+  return items
+    .filter((item) => item.kind !== "refused" || Boolean(item.detail))
+    .map((item) => (item.detail === undefined ? { at: item.at, kind: item.kind, summary: item.summary } : item))
+    .sort((left, right) => right.at - left.at)
+    .slice(0, Math.max(1, Math.min(limit, 10)));
+}
+
+function firstDetail(evidence) {
+  if (!Array.isArray(evidence)) return null;
+  const row = evidence.find((entry) => entry && String(entry.detail ?? "").trim().length > 0);
+  return row ? String(row.detail).trim() : null;
+}

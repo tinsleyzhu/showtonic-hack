@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { genreWeights, LOW_SIGNAL_SHOWS, rankCompatiblePeers, tasteScore } from "./tasteMath.js";
@@ -272,6 +273,38 @@ export const compatiblePeers = query({
   },
 });
 
+// Both onboarding queries used to read every upcoming show in the catalog and
+// then join it to its artists. Convex reported 3,798 document reads against a
+// 4,096 limit on the live deployment — 93% of the ceiling, on the first screen
+// a new member sees, with L1 and L2 both still adding rows. Over the line the
+// query does not degrade, it throws, and the taste step goes blank.
+//
+// So read the member's city through `by_city_date` instead of filtering the
+// world afterwards. The fallback is not a nicety: an empty indexed read could
+// mean a genuinely quiet city OR a city string that does not match what the
+// feeds stored, and the second must not be indistinguishable from the first.
+const SHOW_READ_CAP = 4000;
+
+// Below this, a city cannot furnish a picker on its own and the global catalog
+// is the honest source — the same reason `rankOnboardingGenres` counts shows
+// elsewhere at weight one rather than discarding them.
+const THIN_CITY_CATALOG = 300;
+
+async function upcomingShows(ctx: QueryCtx, { city, today }: { city: string; today: string }) {
+  if (city) {
+    const inCity = await ctx.db
+      .query("shows")
+      .withIndex("by_city_date", (q) => q.eq("city", city).gte("date", today))
+      .take(SHOW_READ_CAP);
+    if (inCity.length > 0) return { shows: inCity, cityOnly: true };
+  }
+  const everywhere = await ctx.db
+    .query("shows")
+    .withIndex("by_date", (q) => q.gte("date", today))
+    .take(SHOW_READ_CAP);
+  return { shows: everywhere, cityOnly: false };
+}
+
 // Genre-first onboarding (design 04's taste step, genre variant).
 //
 // Ranking by raw catalog counts would offer a San Franciscan twelve flavours
@@ -286,10 +319,14 @@ export const genresForOnboarding = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const upcoming = await ctx.db
-      .query("shows")
-      .withIndex("by_date", (q) => q.gte("date", args.today))
-      .take(4000);
+    // A city thick enough to fill a picker fills it alone; a thin one still
+    // borrows from the wider catalog, which is what `cityWeight` was for.
+    const city = (args.homeCity ?? "").trim();
+    const inCity = await upcomingShows(ctx, { city, today: args.today });
+    const upcoming =
+      inCity.cityOnly && inCity.shows.length >= THIN_CITY_CATALOG
+        ? inCity.shows
+        : (await upcomingShows(ctx, { city: "", today: args.today })).shows;
 
     // Shows denormalize artist names but not genres, so join once per artist
     // rather than once per show.
@@ -337,10 +374,12 @@ export const artistsForOnboarding = query({
   handler: async (ctx, args) => {
     const genre = (args.genre ?? "").trim().toLowerCase();
 
-    const upcoming = await ctx.db
-      .query("shows")
-      .withIndex("by_date", (q) => q.gte("date", args.today))
-      .take(4000);
+    // Once a city is known the gate discards everything outside it anyway, so
+    // reading the world and then throwing most of it away was pure cost.
+    const { shows: upcoming } = await upcomingShows(ctx, {
+      city: (args.homeCity ?? "").trim(),
+      today: args.today,
+    });
 
     // Counted separately rather than blended into one weight: presence in the
     // member's city is a gate, and a gate cannot be built from a number that

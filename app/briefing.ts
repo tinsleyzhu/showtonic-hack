@@ -73,8 +73,8 @@ export const BRIEFING_FIXTURE: Briefing = {
   ],
   beliefs: [
     {
-      statement: "You've drifted toward smaller rooms this year",
-      basis: "6 of your last 8 nights were in rooms under 500 cap",
+      statement: "You keep going back to Rickshaw Stop",
+      basis: "4 of your logged nights this year were in that room",
       strength: "strong",
     },
     {
