@@ -28,6 +28,7 @@ import {
 import type { BackfillCandidate, BackfillPhoto, EvidenceKind } from "../backfill.d";
 import { readCameraRoll, summarizeRoll } from "../photoMeta.js";
 import { RatingStars, todayIso, type Show } from "./shared";
+import { ReclaimShareCard } from "./ReclaimShareCard";
 
 const CARD_COLORS = ["#F97354", "#6FBCD3", "#9B7FB8", "#D9B44A", "#5F7A5E"];
 
@@ -102,6 +103,17 @@ export function BackfillFlow({
   const [reassignOpen, setReassignOpen] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Only for the share card's footer, and absent is fine — the card drops the
+  // line rather than inventing a name. Read lazily rather than in an effect:
+  // the card lives in the `complete` stage, which no first render can reach, so
+  // there is no server/client pair to disagree.
+  const [handle] = useState(() => {
+    try {
+      return window.localStorage.getItem("showtonic.handle") ?? "";
+    } catch {
+      return "";
+    }
+  });
 
   const saveCandidates = useMutation(api.backfill.saveCandidates);
   const resolveCandidate = useMutation(api.backfill.resolve);
@@ -479,6 +491,7 @@ export function BackfillFlow({
                 <span className="font-black text-[#4EC98F]">Review anytime</span>
               </p>
             )}
+            <ReclaimShareCard handle={handle} nights={resolved.map((entry) => entry.candidate)} />
             <div className="flex-1" />
             <button className="mt-8 w-full bg-[#FF7A50] px-5 py-4 text-sm font-black text-black" onClick={() => onDone(resolved.length)} type="button">
               Open my diary

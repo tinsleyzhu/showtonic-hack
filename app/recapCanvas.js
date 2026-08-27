@@ -25,6 +25,16 @@ const PAD = 72;
 const DISPLAY = '"Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif';
 const SANS = '-apple-system, "Helvetica Neue", Arial, sans-serif';
 
+// The paint box, exported so the other share cards use these exact values
+// rather than eyeballing a second set that drifts one hex digit away. One
+// brand, three cards.
+const CARD_THEME = { INK, CREAM, MUTED, ORANGE, GREEN, PAD, DISPLAY, SANS };
+
+// Every exported card carries this line. The question is the invitation — it
+// works on someone who has never heard of us, which "Made with Showtonic"
+// does not.
+const CARD_CTA = "What would your agent find in your camera roll?";
+
 // object-fit: cover, as source-rectangle arithmetic. Returns the crop of the
 // image to draw so it fills the box without distorting — a squashed hero is
 // the single most obvious tell that an image was machine-generated.
@@ -255,4 +265,13 @@ function firstDrawable(recap, images) {
   return fallback ?? null;
 }
 
-export { coverRect, describeShareFailure, drawRecap, RECAP_FORMATS, recapFilename, wrapLines };
+export {
+  CARD_CTA,
+  CARD_THEME,
+  coverRect,
+  describeShareFailure,
+  drawRecap,
+  RECAP_FORMATS,
+  recapFilename,
+  wrapLines,
+};
