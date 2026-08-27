@@ -23,6 +23,13 @@ const OUT_DIR = join(process.cwd(), ".snapshots");
 
 // The accounts the demo actually shows, plus the throwaway.
 const HANDLES = ["tinsley", "walkthrough"];
+// The agent surface, checked only when a token is supplied. An external
+// judge-agent reads the app through here, and it goes through the same tables
+// by a different path — so it can disagree with the screen, which is the whole
+// reason to check it separately.
+const MCP_ORIGIN = process.env.SHOWTONIC_APP_URL ?? "https://showtonic-hack.showtonic.workers.dev";
+const MCP_TOKEN = process.env.SHOWTONIC_MCP_TOKEN ?? "";
+const MCP_HANDLE = process.env.SHOWTONIC_MCP_HANDLE ?? "walkthrough";
 const CITIES = ["San Francisco", "New York"];
 const TODAY = process.env.SNAPSHOT_TODAY ?? new Date().toISOString().slice(0, 10);
 
@@ -32,6 +39,24 @@ function readEnvUrl() {
     return /NEXT_PUBLIC_CONVEX_URL=(\S+)/.exec(env)?.[1] ?? "";
   } catch {
     return "";
+  }
+}
+
+// One MCP tool call. Returns the parsed payload, or an { __error } marker —
+// never throws, because a dead agent surface is a finding, not a crash.
+async function mcpCall(name, args = {}) {
+  try {
+    const response = await fetch(`${MCP_ORIGIN}/api/agent/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${MCP_TOKEN}` },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),
+    });
+    const body = await response.json();
+    if (body.error) return { __error: String(body.error.message ?? body.error).slice(0, 160) };
+    const text = body.result?.content?.[0]?.text;
+    return typeof text === "string" ? JSON.parse(text) : body.result;
+  } catch (error) {
+    return { __error: String(error).slice(0, 160) };
   }
 }
 
@@ -107,6 +132,34 @@ async function snapshot() {
     };
   }
 
+  if (MCP_TOKEN) {
+    const [recap, briefing, manifest] = await Promise.all([
+      mcpCall("generate_recap"),
+      mcpCall("get_briefing"),
+      fetch(`${MCP_ORIGIN}/.well-known/mcp.json`).then((r) => r.json()).catch((e) => ({ __error: String(e) })),
+    ]);
+    const screen = out.users[MCP_HANDLE];
+    out.mcp = {
+      handle: MCP_HANDLE,
+      toolsPublished: (manifest?.tools ?? []).length,
+      recapShows: recap?.shows,
+      recapArtists: recap?.artists,
+      recapTopArtists: (recap?.topArtists ?? []).map((a) => `${a.name}:${a.count}`),
+      briefingFinds: (briefing?.finds ?? []).length,
+      briefingActivity: (briefing?.activity ?? []).length,
+      error: recap?.__error ?? briefing?.__error ?? null,
+      // The cross-surface check. The agent and the screen read the same logs by
+      // different paths; a merge that desyncs them is exactly how you get a
+      // recap claiming 7 nights above a list of 6, told to a judge's agent.
+      agreesWithScreen:
+        !screen || screen.missing || screen.recap?.empty
+          ? "n/a"
+          : recap?.shows === screen.recap.shows && recap?.artists === screen.recap.artists
+            ? "yes"
+            : "MISMATCH",
+    };
+  }
+
   for (const city of CITIES) {
     const stats = await query("shows:catalogStats", { city, since: "2000-01-01", today: TODAY });
     out.cities[city] = stats?.__error ? stats : stats;
@@ -163,7 +216,9 @@ if (mode === "diff") {
   }
   // Anything that looks like a broken reference is called out separately,
   // because a count that merely moved is fine and a dangling row never is.
-  const alarms = changes.filter((c) => /dangling|missing|WithoutShow|WithoutEvidence|withoutReason|NO SHOW ROW/i.test(`${c.key}${c.after}`));
+  const alarms = changes.filter((c) =>
+    /dangling|missing|WithoutShow|WithoutEvidence|withoutReason|NO SHOW ROW|MISMATCH|__error|mcp\.error/i.test(`${c.key}${c.after}`),
+  );
   if (alarms.length) {
     console.log(`\n!! ${alarms.length} of those look like BROKEN REFERENCES, not just moved numbers.`);
     process.exitCode = 1;
@@ -188,5 +243,13 @@ if (mode === "diff") {
         `, diary ${user.diary.entries} (${user.diary.danglingShow} dangling)` +
         `, finds ${user.briefing.finds.length}, pending ${user.pendingCandidates.length}`,
     );
+  }
+  if (result.mcp) {
+    console.log(
+      `  MCP(@${result.mcp.handle}): ${result.mcp.toolsPublished} tools, recap ${result.mcp.recapShows} shows, ` +
+        `agrees with screen: ${result.mcp.agreesWithScreen}${result.mcp.error ? ` — ${result.mcp.error}` : ""}`,
+    );
+  } else {
+    console.log("  MCP: skipped (set SHOWTONIC_MCP_TOKEN to include the agent surface)");
   }
 }
