@@ -36,9 +36,11 @@ type Term = {
 //
 //   · `write:logs` really does write straight to the diary. Saying "only after
 //     you confirm" here would be a lie on the one screen that cannot afford one.
-//   · `write:candidates` covers BOTH proposing a night and resolving it, so an
-//     agent holding it can accept its own proposal. Until those split into two
-//     scopes (a convex/worker change — flagged in TEAM.md), the contract says so.
+//   · `write:candidates` used to cover proposing a night AND resolving it, so
+//     an agent could accept its own proposal. Writing that down here is what
+//     got it split: `resolve:candidates` now exists, is never granted by
+//     default, and is fenced below next to `pay` for the same reason — it is
+//     the duty where a mistake writes something false into a person's history.
 const TERMS: Term[] = [
   {
     id: "read:shows",
@@ -58,8 +60,7 @@ const TERMS: Term[] = [
   {
     id: "write:candidates",
     duty: "Can rebuild your past nights",
-    terms:
-      "Turns photo timestamps into proposed nights that wait for your yes. This permission also lets it file the ones it is sure of.",
+    terms: "Turns photo timestamps into proposed nights. Every one of them waits for your yes.",
   },
   {
     id: "write:logs",
@@ -68,13 +69,23 @@ const TERMS: Term[] = [
   },
 ];
 
-// Kept out of the list above on purpose. It is not one more checkbox.
-const PAY_TERM: Term = {
-  id: "pay",
-  duty: "Can spend your money",
-  terms:
-    "Buys tickets for a plan your group has agreed on. An agent that can plan a night is not thereby one that can pay for it, so this never comes switched on — you turn it on yourself, every time you hire.",
-};
+// Kept out of the list above on purpose. These are not two more checkboxes:
+// they are the two duties where a wrong move costs money or rewrites a life,
+// and neither is ever on by default.
+const FENCED_TERMS: Term[] = [
+  {
+    id: "resolve:candidates",
+    duty: "Can accept its own proposals",
+    terms:
+      "Files a rebuilt night into your diary without asking. Without this, it can propose all night and change nothing — which is how an agent should arrive.",
+  },
+  {
+    id: "pay",
+    duty: "Can spend your money",
+    terms:
+      "Buys tickets for a plan your group has agreed on. An agent that can plan a night is not thereby one that can pay for it, so this never comes switched on — you turn it on yourself, every time you hire.",
+  },
+];
 
 const DEFAULTS = new Set(["read:shows", "read:taste", "write:attendance", "write:candidates"]);
 
@@ -246,7 +257,11 @@ export function AgentAccess({ userId }: { userId: Id<"users"> }) {
             <ShieldAlert aria-hidden className="h-3.5 w-3.5" />
             Never on by default
           </legend>
-          <TermRow checked={scopes.has(PAY_TERM.id)} onToggle={() => toggle(PAY_TERM.id)} term={PAY_TERM} />
+          <div className="divide-y divide-white/10">
+            {FENCED_TERMS.map((term) => (
+              <TermRow checked={scopes.has(term.id)} key={term.id} onToggle={() => toggle(term.id)} term={term} />
+            ))}
+          </div>
         </fieldset>
 
         <ul className="mt-5 space-y-2 text-xs leading-5 text-[#C9C1B4]">
@@ -288,6 +303,7 @@ export function AgentAccess({ userId }: { userId: Id<"users"> }) {
                   <b className={`block truncate text-sm ${token.revoked ? "text-[#8A8177] line-through" : ""}`}>{token.label}</b>
                   <small className="text-[#8A8177]">
                     {token.revoked ? "Dismissed" : `${token.scopes.length} ${token.scopes.length === 1 ? "duty" : "duties"}`}
+                    {!token.revoked && token.scopes.includes("resolve:candidates") && <span className="text-[#FF7A50]"> · files its own</span>}
                     {!token.revoked && token.scopes.includes("pay") && <span className="text-[#FF7A50]"> · can spend</span>}
                     {!token.revoked && (token.lastUsedAt ? " · has worked" : " · not started yet")}
                   </small>

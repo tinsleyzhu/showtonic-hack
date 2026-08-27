@@ -45,3 +45,16 @@ export function describeShareFailure(error: unknown): {
   failed: boolean;
   message: string;
 };
+
+export const CARD_THEME: {
+  INK: string;
+  CREAM: string;
+  MUTED: string;
+  ORANGE: string;
+  GREEN: string;
+  PAD: number;
+  DISPLAY: string;
+  SANS: string;
+};
+
+export const CARD_CTA: string;

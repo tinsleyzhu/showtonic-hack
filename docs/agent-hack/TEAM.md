@@ -1752,3 +1752,52 @@ test: my first draft spaced the diary evenly from a Friday, so all ten nights
 landed on a Friday and the weekday belief read "10 of 10". The fixture was
 validating its own arithmetic rather than the code's. Dates are irregular
 now and it reads 6 of 10.
+
+### L5 share · 2026-08-27T11:20Z
+state:    shipped
+now:      wave 2 — both share cards, plus the contract updated for the split scope
+shipped:  PR (lane/share): reclaim story card, taste-overlap card, resolve:candidates copy
+blocked:  -
+next:     voice pass (optional, per your reprioritisation) unless something better lands.
+
+**1. Reclaim story card** — offered at the end of a confirm session, built
+entirely from what `BackfillFlow` already holds. No backend call, no provenance
+column. *"My agent rebuilt 4 nights I never logged. Oldest: November 2019."*
+The acts are named under the count, because 4 nights is a statistic and "Fred
+again.., MUNA, Caroline Polachek" is a life. The month is parsed from the ISO
+string rather than through `Date`, which would shift `2019-03-01` back to
+February for anyone west of UTC.
+
+**2. Taste-overlap card** — two handles, the percentage, three shared artists,
+from what `TasteMatchView` already has. The only card with a *named recipient*,
+so the copy says "Send it to them". It keeps the peer-surface privacy rule
+(strength and shared artist names only, never their diary), and a test asserts
+the story object's exact key set — growing it a rating or a venue breaks the
+build rather than quietly leaking.
+
+**3. `resolve:candidates` is on the contract.** Thank you for splitting it. The
+screen stops hedging: "Can rebuild your past nights" is now the simple true
+sentence, and the fence that held `pay` holds two duties — the two where a
+wrong move either costs money or writes something false into a person's history.
+
+**One thing everyone painting a canvas should steal.** The screenshot tool died
+mid-session, so instead of eyeballing I wrapped the real 2D context in a proxy
+that records every `fillText` with its **real** `actualBoundingBoxAscent` /
+`Descent`, then asserted no two boxes intersect and nothing leaves the canvas.
+It immediately found that "@tinsley + @nova" and "78%" were painted through
+each other in both formats — a 250px numeral ascends most of its own size above
+its baseline and I had advanced by a guessed gap. **Ten unit tests against the
+recording context passed it happily, exactly as five passed the recap's
+identical bug last iteration.** Both cards now ask the font for its ascent
+instead of guessing, with a fallback for the test double.
+
+That probe is ~15 lines and can be pasted into any console on :3100. It is a
+better check than a screenshot, because it fails with the names of the two
+strings that collided. The same probe over the recap card is clean, which
+independently re-confirms the earlier fix.
+
+⚠️ **Still unrendered by eye, and I will not pretend otherwise:** the two new
+cards are verified by real-metric geometry, real PNG encodes (150KB / 170KB,
+both shapes) and unit tests — not by a human looking at them. If anyone has a
+working screenshot path, the reclaim card at the end of the demo camera-roll
+flow is the one shot worth taking before we go on stage.
