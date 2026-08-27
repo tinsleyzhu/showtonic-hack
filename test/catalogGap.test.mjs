@@ -9,7 +9,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CREDITS_PER_ADVANCED_SEARCH,
   MIN_PROPOSAL_CONFIDENCE,
+  eachNightInRange,
+  estimateSweepCredits,
+  nightsMissingFromCatalog,
   buildGapQueries,
   describeProposal,
   extractArtistNames,
@@ -234,4 +238,80 @@ test("a city-wide search without a venue anchor cannot clear the bar alone", () 
 test("an empty search result set declines rather than throwing", () => {
   assert.equal(proposeFromResults(GAP, []).proposal, null);
   assert.equal(proposeFromResults(GAP, null).proposal, null);
+});
+
+// --- History sweeps ---------------------------------------------------------
+//
+// Pointing the same search at the catalog's holes rather than at one person's
+// unmatched night. Ticketmaster sells no past events and Setlist.fm needs a key
+// we do not have, so this is currently the only route to catalog history.
+
+test("a date range walks every night, inclusive of both ends", () => {
+  assert.deepEqual(eachNightInRange("2026-06-27", "2026-06-30"), [
+    "2026-06-27",
+    "2026-06-28",
+    "2026-06-29",
+    "2026-06-30",
+  ]);
+  assert.deepEqual(eachNightInRange("2026-06-27", "2026-06-27"), ["2026-06-27"]);
+});
+
+test("a backwards or malformed range walks nothing rather than looping", () => {
+  assert.deepEqual(eachNightInRange("2026-06-30", "2026-06-27"), []);
+  assert.deepEqual(eachNightInRange("not-a-date", "2026-06-27"), []);
+  assert.deepEqual(eachNightInRange("2026-06-27", ""), []);
+});
+
+test("a month boundary and a leap day are ordinary nights", () => {
+  assert.deepEqual(eachNightInRange("2026-01-31", "2026-02-01"), ["2026-01-31", "2026-02-01"]);
+  assert.equal(eachNightInRange("2024-02-28", "2024-03-01").includes("2024-02-29"), true);
+});
+
+test("a sweep fills holes and never second-guesses what the catalog has", () => {
+  // Dates the catalog already explains are left alone: those rows came from a
+  // first-party source, and a web guess does not get to argue with them.
+  const missing = nightsMissingFromCatalog("2026-06-27", "2026-07-01", [
+    "2026-06-28",
+    "2026-06-30",
+  ]);
+  assert.deepEqual(missing, ["2026-06-27", "2026-06-29", "2026-07-01"]);
+});
+
+test("an empty catalog means every night in range is a hole", () => {
+  assert.equal(nightsMissingFromCatalog("2026-06-27", "2026-07-01", []).length, 5);
+  assert.equal(nightsMissingFromCatalog("2026-06-27", "2026-07-01", null).length, 5);
+});
+
+test("a sweep can price itself before it spends anything", () => {
+  // Tavily credits are finite, event-coded, and expire with the event. A batch
+  // job that cannot say what it is about to spend is not one to approve.
+  assert.equal(estimateSweepCredits(10, 1), 10 * CREDITS_PER_ADVANCED_SEARCH);
+  assert.equal(estimateSweepCredits(0), 0);
+  assert.equal(estimateSweepCredits(-5), 0);
+});
+
+test("a history proposal is scored exactly like a reclaim proposal", () => {
+  // The claim is weaker — "this show happened", not "you were here" — but the
+  // bar is identical. Nobody reviews a swept night next to their own photos, so
+  // a fabricated past show would just become catalog and then get matched
+  // against by other people.
+  const gap = { clusterDate: "2026-06-27", city: "San Francisco", anchorVenue: "The Midway" };
+  const weak = proposeFromResults(gap, [
+    {
+      title: "The Midway - Upcoming Shows",
+      url: "https://themidwaysf.com/events",
+      content: "Our June 27, 2026 calendar.",
+    },
+  ]);
+  assert.equal(weak.proposal, null);
+
+  const strong = proposeFromResults(gap, [
+    {
+      title: "ATLiens at The Midway - June 27, 2026",
+      url: "https://www.insomniac.com/events/atliens-2026-06-27-san-francisco-ca/",
+      content: "ATLiens plays The Midway, San Francisco on June 27, 2026.",
+    },
+  ]);
+  assert.deepEqual(strong.proposal.artistNames, ["ATLiens"]);
+  assert.equal(strong.proposal.confidence >= MIN_PROPOSAL_CONFIDENCE, true);
 });

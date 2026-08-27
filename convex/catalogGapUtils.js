@@ -205,6 +205,53 @@ function mentionsDate(isoDate, ...texts) {
 }
 
 // ---------------------------------------------------------------------------
+// History sweeps — nights the catalog is missing, not nights someone photographed
+// ---------------------------------------------------------------------------
+
+// Ticketmaster sells no past events and Setlist.fm needs a key we do not have,
+// so the catalog has almost no history — and backfill matches against PAST
+// shows. The same search that explains one unmatched night can walk a venue's
+// calendar backwards and propose what it finds.
+//
+// The claim being made changes, and that is worth being precise about: a
+// reclaim proposal says "you were probably here"; a history proposal says only
+// "this show probably happened". Weaker claim, same evidence bar — a fabricated
+// past show becomes catalog, and then other people's photos match against it.
+
+// Tavily bills per search. `advanced` depth costs 2; the exact figure matters
+// less than the fact that a caller can see the bill before agreeing to it.
+const CREDITS_PER_ADVANCED_SEARCH = 2;
+
+function eachNightInRange(from, to) {
+  const start = splitIsoDate(from);
+  const end = splitIsoDate(to);
+  if (!start || !end || from > to) return [];
+  const nights = [];
+  const cursor = new Date(`${from}T12:00:00Z`);
+  const last = new Date(`${to}T12:00:00Z`);
+  while (cursor <= last) {
+    nights.push(cursor.toISOString().slice(0, 10));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return nights;
+}
+
+// The catalog's holes for one venue. A date the catalog already explains is
+// left alone — this is for filling gaps, never for second-guessing rows that
+// came from a first-party source.
+function nightsMissingFromCatalog(from, to, datesWithShows) {
+  const known = new Set(datesWithShows ?? []);
+  return eachNightInRange(from, to).filter((night) => !known.has(night));
+}
+
+// What a sweep will cost before it runs. Tavily credits are finite and expire
+// with the event, so a batch job that cannot say what it is about to spend is
+// not one anybody should approve.
+function estimateSweepCredits(nightCount, queriesPerNight = 1) {
+  return Math.max(0, nightCount) * Math.max(1, queriesPerNight) * CREDITS_PER_ADVANCED_SEARCH;
+}
+
+// ---------------------------------------------------------------------------
 // Queries
 // ---------------------------------------------------------------------------
 
@@ -441,6 +488,7 @@ function describeProposal(proposal) {
 }
 
 export {
+  CREDITS_PER_ADVANCED_SEARCH,
   DELTA_CORROBORATED,
   DELTA_DATE_CONFIRMED,
   DELTA_NO_VENUE_ANCHOR,
@@ -453,12 +501,15 @@ export {
   buildGapQueries,
   dateNeedles,
   describeProposal,
+  eachNightInRange,
+  estimateSweepCredits,
   extractArtistNames,
   hostOf,
   isTicketingDomain,
   longDate,
   mentionsDate,
   nearestVenues,
+  nightsMissingFromCatalog,
   proposeFromResults,
   splitLineup,
 };
