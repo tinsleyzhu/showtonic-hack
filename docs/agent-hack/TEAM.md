@@ -878,3 +878,86 @@ exactly one animation (`onboarding-reveal`) and it already honours
 `prefers-reduced-motion`. That restraint is correct and I am not going to spend
 it on decoration — motion gets added only at candidate-accept and plan-arrival,
 per the brief, and only after P0–P2 land.
+
+### L6 surface · 2026-08-27T07:45Z
+state:    shipped
+now:      P0 through P3 of the audit are in one PR, four commits, in rank order
+shipped:  PR to follow on lane/surface (235/235 tests, tsc clean, lint 0 errors)
+blocked:  needs merge + render — I cannot run the app (no CONVEX_DEPLOYMENT here)
+next:     demo-surface pass with L4 from 11:00; meanwhile hardening in-lane
+
+**What landed, in the order the audit ranked it.**
+
+*P0 · e0779af.* Focus was invisible on every text input and select in the app —
+`outline-none` with no replacement and no global `:focus-visible` to fall back
+on. One unlayered rule in `globals.css` fixes every call site at once: Tailwind
+utilities live in `@layer utilities`, and unlayered declarations beat layered
+ones regardless of specificity, so I did not have to edit four other lanes'
+files to do it. Ember, square, 2px offset — the accent and the right angles the
+app already uses. Placeholder contrast went from ~3.3:1 to ~5.2:1 by resolving
+`::placeholder` to the existing muted token; a contrast fix, not a palette
+change. `RatingStars` read-only is now one labelled image instead of five
+disabled buttons; interactive stars carry `aria-pressed` on the chosen star.
+`Avatar`'s `aria-label` moved onto a `role="img"`, where screen readers will
+actually read it.
+
+*P1 · 8660e81.* **I got one thing wrong in my own audit and it is worth
+correcting.** I claimed the detail views were full-screen takeovers that ate the
+header and tab bar. They are not — they render inside `page.tsx`'s `<main>`, so
+the chrome stays. What is real is worse in a subtler way: `StatusPanel` emits
+its OWN `<main class="min-h-screen items-center justify-center">`, so every show
+/ artist / venue / taste-match / diary load nests a second `main` landmark and a
+full viewport of centred empty space inside the first, shoving your content off
+screen and yanking it back. Those five now render skeletons with the same
+silhouette as the real page, as polite live regions. The not-found halves became
+`InlinePanel` — in the layout, and each one says what to do next and hands you
+the control to do it.
+
+Loading copy no longer names our stack at a judge. "Pulling the live details
+from Convex", "Connecting to Convex", "Reading the seeded JamBase profile".
+Internally honest, externally a stack trace with better manners. The seed screen
+keeps its command, demoted to an operator note under a sentence that says what
+is actually wrong.
+
+*P2 · f3e61a3.* Three dead ends opened up. A filtered search that matched
+nothing now names what you are filtering by, says how many shows the catalog
+actually holds, and offers Clear all filters — **the failure mode this prevents
+is a filter left on from an earlier run making the whole catalog read as empty
+on stage.** The diary wall now offers the camera-roll scan that would fill it,
+which was two taps away and unmentioned. And both share buttons were calling
+`navigator.share?.()`: on any desktop browser without the Web Share API the
+optional chain swallows the call and the button does *nothing* — two dead
+controls on exactly the class of machine a demo runs on. There is a clipboard
+fallback now, and it reports which of the two happened.
+
+*P3 · dae32e5.* Feedback, weighted to the Act 2 accept. "Yes, add it" says
+Adding…; a failed rating now says the show IS saved and only the rating did not
+land; attendance and watchlist say Saving… instead of going inert; revoking an
+agent token takes two taps with the consequence stated in between. Motion went
+to exactly the two moments the brief named — a night being accepted and a plan
+arriving — under one global `prefers-reduced-motion` rule that replaces the
+per-animation list a future animation would have escaped.
+
+⚠️ **What I have NOT seen, stated plainly.** No `CONVEX_DEPLOYMENT` in this
+worktree, so **none of this has been rendered by me — not one pixel.** It is
+type-checked, lint-clean and the 235 tests pass, but `node --test` only reaches
+the pure `.js` modules and touches none of these files. Four things are worth
+thirty seconds of a rendering pair of eyes, in this order:
+
+1. **The focus ring.** The unlayered-beats-layered cascade argument is correct
+   in the spec and I have not watched it win. Tab through Discover's filter row;
+   every field should show an ember outline.
+2. **The skeletons.** They should hold roughly the height of the real page. If a
+   detail view still jumps, my silhouette guess was off — it is a one-line fix.
+3. **Reduced motion.** The global rule uses `animation-duration: 0.01ms` with
+   `both`, which should leave every element at its final state. If anything
+   renders *invisible* under Reduce Motion, that rule is the culprit.
+4. **`ProfileView`.** L5 is building a recap card onto this same file. My edits
+   there are the two loading-guard lines, the share handler, and the diary empty
+   state — narrow on purpose, but a merge conflict is likelier here than
+   anywhere else.
+
+**For L4 (demo):** the Act 2 accept tap and the reclaimed-count now animate, and
+Discover can no longer strand you on an empty catalog. If the rehearsal machine
+has Reduce Motion on at the OS level, the accept beat will not play — worth
+knowing before you cut the recording rather than after.
