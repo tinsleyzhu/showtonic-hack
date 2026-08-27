@@ -1512,3 +1512,60 @@ The rule, restated: every lane works ONLY in its own ../st-<lane> worktree.
 Nobody but the coordinator touches ~/Documents/Claude/Projects/showtonic-hack.
 Main is restored; nothing was lost. PR the festival work from st-match as
 normal. If the checkout wasn't you, say so here and I'll chase it.
+
+### L5 share · 2026-08-27T09:40Z
+state:    shipped
+now:      wave 1 — the employment contract and the activity feed, both rendered
+shipped:  PR (lane/share): AgentAccess rewrite + AgentActivity wholesale, 319/319 green
+blocked:  -
+next:     wave 2 — reclaim story card first, then taste-overlap. Voice pass stays optional.
+
+Coordinator: I did not have `CONCIERGE.md`, `briefing.ts` or the stub — the
+kickoff commit was on `lane/taste` and `lane/match-festivals` but never on
+`main`, and `origin` was timing out. I cherry-picked `f127d7b` to unblock, then
+merged main properly when it landed. The add/add conflicts that caused are
+resolved by ownership: your `briefing.ts` and `CONCIERGE.md`, my
+`AgentActivity.tsx`. **Nothing in `convex/` or `worker/` was touched.**
+
+**1. The mint screen is now the employment contract.** "Hire your concierge",
+plain-language duties instead of scope ids, `pay` fenced in its own bordered
+block under *Never on by default* rather than sitting in a row with "can look
+up a show" and inheriting the same glance, "Sign and hire" instead of "Create
+token". The technical truths stay fully visible because they *are* the trust
+story — told as promises: made on this device and hashed before it leaves,
+frozen at signing, dismissed in one move and it stops mid-sentence.
+
+⚠️ **Two lines are less comfortable than the brief's phrasing, and both are
+deliberate — I checked the copy against `worker/mcp/tools.ts` rather than
+against the vibe.**
+- The suggested "Can write your diary — only after you confirm" **is not true
+  of `write:logs`**. `log_show` writes a rated entry straight to the diary with
+  no stop at the human's desk. The contract now says that plainly.
+- **`write:candidates` covers proposing AND resolving**, so an agent holding it
+  can accept its own proposal — `resolve_candidate` with `action: "accept"`
+  writes a real diary entry. The contract says that too.
+  **This is the one thing here I would change in code if it were mine:** those
+  are two different levels of trust wearing one name, and the honest split is
+  `write:candidates` (propose) and `write:candidates:resolve` (file it). That is
+  `convex/` + `worker/` and therefore not mine. Say the word and I will write
+  the copy the moment someone splits it.
+A screen whose entire job is trust cannot be the screen that shades the truth.
+
+**2. The activity feed replaces the stub wholesale.** Props unchanged. The
+deciding rows are the refusals: they get the raised surface, the blue rule this
+app already uses for reasoning, and their reason is **always visible** — never
+behind a disclosure, because restraint nobody reads is not restraint. Work rows
+keep their detail behind "What happened". Nothing is red; nothing broke.
+
+Decisions live in `app/activityFeed.js`, pure and tested: ordering enforced here
+rather than trusted (the feed is assembled from three tables and a fixture),
+elapsed-time voice, and an unknown-kind fallback — a new `kind` will reach this
+component before it reaches that file and must not vanish or throw. One test
+asserts the *fixture itself* still satisfies the contract, including L3's rule
+that a refusal without a reason is dropped rather than shown bare; it survived
+your fixture edit, which is the point of it.
+
+**Rendered both, against main's deployed backend.** Screenshots in the PR.
+Note for whoever hits it next: **L6's dev server owns :3000**. Mine runs on
+:3100 — two lanes on one port renders the other lane's branch and looks exactly
+like your own code failing to compile. I lost ten minutes to it.
