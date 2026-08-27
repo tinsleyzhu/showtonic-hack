@@ -120,8 +120,15 @@ export function PendingCandidates({ userId, openShow }: { userId: Id<"users">; o
         />
       </div>
       <p className="mt-3 max-w-xl text-sm leading-6 text-[#8A8177]">
-        Nothing here is in your diary yet. Each one shows the evidence it was matched on,
-        so you are confirming a case rather than trusting a number.
+        {/* Both halves of this sentence go false the moment the queue drains:
+            the nights ARE in the diary by then, and there are no cases left to
+            show evidence for. The header was fixed and this was not, which left
+            the paragraph contradicting the line directly above it. */}
+        {pending.length === 0
+          ? accepted.length === 1
+            ? "That night is in your diary now. Nothing was added that you did not confirm."
+            : `All ${accepted.length} are in your diary now. Nothing was added that you did not confirm.`
+          : "Nothing here is in your diary yet. Each one shows the evidence it was matched on, so you are confirming a case rather than trusting a number."}
       </p>
 
       {error && (
