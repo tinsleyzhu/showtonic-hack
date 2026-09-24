@@ -1,5 +1,6 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { geoCoverageSummary } from "./geoCoverage.js";
 import { summarizeRatings } from "./showtonicUtils.js";
 
 export const get = query({
@@ -138,6 +139,20 @@ export const coordinateCoverage = query({
       (venue) => venue.latitude !== undefined && venue.longitude !== undefined,
     ).length;
     return { total: venues.length, located, missing: venues.length - located };
+  },
+});
+
+// The full geo picture in one read: venue coordinates AND the shows that can
+// reach them through their venue. The scan UI derives its date-only warning
+// from this, and `scripts/geocode-venues.mjs --report` prints the same
+// summary — one definition of coverage, two readers. coordinateCoverage stays
+// for the geocoder's before/after line, which counts rows, not matchability.
+export const geoCoverage = query({
+  args: {},
+  handler: async (ctx) => {
+    const venues = await ctx.db.query("venues").collect();
+    const shows = await ctx.db.query("shows").collect();
+    return geoCoverageSummary(venues, shows);
   },
 });
 
