@@ -8,7 +8,7 @@ import { ArtistsDirectoryView, VenuesDirectoryView } from "./EntityViews";
 import {
   adaptShow,
   collapseFestivalShows,
-  formatDate,
+  formatShowDate,
   ShowRail,
   todayIso,
   type CatalogMode,
@@ -165,7 +165,7 @@ export function DiscoverView({
         <div className="relative mx-auto flex min-h-[56vh] max-w-6xl flex-col justify-end px-4 pb-10 sm:px-6">
           <p className="text-xs font-black uppercase tracking-[0.24em] text-[#FF7A50]">{hero.festivalId ? "Festival guide" : "Upcoming near you"}</p>
           <h2 className="font-display mt-3 max-w-3xl text-5xl leading-[0.95] sm:text-7xl">{hero.title}</h2>
-          <p className="mt-5 max-w-xl text-base leading-7 text-[#C9C1B4]">{hero.artistNames?.length ?? 0} artists · {formatDate(hero.date)} · {hero.venueName}</p>
+          <p className="mt-5 max-w-xl text-base leading-7 text-[#C9C1B4]">{hero.artistNames?.length ?? 0} artists · {formatShowDate(hero)} · {hero.venueName}</p>
           <button className="mt-7 w-fit bg-[#FF7A50] px-5 py-3 text-sm font-black text-black" onClick={() => openShow(hero.id)} type="button">{hero.festivalId ? "Explore festival" : "View show"}</button>
         </div>
       </section>}
