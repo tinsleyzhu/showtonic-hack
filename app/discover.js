@@ -54,4 +54,68 @@ function dateRangeForPreset(preset, todayIso) {
   return { from: "", to: "" }; // custom: caller supplies its own bounds
 }
 
+// One card per festival (spec A.4): every show sharing a festivalId collapses
+// to a single card — the festival's name (day-row weekday suffix stripped),
+// the union of its bills, and a date range spanning the run. The card keeps a
+// real show id (the earliest festival-day row when the catalog has one, the
+// biggest-bill row otherwise) so the card opens the entity page the diary
+// links to. Non-festival shows pass through unchanged. Pure and
+// deterministic: same input, byte-for-byte same output.
+const DAY_TITLE_SUFFIX = /\s+—\s+(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/;
+
+export function festivalDisplayName(title) {
+  return String(title ?? "").replace(DAY_TITLE_SUFFIX, "");
+}
+
+function byEarliestDate(left, right) {
+  return (
+    left.date.localeCompare(right.date) || String(left.id).localeCompare(String(right.id))
+  );
+}
+
+function festivalCard(members) {
+  // Day rows are the festival's own entity — the card links to the earliest
+  // one. Legacy festivals (never collapsed) fall back to their earliest row.
+  const pool = members.filter((show) => show.isFestivalDay);
+  const representative = [...(pool.length ? pool : members)].sort(byEarliestDate)[0];
+  const dates = members.map((show) => show.date).sort();
+  const seen = new Set();
+  const bill = [];
+  // Walk members in date order so the union bill does not depend on the
+  // catalog's row order — within a day, headliner order is preserved.
+  for (const member of [...members].sort(byEarliestDate)) {
+    for (const name of member.artistNames ?? []) {
+      const key = String(name).trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      bill.push(String(name));
+    }
+  }
+  const start = dates[0];
+  const end = dates[dates.length - 1];
+  return {
+    ...representative,
+    title: festivalDisplayName(representative.title),
+    artistNames: bill,
+    dateRange: start === end ? undefined : { start, end },
+  };
+}
+
+export function collapseFestivalShows(shows) {
+  const festivals = new Map();
+  for (const show of shows) {
+    if (!show.festivalId) continue;
+    const members = festivals.get(show.festivalId);
+    if (members) members.push(show);
+    else festivals.set(show.festivalId, [show]);
+  }
+  const collapsed = new Map();
+  for (const show of shows) {
+    const members = show.festivalId ? festivals.get(show.festivalId) : undefined;
+    const card = members ? festivalCard(members) : show;
+    collapsed.set(String(card.id), card);
+  }
+  return [...collapsed.values()];
+}
+
 export { dateRangeForPreset, reasonForShow };

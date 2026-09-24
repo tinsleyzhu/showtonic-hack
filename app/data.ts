@@ -45,6 +45,9 @@ export type Show = {
   nonMatchable?: boolean;
   // The one-per-date festival entity; its artistNames is the whole day's bill.
   isFestivalDay?: boolean;
+  // Set only on a collapsed festival card: the run the card spans. Absent on
+  // every real show row — the field is a display fact, not catalog data.
+  dateRange?: { start: string; end: string };
   isJamBase?: boolean;
   rating?: number;
   ratingCount?: number;

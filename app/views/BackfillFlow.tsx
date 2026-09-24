@@ -120,6 +120,41 @@ function DraftCard({ draft }: { draft: BackfillDraft }) {
   );
 }
 
+// The one thing only the human knows: which of the day's acts they actually
+// saw. Seeded with the full day bill — the matcher's claim — and the human
+// unchecks the sets they missed; accept sends exactly the chips left on.
+function LineupPicker({
+  bill,
+  chosen,
+  onToggle,
+}: {
+  bill: readonly string[];
+  chosen: readonly string[];
+  onToggle: (name: string) => void;
+}) {
+  return (
+    <div className="mt-4 border border-[#2A2521] bg-[#141210] p-4">
+      <p className="text-xs font-black uppercase text-[#FF7A50]">Who did you see?</p>
+      <p className="mt-1 text-xs leading-5 text-[#8A8177]">
+        The full day bill, with what you missed unchecked — the diary records exactly your picks.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {bill.map((name) => (
+          <button
+            aria-pressed={chosen.includes(name)}
+            className={`border px-3 py-2 text-xs ${chosen.includes(name) ? "border-[#4EC98F] bg-[#15251C] text-[#BFE8D2]" : "border-[#2A2521] text-[#C9C1B4]"}`}
+            key={name}
+            onClick={() => onToggle(name)}
+            type="button"
+          >
+            {name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function longDate(date: string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(
     new Date(`${date}T12:00:00`),
@@ -176,6 +211,9 @@ export function BackfillFlow({
   const [activeLog, setActiveLog] = useState<{ logId: Id<"logs"> | null; row: PendingRow } | null>(null);
   const [quickRating, setQuickRating] = useState(0);
   const [reassignOpen, setReassignOpen] = useState(false);
+  // The chosen festival lineup per candidate, keyed by candidate id. Unset =
+  // the full day bill — the seeded default; toggling a chip records the night.
+  const [lineupByCandidate, setLineupByCandidate] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // Only for the share card's footer, and absent is fine — the card drops the
@@ -307,6 +345,13 @@ export function BackfillFlow({
 
   const current = queue[cursor];
 
+  // The current candidate's chosen lineup: the human's subset of the day bill,
+  // or the whole bill until a chip is toggled. Null for non-festival nights —
+  // they have no lineup to choose.
+  const currentLineup = current?.candidate.isFestivalDay
+    ? (lineupByCandidate[current.candidateId] ?? current.candidate.artistNames)
+    : null;
+
   function advance() {
     setReassignOpen(false);
     if (cursor + 1 < queue.length) {
@@ -322,11 +367,19 @@ export function BackfillFlow({
     setBusy(true);
     setError("");
     try {
+      // A plain festival-day accept carries the human's chosen lineup; a
+      // reassign keeps its own show's bill — the chosen names were picked
+      // against the day's bill, not the corrected show's.
+      const lineup =
+        action === "accept" && !reassignShowId && current.candidate.isFestivalDay
+          ? (lineupByCandidate[current.candidateId] ?? current.candidate.artistNames)
+          : undefined;
       const result = await resolveCandidate({
         candidateId: current.candidateId,
         userId,
         action: reassignShowId ? "reassign" : action,
         showId: reassignShowId,
+        ...(lineup ? { lineup } : {}),
       });
       if (action === "accept") {
         setActiveLog({ logId: result.logId as Id<"logs"> | null, row: current });
@@ -553,9 +606,31 @@ export function BackfillFlow({
               <p className="mt-3 border-t border-white/10 pt-3 text-xs text-[#8A8177]">Nothing is added until you confirm.</p>
             </div>
             {current.draft && <DraftCard draft={current.draft} key={current.candidateId} />}
+            {current.candidate.isFestivalDay && current.candidate.artistNames.length > 0 && currentLineup && (
+              <LineupPicker
+                bill={current.candidate.artistNames}
+                chosen={currentLineup}
+                onToggle={(name) =>
+                  setLineupByCandidate((recorded) => {
+                    // Filter back through the bill so the choice array keeps
+                    // the bill's order no matter which chip was toggled.
+                    const chosen = new Set(recorded[current.candidateId] ?? current.candidate.artistNames);
+                    if (chosen.has(name)) chosen.delete(name);
+                    else chosen.add(name);
+                    return {
+                      ...recorded,
+                      [current.candidateId]: current.candidate.artistNames.filter((act) => chosen.has(act)),
+                    };
+                  })
+                }
+              />
+            )}
             <div className="flex-1" />
+            {currentLineup && currentLineup.length === 0 && (
+              <p className="mt-2 text-xs text-[#F97354]">Pick at least one act you saw, or say no.</p>
+            )}
             <div className="mt-6 grid grid-cols-[2fr_1fr] gap-2">
-              <button className="bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={busy} onClick={() => void resolveCurrent("accept")} type="button">
+              <button className="bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={busy || (currentLineup?.length ?? 1) === 0} onClick={() => void resolveCurrent("accept")} type="button">
                 {busy ? "Adding…" : "Yes, add it"}
               </button>
               <button className="border border-[#2A2521] px-5 py-4 text-sm font-black disabled:opacity-60" disabled={busy} onClick={() => void resolveCurrent("reject")} type="button">
@@ -605,6 +680,18 @@ export function BackfillFlow({
                 <RatingStars interactive onChange={setQuickRating} value={quickRating} />
                 <strong className={`font-display text-3xl ${quickRating ? "surface-accept" : ""}`} key={quickRating}>{quickRating ? quickRating.toFixed(1) : "—"}</strong>
               </div>
+              {activeLog.row.candidate.isFestivalDay && (
+                <div className="mt-3 border-t border-white/10 pt-3">
+                  <p className="mb-2 text-xs font-black uppercase text-[#FF7A50]">You saw</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(lineupByCandidate[activeLog.row.candidateId] ?? activeLog.row.candidate.artistNames).map((name) => (
+                      <span className="border border-[#2A2521] bg-[#15251C] px-3 py-2 text-xs text-[#BFE8D2]" key={name}>
+                        {name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <p className="mt-3 text-xs text-[#8A8177]">{activeLog.row.candidate.photoCount} moments stay on this device.</p>
             </div>
             <div className="flex-1" />

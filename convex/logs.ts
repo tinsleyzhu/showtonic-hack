@@ -3,6 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { upsertAttendance } from "./attendance";
+import { genresForLineup, resolveChosenLineup } from "./lineupUtils.js";
 import { validateLogInput } from "./showtonicUtils.js";
 
 async function getLogByUserAndShow(
@@ -38,6 +39,11 @@ export async function insertVerifiedLog(
     song?: string;
     source?: LogSource;
     createdAt?: number;
+    // A festival-day accept sends exactly the acts the human confirmed seeing.
+    // backfill.resolve is the only caller that sets it, and the choice is
+    // validated against the target show's own bill below — the live log flow
+    // never passes a lineup, so its logs keep the full artist list.
+    artistNames?: string[];
   },
 ) {
   if (args.rating !== 0) {
@@ -54,6 +60,14 @@ export async function insertVerifiedLog(
 
   const existing = await getLogByUserAndShow(ctx, args.userId, args.showId);
   const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
+  // The festival lineup is the human's choice, validated at the write
+  // boundary: every chosen act must be on the target show's bill and at least
+  // one act must be chosen — a lineup-less festival log would corrupt the
+  // diary's taste math. Throws rather than silently rewriting the choice.
+  const chosenLineup =
+    args.artistNames !== undefined
+      ? resolveChosenLineup(show.artistNames, args.artistNames)
+      : null;
   const createdAt = args.createdAt ?? Date.now();
   const payload = {
     userId: args.userId,
@@ -67,10 +81,14 @@ export async function insertVerifiedLog(
     showTitle: show.title,
     showDate: show.date,
     showImage: show.image,
-    artistNames: [...show.artistNames],
+    artistNames: chosenLineup ?? [...show.artistNames],
     venueName: show.venueName,
     city: show.city,
-    artistGenres: [...new Set(artists.flatMap((artist) => artist?.genres ?? []))],
+    // With a chosen lineup, only the chosen acts' genres label the night —
+    // the diary's genre lens must not inherit acts the human did not see.
+    artistGenres: chosenLineup
+      ? genresForLineup(artists, chosenLineup)
+      : [...new Set(artists.flatMap((artist) => artist?.genres ?? []))],
     createdAt,
   };
 
