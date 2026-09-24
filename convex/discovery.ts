@@ -77,6 +77,9 @@ export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
         // Rides along so the scan can offer only matchable shows; a demoted
         // row is lineup of a festival-day row, not an option.
         nonMatchable: show.nonMatchable,
+        // Rides along so the client matcher can collapse to the day row and
+        // flag the candidate — without it the multi-select never renders.
+        isFestivalDay: show.isFestivalDay,
         isJamBase: show.jambaseId.startsWith("jambase:"),
         jambaseUrl: show.jambaseUrl,
         ticketUrl: show.ticketUrl,
