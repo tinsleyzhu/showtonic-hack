@@ -16,9 +16,8 @@ function lineupKey(name) {
 }
 
 // Validate the human's chosen lineup against the day's bill. Returns the
-// chosen act names (trimmed, deduplicated, in the order the human tapped
-// them) or throws — an act that is not on the bill is a data error, not a
-// silent rewrite of the diary.
+// chosen act names in the bill's order and spellings, or throws — an act
+// that is not on the bill is a data error, not a silent rewrite of the diary.
 //
 // A festival accept with nothing chosen is refused here; the UI disables its
 // accept button on an empty selection, so hitting this from a client means a
@@ -35,7 +34,6 @@ export function resolveChosenLineup(dayBill, chosen) {
     if (typeof name === "string" && name.trim()) bill.set(lineupKey(name), name.trim());
   }
   const seen = new Set();
-  const chosenNames = [];
   for (const entry of chosen) {
     if (typeof entry !== "string" || !entry.trim()) {
       throw new Error("Lineup entries must be act names");
@@ -44,11 +42,12 @@ export function resolveChosenLineup(dayBill, chosen) {
     if (!bill.has(key)) {
       throw new Error(`"${entry.trim()}" is not on this festival day's bill`);
     }
-    if (seen.has(key)) continue;
     seen.add(key);
-    chosenNames.push(entry.trim());
   }
-  return chosenNames;
+  // Bill order and bill spellings, not the client's: the confirm sheet's
+  // chips render in bill order, and the diary should read the same way no
+  // matter how a client ordered or cased its request.
+  return [...bill.values()].filter((name) => seen.has(lineupKey(name)));
 }
 
 // The genres of exactly the chosen acts. Without a lineup choice the diary
