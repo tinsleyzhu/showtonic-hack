@@ -25,7 +25,12 @@ import {
   describeReclaimSpan,
   matchClustersToShows,
 } from "../backfill.js";
-import type { BackfillCandidate, BackfillPhoto, EvidenceKind } from "../backfill.d";
+import type {
+  BackfillCandidate,
+  BackfillPhoto,
+  EvidenceKind,
+  SkippedPhotoCounts,
+} from "../backfill.d";
 import { readCameraRoll, summarizeRoll } from "../photoMeta.js";
 import { RatingStars, todayIso, type Show, posterFallback } from "./shared";
 import { ReclaimShareCard } from "./ReclaimShareCard";
@@ -74,6 +79,24 @@ function longDate(date: string) {
   );
 }
 
+// The no-match error names where the scan's photos went instead of leaving
+// "nothing matched" to read as "nothing happened" — every skipped photo is
+// counted by the clusterer, so the explanation is composed from counts,
+// never invented.
+function describeSkippedPhotos(skipped: SkippedPhotoCounts): string {
+  const parts: string[] = [];
+  if (skipped.unreadableTimestamps > 0) {
+    parts.push(`${skipped.unreadableTimestamps} without a readable timestamp`);
+  }
+  if (skipped.outsideEveningWindow > 0) {
+    parts.push(`${skipped.outsideEveningWindow} outside evening hours`);
+  }
+  if (skipped.belowClusterMinimum > 0) {
+    parts.push(`${skipped.belowClusterMinimum} on nights under 3 photos`);
+  }
+  return parts.join(", ");
+}
+
 export function BackfillFlow({
   userId,
   shows,
@@ -94,6 +117,11 @@ export function BackfillFlow({
     clusters: 0,
     matched: 0,
     geotagged: 0,
+    skipped: {
+      unreadableTimestamps: 0,
+      outsideEveningWindow: 0,
+      belowClusterMinimum: 0,
+    },
   });
   const [queue, setQueue] = useState<PendingRow[]>([]);
   const [cursor, setCursor] = useState(0);
@@ -132,36 +160,50 @@ export function BackfillFlow({
       clusters: 0,
       matched: 0,
       geotagged: roll.geotagged,
+      skipped: {
+        unreadableTimestamps: 0,
+        outsideEveningWindow: 0,
+        belowClusterMinimum: 0,
+      },
     });
 
     // Animate the on-device scan so the counts are legible (design 08).
     const stepSize = Math.max(1, Math.floor(photos.length / 20));
     for (let checked = stepSize; checked < photos.length; checked += stepSize) {
       const slice = photos.slice(0, checked);
-      const clusters = clusterPhotosIntoNights(slice);
-      const matched = matchClustersToShows(clusters, shows, matchOptions);
+      const partial = clusterPhotosIntoNights(slice);
+      const matched = matchClustersToShows(partial.clusters, shows, matchOptions);
       setScanProgress({
         checked,
         total: photos.length,
-        clusters: clusters.length,
+        clusters: partial.clusters.length,
         matched: matched.length,
         geotagged: roll.geotagged,
+        skipped: partial.skipped,
       });
       await new Promise((resolve) => setTimeout(resolve, 70));
     }
 
-    const clusters = clusterPhotosIntoNights(photos);
-    const matches = matchClustersToShows(clusters, shows, matchOptions);
+    const scan = clusterPhotosIntoNights(photos);
+    const matches = matchClustersToShows(scan.clusters, shows, matchOptions);
     setScanProgress({
       checked: photos.length,
       total: photos.length,
-      clusters: clusters.length,
+      clusters: scan.clusters.length,
       matched: matches.length,
       geotagged: roll.geotagged,
+      skipped: scan.skipped,
     });
 
     if (!matches.length) {
-      setError("No nights matched the show catalog. Try more photos, or add shows manually.");
+      // "No matches" has to say where the photos went, or the two honest
+      // answers — nothing there, and we dropped your night — look identical.
+      const skippedNote = describeSkippedPhotos(scan.skipped);
+      setError(
+        skippedNote
+          ? `No nights matched the show catalog — ${skippedNote}. Try more photos, or add shows manually.`
+          : "No nights matched the show catalog. Try more photos, or add shows manually.",
+      );
       setStage("offer");
       return;
     }
@@ -375,6 +417,26 @@ export function BackfillFlow({
               <p className="flex items-center justify-between py-3">Photos with a location <b className="text-[#4EC98F]">{scanProgress.geotagged}</b></p>
               <p className="flex items-center justify-between py-3">Matched to known shows <b className="text-[#4EC98F]">{scanProgress.matched}</b></p>
               <p className="flex items-center justify-between py-3">Need your help <b className="text-[#4EC98F]">{Math.max(scanProgress.clusters - scanProgress.matched, 0)}</b></p>
+              {/* The clusterer's ledger — a photo is either in a night or named
+                  here, so a scan can never drop one silently. */}
+              {scanProgress.skipped.unreadableTimestamps > 0 && (
+                <p className="flex items-center justify-between py-3">
+                  Skipped: unreadable timestamps
+                  <b className="text-[#F5F1E8]">{scanProgress.skipped.unreadableTimestamps}</b>
+                </p>
+              )}
+              {scanProgress.skipped.outsideEveningWindow > 0 && (
+                <p className="flex items-center justify-between py-3">
+                  Skipped: outside evening hours
+                  <b className="text-[#F5F1E8]">{scanProgress.skipped.outsideEveningWindow}</b>
+                </p>
+              )}
+              {scanProgress.skipped.belowClusterMinimum > 0 && (
+                <p className="flex items-center justify-between py-3">
+                  Skipped: nights under 3 photos
+                  <b className="text-[#F5F1E8]">{scanProgress.skipped.belowClusterMinimum}</b>
+                </p>
+              )}
             </div>
             <p className="mt-6 flex items-center gap-3 text-xs leading-5 text-[#8A8177]">
               <Lock className="h-4 w-4 shrink-0 text-[#4EC98F]" /> Only matched-show metadata syncs. Your photos stay on this device.

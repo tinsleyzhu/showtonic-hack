@@ -9,6 +9,19 @@ export type BackfillPhoto = {
 
 export type ClusterLocation = GeoPoint & { sampleCount: number };
 
+// Where a scan's photos went that never became a cluster. Every count is a
+// decision the clusterer used to make silently.
+export type SkippedPhotoCounts = {
+  unreadableTimestamps: number;
+  outsideEveningWindow: number;
+  belowClusterMinimum: number;
+};
+
+export type NightScan = {
+  clusters: NightCluster[];
+  skipped: SkippedPhotoCounts;
+};
+
 export type NightCluster = {
   clusterDate: string;
   photoCount: number;
@@ -80,8 +93,9 @@ export function describeDistance(meters: number): string;
 export function locateCluster(photos: readonly BackfillPhoto[]): ClusterLocation | null;
 export function nightDateOf(takenAt: string): string | null;
 export function hasTimezoneDesignator(takenAt: string): boolean;
+export function captureLocalWallClock(takenAt: string): string | null;
 export function formatCaptureWindow(firstIso: string, lastIso: string): string;
-export function clusterPhotosIntoNights(photos: readonly BackfillPhoto[]): NightCluster[];
+export function clusterPhotosIntoNights(photos: readonly BackfillPhoto[]): NightScan;
 export function matchClustersToShows(
   clusters: readonly NightCluster[],
   shows: readonly BackfillShow[],

@@ -254,7 +254,7 @@ export const reclaimCameraRoll = mutation({
       };
     });
 
-    const clusters = clusterPhotosIntoNights(args.photos);
+    const { clusters, skipped } = clusterPhotosIntoNights(args.photos);
     const candidates = matchClustersToShows(clusters, catalog, {
       today: args.today ?? new Date(Date.now()).toISOString().slice(0, 10),
       // The agent's owner still gets their own taste and venue history applied.
@@ -367,6 +367,9 @@ export const reclaimCameraRoll = mutation({
       nightsFound: clusters.length,
       candidates: saved,
       unmatchedNights: gaps,
+      // Where the rest of the roll went — the same accounting the browser scan
+      // shows, so the agent path cannot drop photos silently either.
+      skippedPhotos: skipped,
       note: "Nothing enters the diary until the human approves it. Call get_pending_candidates then resolve_candidate.",
     };
   },
