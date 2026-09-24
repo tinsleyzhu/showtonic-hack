@@ -28,6 +28,8 @@ export {
   unmatchedClusters,
 } from "../convex/backfillMatch.d";
 
+export { describeGeoSignalWarning } from "../convex/geoCoverage.d";
+
 import type { BackfillPhoto, BackfillShow } from "../convex/backfillMatch.d";
 
 export function extractExifDate(buffer: ArrayBuffer): string | null;
