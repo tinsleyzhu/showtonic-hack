@@ -148,6 +148,11 @@ export const pending = query({
                 venueName: show.venueName,
                 city: show.city,
                 image: show.image,
+                // Festival-day rows are self-describing for agent clients:
+                // the flag says the names are a bill to choose from, and the
+                // festival id groups the day rows — no new tooling needed.
+                festivalId: show.festivalId,
+                isFestivalDay: show.isFestivalDay === true,
               }
             : null,
         };
@@ -169,6 +174,10 @@ export const resolve = mutation({
     rating: v.optional(v.number()),
     // reassign ("right night, wrong show"): the corrected show
     showId: v.optional(v.id("shows")),
+    // Festival-day accepts carry exactly the acts the human confirmed — the
+    // multi-select's choices, seeded from the day's bill. Validated against
+    // the target show's bill at insert time; absent means the whole bill.
+    lineup: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const candidate = await ctx.db.get(args.candidateId);
@@ -204,6 +213,7 @@ export const resolve = mutation({
         rating: args.rating ?? 0,
         vibes: [],
         source: "backfill",
+        ...(args.lineup !== undefined ? { artistNames: args.lineup } : {}),
       });
     } else if (args.rating && existing.rating === 0) {
       await ctx.db.patch(existing._id, { rating: args.rating });

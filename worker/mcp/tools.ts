@@ -117,7 +117,7 @@ export const TOOLS: ToolDef[] = [
     name: "get_pending_candidates",
     scope: "write:candidates",
     description:
-      "Reconstructed nights awaiting the human's yes or no, newest and most confident first. Each candidate carries a `draft` — a suggested caption and vibe chips composed only from that night's own evidence and the show's genres, meant to pre-fill a diary entry, not to decide one. The human can rewrite every word of it.",
+      "Reconstructed nights awaiting the human's yes or no, newest and most confident first. Each candidate carries a `draft` — a suggested caption and vibe chips composed only from that night's own evidence and the show's genres, meant to pre-fill a diary entry, not to decide one. The human can rewrite every word of it. A candidate whose `show.isFestivalDay` is true matched one festival day: `show.artistNames` is that day's whole bill, and an accept without a lineup records the full bill — the app's confirm sheet lets the human uncheck the acts they missed.",
     inputSchema: { type: "object", properties: {} },
     run: (client, me) => client.query("backfill:pending" as any, { userId: me.userId }),
   },
