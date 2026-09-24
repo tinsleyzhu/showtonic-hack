@@ -16,6 +16,7 @@ import {
   nightsMissingFromCatalog,
   buildFestivalQueries,
   buildGapQueries,
+  canonicalVenue,
   dayLineupSegment,
   describeProposal,
   extractArtistNames,
@@ -511,9 +512,127 @@ test("a day that yields two or three names is a page we failed to read", () => {
     {
       title: "Outside Lands 2026 At-a-Glance",
       url: "https://www.jambase.com/festival/outside-lands-2026",
-      content: "Friday, August 7, 2026\nTame Impala\nKaytranada",
+      // List-shaped, so the refusal below is the floor talking and not the
+      // prose rule: the page is readable, it just did not yield a bill.
+      content:
+        "Friday, August 7, 2026\nTame Impala\nKaytranada\nVenue\nMap & Directions\nAdvertisement",
     },
   ]);
   assert.equal(proposal, null);
   assert.match(declineReason, /failed to read/);
+});
+
+test("prose about a festival cannot be cut into a day's bill", () => {
+  // Coachella 2025: Pitchfork named the right acts in sentences, and splitting
+  // those sentences on their commas billed "the festival wrote" as an act and
+  // put Friday's headliner on the Sunday. Being right about the festival is not
+  // being right about the day.
+  const { proposal, rejected } = proposeFestivalDay(OSL, [
+    {
+      title: "Outside Lands 2026 Full Lineup Announced",
+      url: "https://pitchfork.com/news/outside-lands-2026-lineup",
+      content:
+        "The full lineup has been revealed. Charli xcx, Turnstile, and Labrinth " +
+        "will headline Friday, August 7, 2026, the festival wrote, with sets from " +
+        "Wet Leg, Geese, and many more.",
+    },
+  ]);
+  assert.equal(proposal, null);
+  assert.equal(rejected.at(-1).reason, "this day's part of the page reads as prose, not a lineup");
+});
+
+test("a sentence fragment is never an act", () => {
+  assert.equal(looksLikeArtistName("the festival wrote"), false);
+  assert.equal(looksLikeArtistName("many more artists"), false);
+  assert.equal(looksLikeArtistName("scheduled for Sunday"), false);
+  assert.equal(looksLikeArtistName("Wet Leg"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Approving a proposal must not mint a twin venue
+// ---------------------------------------------------------------------------
+//
+// The agent's whole purpose is filling the catalog. Writing through the venue
+// name the SOURCE used — "Midway San Francisco" next to the catalog's "The
+// Midway" — turns it into a duplicate generator pointed at the thing it exists
+// to fix, and every later match has to pick between the twins.
+
+const CATALOG_VENUES = [
+  { name: "The Midway", city: "San Francisco" },
+  { name: "The Independent", city: "San Francisco" },
+  { name: "Irving Plaza", city: "New York" },
+  { name: "Blue Note Jazz Club", city: "New York" },
+];
+
+test("a room the web wrote differently resolves to the row the catalog has", () => {
+  const resolve = (name, city) => canonicalVenue(name, city, CATALOG_VENUES)?.name ?? null;
+  assert.equal(resolve("Midway San Francisco", "San Francisco"), "The Midway");
+  assert.equal(resolve("The Midway SF", "San Francisco"), "The Midway");
+  // The alias shape L1 measured on the catalog itself: a sponsor bolted on.
+  assert.equal(resolve("Irving Plaza Powered By Verizon 5G", "New York"), "Irving Plaza");
+  assert.equal(resolve("The Blue Note", "New York"), "Blue Note Jazz Club");
+});
+
+test("a room the catalog does not have is inserted, not merged into a neighbour", () => {
+  // Null means "write what the source said". A wrong merge is worse than a
+  // duplicate: it moves a show into a room it was not in.
+  assert.equal(canonicalVenue("Bimbo's 365 Club", "San Francisco", CATALOG_VENUES), null);
+  // "The Midway" plus a word that is not a sponsor, a city or a room type is a
+  // different name that happens to start the same way.
+  assert.equal(canonicalVenue("Midway Point", "San Francisco", CATALOG_VENUES), null);
+});
+
+test("the same name in another city is another room", () => {
+  assert.equal(canonicalVenue("The Independent", "Los Angeles", CATALOG_VENUES), null);
+  assert.equal(
+    canonicalVenue("The Independent", "San Francisco", CATALOG_VENUES)?.name,
+    "The Independent",
+  );
+});
+
+test("two plausible rows mean the catalog is ambiguous, so nothing is merged", () => {
+  const twins = [
+    { name: "Blue Note", city: "New York" },
+    { name: "Blue Note Jazz Club", city: "New York" },
+  ];
+  assert.equal(canonicalVenue("Blue Note Jazz", "New York", twins), null);
+});
+
+test("a room inside a venue is its own room", () => {
+  // The human's signoff on L1's alias sweep keeps nested rooms separate, and
+  // the resolver has to agree or approval quietly moves shows between rooms in
+  // one building — a change no later reader could detect.
+  const catalog = [{ name: "The Chapel", city: "San Francisco" }];
+  assert.equal(canonicalVenue("The Chapel Bar", "San Francisco", catalog), null);
+  assert.equal(canonicalVenue("The Chapel Lounge", "San Francisco", catalog), null);
+  // A curly apostrophe is still the same room, which is the twin the Browse
+  // dropdown was showing.
+  const bimbos = [{ name: "Bimbo's 365 Club", city: "San Francisco" }];
+  assert.equal(canonicalVenue("Bimbo’s 365 Club", "San Francisco", bimbos)?.name, "Bimbo's 365 Club");
+});
+
+test("two rooms at one address are two rooms, whatever their names share", () => {
+  // Birdland Jazz Club and Birdland Theater are different rooms in one
+  // building. Any key that treats "jazz club" and "theater" as noise folds
+  // them, which is why this refusal is a test and not a comment.
+  const birdland = [
+    { name: "Birdland Jazz Club", city: "New York" },
+    { name: "Birdland Theater", city: "New York" },
+  ];
+  assert.equal(canonicalVenue("Birdland Theater", "New York", birdland)?.name, "Birdland Theater");
+  assert.equal(
+    canonicalVenue("Birdland Jazz Club", "New York", birdland)?.name,
+    "Birdland Jazz Club",
+  );
+  // A source that wrote only "Birdland" has not said which room, and neither
+  // has anything else. Picking one is a coin flip that puts a show in a room
+  // it was not in, so nothing is written but what the source said.
+  assert.equal(canonicalVenue("Birdland", "New York", birdland), null);
+  // The same name against a catalog that knows only one of the rooms is still
+  // refused when the other room is the one the source meant — a theater is not
+  // a jazz club, and neither name is a longer spelling of the other.
+  assert.equal(
+    canonicalVenue("Birdland Theater", "New York", [birdland[0]]),
+    null,
+  );
 });

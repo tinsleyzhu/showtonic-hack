@@ -105,6 +105,17 @@ const NOISE_WORDS = new Set([
 const PROMO_PHRASES =
   /\b(register|presale|pre-?sale|on sale|sold out|rsvp|announce|announcing|lineup drop|full bloom|link in bio|swipe|szn|giveaway|doors at|tickets? (?:are |now )?(?:live|available|on sale))\b/i;
 
+// News prose reads like a bill once it is split on commas: "Charli xcx, Megan
+// Thee Stallion, the festival wrote, Missy Elliott". These are the words that
+// give a sentence away — no act is billed with a verb in its name.
+const PROSE_WORDS =
+  /\b(?:wrote|said|says|announced|announces|scheduled|will|returns?|includ(?:e|es|ed|ing)|featur(?:e|es|ed|ing)|perform(?:s|ed|ance|ances)?|headlin(?:e|es|ed|ing)|culminat(?:e|es|ed)|many more|and more|others|other artists|full lineup)\b/i;
+
+// Listings pages count things next to the names they count: "625 attendances by
+// 114 users", "14 setlists". A name is not a statistic.
+const STATISTIC_PHRASES =
+  /\b\d+\s+(?:attendances?|users?|setlists?|comments?|fans?|photos?|videos?|reviews?|shows?|concerts?|tickets?)\b/i;
+
 function looksLikePromoProse(value) {
   const text = String(value ?? "");
   if (PROMO_PHRASES.test(text)) return true;
@@ -116,6 +127,11 @@ function looksLikePromoProse(value) {
   if (text.trim().split(/\s+/).length > 6) return true;
   // A truncated snippet is not a name.
   if (/(?:\.\.\.|…)$/.test(text.trim())) return true;
+  // Learned on the festival path and carried back here: a verb in the name
+  // means a sentence was parsed as a bill, and a count next to it means a
+  // listings page's own statistics were.
+  if (PROSE_WORDS.test(text)) return true;
+  if (STATISTIC_PHRASES.test(text)) return true;
   return false;
 }
 
@@ -458,6 +474,119 @@ function mentionsVenue(text, venueName) {
   if (full && haystack.includes(full)) return true;
   const core = venueCore(venueName);
   return core.length >= VENUE_CORE_MIN_LENGTH && haystack.includes(core);
+}
+
+// The catalog's name for a room the web wrote a different way.
+//
+// A proposal carries the venue name its SOURCE used — "Midway San Francisco",
+// "The Midway SF" — and approving one creates a show. If that name does not
+// resolve to the row the catalog already has, approval quietly mints a twin
+// venue, and this agent becomes a duplicate generator pointed at the catalog it
+// exists to fill.
+//
+// So the same matching that decides whether a page is about a room decides
+// which row it is: exact name, then shared core, then one core containing the
+// other (the "Irving Plaza" / "Irving Plaza Powered By Verizon 5G" shape).
+// City must agree when both sides state one, because "The Independent" is a
+// room in San Francisco and a different room elsewhere.
+//
+// Returns the existing venue, or null — and null means "insert what the source
+// said", never "guess". A wrong merge is worse than a duplicate: it moves a
+// show into a room it was not in.
+// The words a venue's name grows by without becoming another venue: who is
+// paying for it, where it is, and what kind of BUILDING it is.
+//
+// Deliberately missing: bar, room, lounge, basement, cafe. Those name a room
+// INSIDE a venue, and a nested room is its own room — the human's 2026-08-27
+// signoff on L1's alias sweep says so explicitly, and "The Chapel Bar" is not
+// "The Chapel". Merging on them would move shows between rooms in one
+// building, which no later reader could tell had happened.
+const VENUE_TAG_WORDS = new Set([
+  "powered",
+  "presented",
+  "presents",
+  "sponsored",
+  "brought",
+  "by",
+  "at",
+  "formerly",
+  "aka",
+  "the",
+  "club",
+  "jazz",
+  "music",
+  "hall",
+  "theatre",
+  "theater",
+  "ballroom",
+  "arena",
+  "amphitheater",
+  "amphitheatre",
+  "auditorium",
+  "center",
+  "centre",
+  "live",
+  "sf",
+  "nyc",
+  "ny",
+  "ca",
+  "san",
+  "francisco",
+  "new",
+  "york",
+  "brooklyn",
+  "5g",
+  "verizon",
+]);
+
+function isVenueNameTag(extra) {
+  const words = String(extra ?? "")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!words.length) return false;
+  // A sponsor clause can carry a brand this list has never heard of, but it
+  // always announces itself first: "powered by <anything>".
+  if (/^(?:powered|presented|sponsored|brought)\b/.test(words[0])) return true;
+  return words.every((word) => VENUE_TAG_WORDS.has(word));
+}
+
+function canonicalVenue(candidateName, candidateCity, venues) {
+  const wanted = normalizeText(candidateName);
+  if (!wanted) return null;
+  const wantedCore = venueCore(candidateName);
+  const city = normalizeText(candidateCity ?? "");
+
+  const sameCity = (venue) => {
+    const venueCity = normalizeText(venue?.city ?? "");
+    return !city || !venueCity || city === venueCity;
+  };
+
+  const rows = (Array.isArray(venues) ? venues : []).filter(sameCity);
+  const exact = rows.find((venue) => normalizeText(venue.name) === wanted);
+  if (exact) return exact;
+  if (wantedCore.length < VENUE_CORE_MIN_LENGTH) return null;
+
+  const sameCore = rows.find((venue) => venueCore(venue.name) === wantedCore);
+  if (sameCore) return sameCore;
+
+  // One name is the other plus something. That something decides: a sponsor, a
+  // city tag or the room's own type is the SAME room written longer; anything
+  // else is a different name that happens to start the same way, and merging it
+  // moves a show into a room it was not in.
+  const contained = rows.filter((venue) => {
+    const core = venueCore(venue.name);
+    if (core.length < VENUE_CORE_MIN_LENGTH) return false;
+    if (core === wantedCore) return true;
+    const extra = core.startsWith(`${wantedCore} `)
+      ? core.slice(wantedCore.length + 1)
+      : wantedCore.startsWith(`${core} `)
+        ? wantedCore.slice(core.length + 1)
+        : null;
+    return extra !== null && isVenueNameTag(extra);
+  });
+  // Two rows both plausible means the catalog itself is ambiguous about this
+  // room, and picking one is a coin flip that moves a show.
+  return contained.length === 1 ? contained[0] : null;
 }
 
 function lineupKey(names) {
@@ -911,6 +1040,26 @@ function nextHeadingIndex(text, from) {
   return match ? match.index : null;
 }
 
+// A bill is a LIST. Coachella 2025 is why this exists: Pitchfork's news story
+// names the right acts in sentences, and splitting those sentences on their
+// commas produced "the festival wrote" and "scheduled for Sunday, April 13-20.
+// Lady Gaga" as acts — and put Friday's headliner on the Sunday, which is the
+// one error this whole path is shaped to prevent.
+//
+// Prose can be right about a festival and still cannot be cut into a day's
+// bill. So a source contributes names only when its day section is delimited
+// like a list, or is a clean comma list with nothing but names in it.
+function isListShaped(segment) {
+  const text = String(segment ?? "");
+  const delimiters = (text.match(/[\n|•·・\t]/g) ?? []).length;
+  if (delimiters >= 3) return true;
+  const fragments = text
+    .split(/\s*,\s*/)
+    .map(trimBillFragment)
+    .filter(Boolean);
+  return fragments.length >= 3 && fragments.every(looksLikeArtistName);
+}
+
 function countPlausibleNames(segment) {
   return String(segment ?? "")
     .split(BILL_SEPARATORS)
@@ -973,12 +1122,10 @@ function looksLikeArtistName(value) {
   if (/\b\d{1,2}\s*(?::\s*\d{2})?\s*(?:am|pm)\b/i.test(name)) return false;
   if (new RegExp(`^(?:${DAY_HEADER_SOURCE})$`, "i").test(normalizeText(name))) return false;
   if (/^\$/.test(name)) return false;
+  if (PROSE_WORDS.test(name)) return false;
   // A fragment that opens with a year is the tail of a date, not an act.
   if (/^(?:19|20)\d{2}\b/.test(name.trim())) return false;
-  // Listings pages count things next to the names they count: "625 attendances
-  // by 114 users", "14 setlists". A name is not a statistic.
-  if (/\b\d+\s+(?:attendances?|users?|setlists?|comments?|fans?|photos?|videos?|reviews?|shows?|concerts?|tickets?)\b/i.test(name))
-    return false;
+  if (STATISTIC_PHRASES.test(name)) return false;
   // "Lands End Stage", "Panhandle Tent" — a festival page names its rooms in
   // the same lists as its acts, and a stage that becomes an artist is a row
   // every later match can land on.
@@ -1107,6 +1254,12 @@ function proposeFestivalDay(festival, results, options = {}) {
     });
     if (!names.length) {
       rejected.push({ url, reason: "no act name survived on this day's part of the page" });
+      continue;
+    }
+    // A social caption is judged as a caption below, not as prose: it can never
+    // carry a day either way, and saying so is the more useful refusal.
+    if (!isSocialDomain(url) && !isListShaped(slice.segment)) {
+      rejected.push({ url, reason: "this day's part of the page reads as prose, not a lineup" });
       continue;
     }
     const row = {
@@ -1265,6 +1418,7 @@ export {
   VENUE_ANCHOR_METERS,
   buildFestivalQueries,
   buildGapQueries,
+  canonicalVenue,
   dateNeedles,
   dayLineupSegment,
   describeProposal,
@@ -1277,6 +1431,7 @@ export {
   harvestBillNames,
   hostOf,
   isAuthoritativeFestivalSource,
+  isListShaped,
   looksLikeArtistName,
   isSocialDomain,
   isTicketingDomain,

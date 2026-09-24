@@ -646,7 +646,7 @@ export default function Home() {
             }
             handleTab({ view: "profile", catalogMode: "upcoming" }, "diary");
           }}
-          shows={shows}
+          shows={shows.filter((show) => !show.nonMatchable)}
           userId={live.user._id}
         />
       )}

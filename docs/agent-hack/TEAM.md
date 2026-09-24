@@ -2164,6 +2164,104 @@ wrong-day placements, 0 acts on two days. 301 tests, tsc clean, lint 0 errors.
 under it by the concierge session, which discarded uncommitted lane work once;
 the fence exists for exactly that reason.
 
+### L2 match · 2026-08-27T11:20Z
+state:    shipped
+now:      fourth festival (Coachella) produced a real wrong-day claim; two rules close it
+shipped:  0bd397f on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     idle in-lane, hardening. Will re-probe if the catalog gains festivals
+
+**Coachella 2025 put Friday's headliner on the Sunday, in production.** It has
+no day-by-day listing in the top results — what it has is a Pitchfork news
+story. Cut at its "April 13" mention and split on its commas, that story billed
+`the festival wrote`, `many more artists`, and `scheduled for Sunday, April
+13-20. Lady Gaga`. Nine acts, 85% confident, sourced, and wrong. This is the
+exact failure the day model exists to prevent, and the first time it happened
+outside a fixture.
+
+Two rules, because the failure has two halves:
+
+1. **A bill is a LIST.** A source contributes names only when its day section is
+   delimited like one, or is a clean comma list with nothing but names in it.
+   Prose can be right about a festival and still be uncuttable into a day.
+2. **A sentence fragment is never an act** — wrote / scheduled / will /
+   includes / headlines / many more / and others.
+
+**Where four festivals leave it, stated as recall and not as a win:**
+
+| festival | days probed | days billed | acts | wrong day |
+|---|---|---|---|---|
+| Outside Lands 2026 (SF) | 3 | 3 | 32, 31, 30 | 0 |
+| Hardly Strictly 2025 (SF) | 3 | 1 | 29 | 0 |
+| Lollapalooza 2025 (Chicago) | 4 | 0 | — | 0 |
+| Coachella 2025 (Indio) | 3 | 0 | — | 0 |
+
+**Four of thirteen days billed.** The agent recovers a festival when some
+publisher has written that festival's day down as a list, and refuses — with a
+reason — when nobody has. That is the honest shape of it: it is not a lineup
+scraper, it is a reader of lists that says no to everything else. Zero
+wrong-day claims across all thirteen days is the number that decides whether it
+can ship at all, and it is the one I would put on stage.
+
+Tavily spend: ~290 credits total for L2. 303 tests, tsc clean, lint 0 errors.
+
+### L2 match · 2026-08-27T11:55Z
+state:    idle
+now:      festival lessons carried back to the venue path; both halves share one prose/statistics filter
+shipped:  254e525 on lane/match-festivals-pr — PR #19 ready to merge
+blocked:  -
+next:     staying alive in-lane. Will re-probe festivals if the catalog gains any, and re-measure the
+          venue sweep if L1's dedup changes what counts as a duplicate show
+
+**Nothing new claimed, which is the point.** The verb filter and the statistics
+filter were written for festival pages and apply just as well to a venue night's
+search results, so they now live once and both halves of the agent use them.
+Venue-night eval unchanged: 100% accuracy, 100% precision, 0 false proposals. A
+live 9-night window at The Midway explained 2 (May 2, May 8), inside the
+5–7-of-28 band already reported; every decline in it came from the date gate,
+which this change does not touch.
+
+**One interaction worth flagging to L1 and the coordinator, not acting on
+myself.** Approving a gap proposal writes through `shows.importUpcoming`, which
+creates artists by name under a synthetic `artist-<slug>` id. If L1's dedup
+sweep lands a name normalizer, approvals made by this agent should go through
+it, or a festival day carrying 30 acts can reintroduce twins in one click. The
+normalizer is L1's to own — I am not writing a second one. Say the word and I
+will wire the approve path to whatever L1 ships.
+
+### L2 match · 2026-08-27T12:30Z
+state:    shipped
+now:      closed the duplicate-venue hole on my own side of the fence
+shipped:  13c3b2b on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     idle in-lane
+
+**L1's pass-2 note named a bug in MY lane, so I fixed that half and only that
+half.** A gap proposal carries the venue name its SOURCE used, and `approve`
+wrote it straight through — so approving a proposal that said "Midway San
+Francisco" created a second row beside the catalog's "The Midway". A festival
+day carrying thirty acts does it in one click. The agent built to fill the
+catalog was quietly generating exactly the duplicates L1 is sweeping up.
+
+`approve` now resolves the name against the catalog first: exact, then shared
+core, then one core containing the other **when the extra words are a sponsor,
+a city tag or the room's own type** — `Irving Plaza Powered By Verizon 5G` →
+`Irving Plaza`, `The Blue Note` → `Blue Note Jazz Club`, both of them the
+aliases L1 measured. Anything else is a different name that happens to start
+the same way and is left alone. Null means "insert what the source said", never
+"guess", and two plausible rows mean the catalog is ambiguous about that room so
+nothing is merged: **a wrong merge moves a show into a room it was not in,
+which is worse than a duplicate.** City must agree when both sides state one —
+"The Independent" is a room in SF and a different room elsewhere.
+
+**L1: `canonicalVenue` in `convex/catalogGapUtils.js` is prior art for your
+alias rule, with tests, if it is useful — the token-subset comparison and the
+sponsor/city/type tag list are the same problem you measured.** I am not
+sweeping or merging existing rows; that is yours. This only stops new ones
+arriving through my path.
+
+307 tests, tsc clean, lint 0 errors.
+
 ### L5 share · 2026-08-27T12:35Z
 state:    shipped
 now:      merged main, and the Briefing integration immediately showed two defects
@@ -2216,6 +2314,73 @@ L6, two minutes, first screen a judge opens: several Briefing sections use
 aria-labelledby="briefing-…" but SectionTitle renders an h2 with NO id, so the
 references resolve to nothing and the landmarks are unnamed. Give SectionTitle
 an id prop or switch those to aria-label. Fold it into the flip PR.
+
+### L2 match · 2026-08-27T12:50Z
+state:    idle
+now:      aligned my venue resolver with the human's nested-room signoff
+shipped:  on lane/match-festivals-pr — PR #19 updated
+blocked:  -
+next:     idle in-lane, hardening
+
+The signoff keeps the five nested-room pairs separate, and my resolver
+disagreed: `bar`, `room`, `lounge` and `cafe` were on the list of words a venue
+name may grow by, so approving a proposal for "The Chapel Bar" against a
+catalog holding "The Chapel" would have merged them. That moves shows between
+rooms in one building — undetectable afterwards, and strictly worse than the
+duplicate it avoids. The list is now what kind of BUILDING it is, not what kind
+of room. Curly-vs-straight apostrophes still resolve to one room (venue cores
+compare on letters and digits), so the Bimbo's twin cannot come back through my
+path. 308 tests, tsc clean.
+
+### L2 match · 2026-08-27T13:05Z
+state:    idle
+now:      pinned L1's Birdland exclusion on my side of the fence
+shipped:  on lane/match-festivals-pr — PR #19
+blocked:  -
+next:     idle in-lane; will re-measure if pass 3 changes venue rows under me
+
+**L1: your pass-3 hard exclusion already holds in `canonicalVenue`, and now has
+a test.** Birdland Theater never resolves to Birdland Jazz Club in either
+direction — neither name is a longer spelling of the other — and a source that
+wrote only "Birdland" resolves to nothing at all, because both rooms match and
+picking one is a coin flip that puts a show in a room it was not in. That
+refusal survives your merge: after pass 3 the two rows are still two rows, so
+the guard keeps firing.
+
+Note for after pass 3 lands: my approve path reads venues by name and city, so
+it picks up merged canonical rows automatically — no change needed on my side,
+and no ids of mine to repoint (`catalogProposals` stores a venue NAME, never a
+venueId, precisely so a proposal never pins a row that later merges).
+
+### L2 match · 2026-08-27T13:30Z
+state:    shipped
+now:      the Castro defect can arrive through MY path too; closed it before pass 3 runs
+shipped:  540dc8f on lane/match-festivals-pr — PR #19
+blocked:  -
+next:     idle in-lane
+
+**L1's amendment describes a state my approve path can create.** `shows.
+importUpcoming` keys venues by `venue-<slug(name-city)>`, so a show lands on the
+row whose ID matches the NAME it was given. Once pass 3 merges two rows, the
+survivor keeps its own id — and if that id was minted from the other spelling,
+approving a proposal under the survivor's CURRENT name mints a second row
+again. **Your merge would be undone one approval at a time**, and the result is
+exactly the Castro state: one venue, two names, shows split across them.
+
+`approve` now checks whether the canonical row's id agrees with its own name
+and, when it does not, repoints the show onto the row the catalog actually
+uses: `venueId`, `venueName`, `city` and `stage` in a single write. Never the id
+without the strings — that split is the whole defect.
+
+The row an import may have minted is **reported, not deleted**. Deleting venue
+rows is your sweep, with your dry run and your human; the return payload names
+the stray id so your worklist can pick it up. No show count with it: `shows` has
+no `by_venue` index and adding one during your sweep is a schema change in your
+path, not mine.
+
+L5: worth pointing your snapshot at this too — approve a festival-day proposal
+whose venue has an id/name mismatch and assert one id, one name, both sides.
+309 tests, tsc clean, lint 0 errors.
 
 ### L5 share · 2026-08-27T13:05Z
 state:    idle
