@@ -197,6 +197,7 @@ import {
   matchClustersToShows,
   unmatchedClusters,
 } from "./backfillMatch.js";
+import { writeDraft } from "./backfillDraft.js";
 import { insertVerifiedLog } from "./logs";
 
 export const reclaimCameraRoll = mutation({
@@ -272,8 +273,29 @@ export const reclaimCameraRoll = mutation({
     const loggedShowIds = new Set(logs.map((log) => log.showId));
     const now = Date.now();
     const saved = [];
+    // Same draft-writer the app path uses, so a night reconstructed by an
+    // agent and a night scanned in the browser reach get_pending_candidates
+    // identically drafted. Genres are cached per show (the caption's other
+    // facts — date, window, photo count — are per-candidate and never cached).
+    const showsById = new Map(shows.map((show) => [show._id as string, show]));
+    const genresByShow = new Map<string, string[]>();
     for (const candidate of candidates) {
       if (loggedShowIds.has(candidate.showId as never)) continue; // already in the diary
+      const showDoc = showsById.get(candidate.showId) ?? null;
+      let genres = genresByShow.get(candidate.showId);
+      if (!genres) {
+        const artists = await Promise.all(
+          (showDoc?.artistIds ?? []).map((artistId) => ctx.db.get(artistId)),
+        );
+        genres = [...new Set(artists.flatMap((artist) => artist?.genres ?? []))];
+        genresByShow.set(candidate.showId, genres);
+      }
+      const draft = writeDraft({
+        clusterDate: candidate.clusterDate,
+        photoCount: candidate.photoCount,
+        captureWindow: candidate.captureWindow,
+        show: showDoc ? { venueName: showDoc.venueName, genres } : null,
+      });
       const _id = await ctx.db.insert("backfillCandidates", {
         userId: args.userId,
         showId: candidate.showId as never,
@@ -282,6 +304,7 @@ export const reclaimCameraRoll = mutation({
         captureWindow: candidate.captureWindow,
         confidence: candidate.confidence,
         evidence: candidate.evidence,
+        draft,
         status: "pending",
         createdAt: now,
       });
@@ -292,6 +315,7 @@ export const reclaimCameraRoll = mutation({
         venue: candidate.venueName ?? null,
         confidence: candidate.confidence,
         evidence: candidate.evidence.map((row: { detail: string }) => row.detail),
+        draft,
       });
     }
 
