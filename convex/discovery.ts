@@ -74,6 +74,9 @@ export async function listShowSummaries(ctx: QueryCtx, userId?: Id<"users">) {
         city: show.city,
         region: show.region,
         festivalId: show.festivalId,
+        // Rides along so the scan can offer only matchable shows; a demoted
+        // row is lineup of a festival-day row, not an option.
+        nonMatchable: show.nonMatchable,
         isJamBase: show.jambaseId.startsWith("jambase:"),
         jambaseUrl: show.jambaseUrl,
         ticketUrl: show.ticketUrl,

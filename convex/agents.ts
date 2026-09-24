@@ -238,21 +238,26 @@ export const reclaimCameraRoll = mutation({
     ]);
     const venuesById = new Map(venues.map((venue) => [venue._id, venue]));
 
-    const catalog = shows.map((show) => {
-      const venue = show.venueId ? venuesById.get(show.venueId) : undefined;
-      return {
-        id: show._id,
-        date: show.date,
-        title: show.title,
-        artistNames: show.artistNames,
-        venueId: show.venueId,
-        venueName: show.venueName,
-        venueLatitude: venue?.latitude,
-        venueLongitude: venue?.longitude,
-        city: show.city,
-        image: show.image,
-      };
-    });
+    // Demoted rows — the per-set siblings of a festival-day row — stay in the
+    // catalog for diary history but are no longer matchable. Feeding them here
+    // would re-offer sixty options for a night the day row already answers.
+    const catalog = shows
+      .filter((show) => !show.nonMatchable)
+      .map((show) => {
+        const venue = show.venueId ? venuesById.get(show.venueId) : undefined;
+        return {
+          id: show._id,
+          date: show.date,
+          title: show.title,
+          artistNames: show.artistNames,
+          venueId: show.venueId,
+          venueName: show.venueName,
+          venueLatitude: venue?.latitude,
+          venueLongitude: venue?.longitude,
+          city: show.city,
+          image: show.image,
+        };
+      });
 
     const { clusters, skipped } = clusterPhotosIntoNights(args.photos);
     const candidates = matchClustersToShows(clusters, catalog, {

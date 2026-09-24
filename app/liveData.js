@@ -67,6 +67,7 @@ function toShow(summary) {
     ticketUrl: summary.ticketUrl,
     memoryPrompt: summary.memoryPrompt ?? "What moment will you remember?",
     festivalId: summary.festivalId,
+    nonMatchable: summary.nonMatchable === true,
     isJamBase:
       typeof summary.isJamBase === "boolean"
         ? summary.isJamBase

@@ -40,6 +40,9 @@ export type Show = {
   ticketUrl?: string;
   memoryPrompt: string;
   festivalId?: string;
+  // Demoted to lineup of a festival-day row: kept for diary history, no
+  // longer offered to the photo matcher. Stripped from the scan's show list.
+  nonMatchable?: boolean;
   isJamBase?: boolean;
   rating?: number;
   ratingCount?: number;
