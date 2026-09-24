@@ -126,7 +126,7 @@ console.log(`  real EXIF timestamp     ${withExifDate}  (${percent(withExifDate)
 console.log(`  fell back to file date  ${photos.length - withExifDate}`);
 console.log(`  GPS coordinates         ${geotagged}  (${percent(geotagged)})`);
 
-const clusters = clusterPhotosIntoNights(photos);
+const { clusters, skipped } = clusterPhotosIntoNights(photos);
 console.log(`\nNIGHT CLUSTERS (evening photos, 3+ per night)`);
 if (!clusters.length) {
   console.log("  none — no evening photo groups of 3 or more.");
@@ -139,6 +139,18 @@ if (!clusters.length) {
       `  ${cluster.clusterDate}  ${String(cluster.photoCount).padStart(3)} photos  ${cluster.captureWindow.padEnd(18)} ${where}`,
     );
   }
+}
+
+const skippedTotal =
+  skipped.unreadableTimestamps + skipped.outsideEveningWindow + skipped.belowClusterMinimum;
+if (skippedTotal > 0) {
+  console.log(`\nSKIPPED (${skippedTotal} photo${skippedTotal === 1 ? "" : "s"}, all accounted for)`);
+  if (skipped.unreadableTimestamps)
+    console.log(`  no readable timestamp       ${skipped.unreadableTimestamps}`);
+  if (skipped.outsideEveningWindow)
+    console.log(`  outside the evening window  ${skipped.outsideEveningWindow}`);
+  if (skipped.belowClusterMinimum)
+    console.log(`  nights under 3 photos       ${skipped.belowClusterMinimum}`);
 }
 
 console.log("\nVERDICT");

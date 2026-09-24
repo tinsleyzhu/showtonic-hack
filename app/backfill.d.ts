@@ -8,6 +8,8 @@ export type {
   GeoPoint,
   MatchOptions,
   NightCluster,
+  NightScan,
+  SkippedPhotoCounts,
 } from "../convex/backfillMatch.d";
 
 export {

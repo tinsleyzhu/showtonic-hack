@@ -173,24 +173,58 @@ function locateCluster(photos) {
   };
 }
 
+// Where a scan's photos went that never became a cluster. Every bucket is a
+// decision the clusterer used to make silently — the whole-night-vanishes bug
+// was invisible precisely because these counts did not exist. Photos with no
+// timestamp and photos whose timestamp no parser could read share one bucket:
+// to the scan there is no observable difference between the two.
+function emptySkippedPhotoCounts() {
+  return {
+    unreadableTimestamps: 0, // no takenAt at all, or one that parses to nothing
+    outsideEveningWindow: 0, // readable, but not plausibly part of a show night
+    belowClusterMinimum: 0, // evening photos on a night that never reached 3
+  };
+}
+
 // photos: [{ takenAt: ISO datetime, name?, latitude?, longitude? }]
-//   → night clusters, newest first. Every hour check, sort key, and capture
-//     endpoint reads the photo's own capture-local wall clock (see
-//     captureLocalWallClock), never the runtime's zone.
+//   → { clusters, skipped }, clusters newest first. Every hour check, sort key,
+//     and capture endpoint reads the photo's own capture-local wall clock (see
+//     captureLocalWallClock), never the runtime's zone. `skipped` is the
+//     per-scan accounting for everything that did NOT become a cluster — a
+//     returned empty array used to be ambiguous between "nothing there" and
+//     "we dropped your night", so the caller always gets both answers.
 function clusterPhotosIntoNights(photos) {
+  const roll = Array.isArray(photos) ? photos : [];
+  const skipped = emptySkippedPhotoCounts();
   const byNight = new Map();
-  for (const photo of Array.isArray(photos) ? photos : []) {
-    if (!photo?.takenAt) continue;
+  for (const photo of roll) {
+    if (!photo?.takenAt) {
+      skipped.unreadableTimestamps += 1;
+      continue;
+    }
     const wallClock = captureLocalWallClock(photo.takenAt);
-    if (wallClock === null || !isEveningWallClock(new Date(wallClock))) continue;
-    const night = nightDateOf(photo.takenAt);
-    if (!night) continue;
+    const parsed = wallClock === null ? null : new Date(wallClock);
+    if (!parsed || Number.isNaN(parsed.getTime())) {
+      skipped.unreadableTimestamps += 1;
+      continue;
+    }
+    if (!isEveningWallClock(parsed)) {
+      skipped.outsideEveningWindow += 1;
+      continue;
+    }
+    const night = nightOfWallClock(parsed);
+    if (!night) {
+      // Unreachable after the parse above; a silent drop is never an option,
+      // so even a defensive miss is counted rather than discarded.
+      skipped.unreadableTimestamps += 1;
+      continue;
+    }
     const entry = byNight.get(night) ?? { clusterDate: night, photos: [] };
     entry.photos.push(photo);
     byNight.set(night, entry);
   }
 
-  return [...byNight.values()]
+  const clusters = [...byNight.values()]
     .filter((entry) => entry.photos.length >= MIN_CLUSTER_PHOTOS)
     .map((entry) => {
       const sorted = [...entry.photos].sort((left, right) =>
@@ -208,6 +242,17 @@ function clusterPhotosIntoNights(photos) {
       };
     })
     .sort((left, right) => right.clusterDate.localeCompare(left.clusterDate));
+
+  // Held back for size, not skipped by rule — a 2-photo evening is one more
+  // photo away from being a night someone remembers.
+  skipped.belowClusterMinimum = [...byNight.values()]
+    .filter((entry) => entry.photos.length < MIN_CLUSTER_PHOTOS)
+    .reduce((total, entry) => total + entry.photos.length, 0);
+
+  return {
+    clusters,
+    skipped,
+  };
 }
 
 // ---------------------------------------------------------------------------

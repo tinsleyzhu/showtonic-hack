@@ -68,7 +68,7 @@ function runStrategy(strategyKey, fixtures) {
   const rows = [];
 
   for (const night of fixtures.nights) {
-    const clusters = clusterPhotosIntoNights(strategy.photos(night.photos));
+    const { clusters } = clusterPhotosIntoNights(strategy.photos(night.photos));
     const candidates = matchClustersToShows(clusters, shows, {
       today: fixtures.today,
       ...strategy.options,
