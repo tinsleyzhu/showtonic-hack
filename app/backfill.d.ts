@@ -10,6 +10,8 @@ export type {
   NightCluster,
 } from "../convex/backfillMatch.d";
 
+export type { BackfillDraft } from "../convex/backfillDraft.d";
+
 export {
   MIN_CLUSTER_PHOTOS,
   MIN_CONFIDENCE,
