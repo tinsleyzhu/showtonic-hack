@@ -25,6 +25,9 @@ const upcomingEvent = v.object({
   longitude: v.optional(v.number()),
   image: v.optional(v.string()),
   festivalId: v.optional(v.string()),
+  // Set on festival-day rows: one row per DAY whose artistNames is the whole
+  // day's bill (the gap agent's festival approvals, the legacy collapse).
+  isFestivalDay: v.optional(v.boolean()),
   stage: v.optional(v.string()),
   isHeadliner: v.boolean(),
   artistNames: v.array(v.string()),
@@ -384,6 +387,7 @@ export const importUpcoming = mutation({
         region: event.region,
         image: event.image,
         festivalId: event.festivalId,
+        isFestivalDay: event.isFestivalDay,
         stage: event.stage ?? event.venueName,
         isHeadliner: event.isHeadliner,
         artistIds,

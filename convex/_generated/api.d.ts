@@ -25,6 +25,7 @@ import type * as dedupUtils from "../dedupUtils.js";
 import type * as diary from "../diary.js";
 import type * as discovery from "../discovery.js";
 import type * as favorites from "../favorites.js";
+import type * as festivalDays from "../festivalDays.js";
 import type * as follows from "../follows.js";
 import type * as freeEvents from "../freeEvents.js";
 import type * as freeEventsUtils from "../freeEventsUtils.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   diary: typeof diary;
   discovery: typeof discovery;
   favorites: typeof favorites;
+  festivalDays: typeof festivalDays;
   follows: typeof follows;
   freeEvents: typeof freeEvents;
   freeEventsUtils: typeof freeEventsUtils;

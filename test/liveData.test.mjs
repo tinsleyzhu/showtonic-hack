@@ -39,6 +39,11 @@ test("toShow never treats a venue name as a Convex document id", () => {
   assert.equal(show.venueId, "");
 });
 
+test("toShow carries the nonMatchable demotion flag through", () => {
+  assert.equal(toShow({ nonMatchable: true }).nonMatchable, true);
+  assert.equal(toShow({}).nonMatchable, false);
+});
+
 test("toMemory uses uploaded media before the show fallback", () => {
   const memory = toMemory({
     _id: "log1",
