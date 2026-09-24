@@ -342,6 +342,10 @@ export const approve = action({
           // remembers Saturday as six separate sets.
           title: proposal.title ?? proposal.artistNames.join(" + "),
           festivalId: proposal.festivalId,
+          // The same one-row-per-day flag the legacy collapse writes, so every
+          // reader — the matcher's collapse, the planner's idempotency check —
+          // recognises the day row by one test, not by its id's prefix.
+          isFestivalDay: proposal.festivalId ? true : undefined,
           date: proposal.clusterDate,
           venueName: existingVenue?.name ?? proposal.venueName ?? "Unknown venue",
           city: existingVenue?.city ?? proposal.city ?? "San Francisco",

@@ -60,6 +60,14 @@ export default defineSchema({
     region: v.optional(v.string()),
     image: v.optional(v.string()),
     festivalId: v.optional(v.string()), // "outside-lands-2026" groups the lineup
+    // The one-per-date festival entity: its artistNames is the whole day's
+    // bill. Written by the legacy collapse (convex/festivalDays.ts) and the
+    // gap agent's festival approvals — per SPEC.md "a festival is one thing,
+    // not sixty".
+    isFestivalDay: v.optional(v.boolean()),
+    // Demoted to lineup of a festival-day row: kept for diary history (logs
+    // point at this id), never again offered to the matcher.
+    nonMatchable: v.optional(v.boolean()),
     stage: v.optional(v.string()),
     isHeadliner: v.optional(v.boolean()),
     artistIds: v.array(v.id("artists")),
