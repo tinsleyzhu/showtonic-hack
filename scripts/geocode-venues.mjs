@@ -6,6 +6,10 @@
 //
 //   npm run geocode:venues           # geocode everything missing
 //   npm run geocode:venues -- 25     # just the first 25 (a quick smoke test)
+//   npm run geocode:venues -- --report
+//                                    # print venue + show geo coverage and
+//                                    # change nothing — the operator's read on
+//                                    # whether the geocoder is even needed
 //
 // Uses OpenStreetMap's Nominatim: free, no API key, no maps SDK. Their usage
 // policy requires an identifying User-Agent and at most one request per second,
@@ -15,6 +19,7 @@
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../convex/_generated/api.js";
+import { formatGeoReport } from "../convex/geoCoverage.js";
 
 const NOMINATIM = "https://nominatim.openstreetmap.org/search";
 const USER_AGENT = "Showtonic-hackathon/0.1 (venue geocoding; contact: tinsleyzhu@gmail.com)";
@@ -29,6 +34,15 @@ if (!convexUrl) {
 const client = new ConvexHttpClient(convexUrl);
 const limit = Number(process.argv[2]) || undefined;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Report, don't touch. The same summary the scan UI warns from — venue
+// coordinates and the shows that can reach them — printed from the pure
+// formatter so the operator reads exactly what a user would.
+if (process.argv.includes("--report")) {
+  const coverage = await client.query(api.venues.geoCoverage, {});
+  console.log(formatGeoReport(coverage));
+  process.exit(0);
+}
 
 // Two passes: the specific query first, then a looser one. A venue that only
 // resolves to its city centre is worse than useless — it would place photos
