@@ -50,6 +50,10 @@ export type BackfillShow = {
   venueLongitude?: number;
   city?: string;
   image?: string;
+  // Set on every row of a festival; the per-date entity also carries
+  // isFestivalDay and its artistNames is the whole day's bill.
+  festivalId?: string;
+  isFestivalDay?: boolean;
 };
 
 export type BackfillCandidate = {
@@ -59,6 +63,9 @@ export type BackfillCandidate = {
   showId: string;
   showTitle?: string;
   artistNames: string[];
+  // True when the matched entity is a festival-day row — the accept sheet
+  // seeds its lineup multi-select from artistNames in that case.
+  isFestivalDay: boolean;
   venueName?: string;
   city?: string;
   image?: string;
@@ -101,6 +108,7 @@ export function matchClustersToShows(
   shows: readonly BackfillShow[],
   options?: MatchOptions,
 ): BackfillCandidate[];
+export function collapseFestivalDays(sameNight: readonly BackfillShow[]): BackfillShow[];
 export function unmatchedClusters(
   clusters: readonly NightCluster[],
   candidates: readonly BackfillCandidate[],

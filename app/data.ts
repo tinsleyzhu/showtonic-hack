@@ -43,6 +43,8 @@ export type Show = {
   // Demoted to lineup of a festival-day row: kept for diary history, no
   // longer offered to the photo matcher. Stripped from the scan's show list.
   nonMatchable?: boolean;
+  // The one-per-date festival entity; its artistNames is the whole day's bill.
+  isFestivalDay?: boolean;
   isJamBase?: boolean;
   rating?: number;
   ratingCount?: number;

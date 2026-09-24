@@ -9,6 +9,7 @@ import {
   DELTA_GPS_NEARBY,
   MIN_CONFIDENCE,
   clusterPhotosIntoNights,
+  collapseFestivalDays,
   describeDistance,
   haversineMeters,
   locateCluster,
@@ -339,18 +340,175 @@ test("every photo that is not clustered is counted with a reason", () => {
   );
 });
 
-test("a festival day is declined, because GPS cannot say which set you saw", () => {
-  // Every set shares one coordinate, so nothing distinguishes them. Naming one
-  // would be a coin flip; the honest answer is that we know the night and not
-  // the set. Flagged to the coordinator as a product decision, not a silent one.
+// --- Festival days: one entity, not sixty shows -----------------------------
+
+test("a festival day yields ONE candidate carrying the full day bill", () => {
+  // The pinned interim behavior — decline the whole festival night — held
+  // until the catalog could answer it: the legacy collapse (and the gap
+  // agent's approvals) now write one isFestivalDay row per date, whose
+  // artistNames is the whole day's bill. The per-set rows underneath it are
+  // not sixty options to disambiguate; they are one day.
+  const park = { latitude: 37.7694, longitude: -122.4862 };
+  const dayBill = ["Headliner", "Second", "Third", "Fourth"];
+  const festivalDay = {
+    id: "ol-day-1",
+    date: "2025-11-15",
+    festivalId: "outside-lands-2026",
+    isFestivalDay: true,
+    title: "Outside Lands — Saturday",
+    artistNames: dayBill,
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  };
+  const sets = ["Headliner", "Second", "Third"].map((name, index) => ({
+    id: `ol-set-${index}`,
+    date: "2025-11-15",
+    festivalId: "outside-lands-2026",
+    artistNames: [name],
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  }));
+
+  const candidates = matchClustersToShows([clusterAt(park)], [festivalDay, ...sets], {
+    today: "2026-08-26",
+  });
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].isFestivalDay, true);
+  assert.equal(candidates[0].showId, "ol-day-1");
+  assert.deepEqual(candidates[0].artistNames, dayBill);
+  assert.equal(candidates[0].showTitle, "Outside Lands — Saturday");
+
+  // Catalog order must not matter — the day row is the entity wherever it sits.
+  const reordered = matchClustersToShows([clusterAt(park)], [...sets, festivalDay], {
+    today: "2026-08-26",
+  });
+  assert.deepEqual(
+    reordered.map((candidate) => candidate.showId),
+    ["ol-day-1"],
+  );
+});
+
+test("each day of a multi-day festival collapses to its own bill, never another day's", () => {
+  // Day-gating is what eval/festivalEval.mjs guards: a cluster placed at the
+  // park on Saturday must never bill Sunday's acts. The date anchor picks the
+  // day row; the collapse only removes that date's set rows.
+  const park = { latitude: 37.7694, longitude: -122.4862 };
+  const dayRow = (id, date, bill) => ({
+    id,
+    date,
+    festivalId: "outside-lands-2026",
+    isFestivalDay: true,
+    title: `Outside Lands — ${id}`,
+    artistNames: bill,
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  });
+  const sets = (date) =>
+    ["A", "B", "C"].map((name, index) => ({
+      id: `${date}-set-${index}`,
+      date,
+      festivalId: "outside-lands-2026",
+      artistNames: [name],
+      venueName: "Golden Gate Park",
+      venueLatitude: park.latitude,
+      venueLongitude: park.longitude,
+    }));
+  const catalog = [
+    ...sets("2026-08-07"),
+    dayRow("ol-fri", "2026-08-07", ["Friday Headliner"]),
+    ...sets("2026-08-08"),
+    dayRow("ol-sat", "2026-08-08", ["Saturday Headliner", "Second"]),
+  ];
+
+  const [saturday] = matchClustersToShows([clusterAt(park, { date: "2026-08-08" })], catalog, {
+    today: "2026-08-26",
+  });
+  assert.equal(saturday.showId, "ol-sat");
+  assert.equal(saturday.isFestivalDay, true);
+  assert.deepEqual(saturday.artistNames, ["Saturday Headliner", "Second"]);
+});
+
+test("a festival day does not swallow a same-night club show — GPS still decides", () => {
+  // The collapse removes a festival's own set rows and nothing else. One
+  // entity per festival day leaves a same-night club show a live option, and
+  // the ambiguity guard keeps its veto between the two DIFFERENT venues.
+  const park = { latitude: 37.7694, longitude: -122.4862 };
+  const festivalDay = {
+    id: "ol-day",
+    date: "2025-11-15",
+    festivalId: "ol-2026",
+    isFestivalDay: true,
+    artistNames: ["Headliner", "Second"],
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  };
+  const setRow = {
+    id: "ol-set",
+    date: "2025-11-15",
+    festivalId: "ol-2026",
+    artistNames: ["Headliner"],
+    venueName: "Golden Gate Park",
+    venueLatitude: park.latitude,
+    venueLongitude: park.longitude,
+  };
+  const club = {
+    id: "club-night",
+    date: "2025-11-15",
+    artistNames: ["Club DJ"],
+    venueName: "The Midway",
+    venueLatitude: MIDWAY.latitude,
+    venueLongitude: MIDWAY.longitude,
+  };
+
+  const [atTheClub] = matchClustersToShows([clusterAt(MIDWAY)], [festivalDay, setRow, club], {
+    today: "2026-08-26",
+  });
+  assert.equal(atTheClub.showId, "club-night");
+  assert.equal(atTheClub.isFestivalDay, false);
+
+  const [atThePark] = matchClustersToShows([clusterAt(park)], [festivalDay, setRow, club], {
+    today: "2026-08-26",
+  });
+  assert.equal(atThePark.showId, "ol-day");
+  assert.deepEqual(atThePark.artistNames, ["Headliner", "Second"]);
+});
+
+test("a festival whose day row is still missing stays declined — no invented entity", () => {
+  // The catalog collapse guarantees day rows for legacy festivals and the gap
+  // agent writes them for recovered ones. Until one exists, the honest answer
+  // is exactly what it was before this change: GPS cannot say which set you
+  // saw, so nothing is named and the night goes to the catalog-gap agent.
   const park = { latitude: 37.7694, longitude: -122.4862 };
   const lineup = ["Headliner", "Second", "Third"].map((name, index) => ({
     id: `ol-${index}`,
     date: "2025-11-15",
+    festivalId: "uncollapsed-2026",
     artistNames: [name],
     venueName: "Golden Gate Park",
     venueLatitude: park.latitude,
     venueLongitude: park.longitude,
   }));
   assert.deepEqual(matchClustersToShows([clusterAt(park)], lineup, { today: "2026-08-26" }), []);
+});
+
+test("collapseFestivalDays rewrites only festivals that have a day row", () => {
+  const dayRow = { id: "day", date: "2025-11-15", festivalId: "f1", isFestivalDay: true, artistNames: ["A", "B"] };
+  const setRow = { id: "set", date: "2025-11-15", festivalId: "f1", artistNames: ["A"] };
+  const single = { id: "single", date: "2025-11-15", artistNames: ["C"] };
+  const uncollapsed = { id: "set2", date: "2025-11-15", festivalId: "f2", artistNames: ["D"] };
+
+  // Order-independent: the day row stands in wherever its sets appear.
+  assert.deepEqual(collapseFestivalDays([setRow, dayRow, single, uncollapsed]), [
+    dayRow,
+    single,
+    uncollapsed,
+  ]);
+  // Nothing to collapse to: every row passes through untouched.
+  assert.deepEqual(collapseFestivalDays([uncollapsed]), [uncollapsed]);
+  // No festivals at all: input returned as-is.
+  assert.deepEqual(collapseFestivalDays([single]), [single]);
 });

@@ -68,6 +68,8 @@ function toShow(summary) {
     memoryPrompt: summary.memoryPrompt ?? "What moment will you remember?",
     festivalId: summary.festivalId,
     nonMatchable: summary.nonMatchable === true,
+    // The one-per-date festival entity; the matcher collapses sets to it.
+    isFestivalDay: summary.isFestivalDay === true,
     isJamBase:
       typeof summary.isJamBase === "boolean"
         ? summary.isJamBase

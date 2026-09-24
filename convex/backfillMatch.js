@@ -353,8 +353,48 @@ function scoreShow(cluster, show, context) {
   return { confidence, locating, evidence, distanceMeters: distance };
 }
 
+// One entity per festival day (SPEC.md "a festival is one thing, not sixty"):
+// every same-night row sharing a festivalId collapses to that festival's
+// festival-day row — the one whose artistNames is the whole day's bill —
+// BEFORE scoring and before the ambiguity guard. Sixty per-set rows at one
+// venue are not sixty options to disambiguate; they are one day the catalog
+// used to store as many rows. The guard's own invariant is untouched: two
+// DIFFERENT venues equally well located is still declined, which is also what
+// happens to two festivals sharing a night. A festival whose day row does not
+// exist yet (an uncollapsed legacy import) passes through unchanged and the
+// guard declines its tie exactly as before — the day row is guaranteed by the
+// catalog collapse and the gap agent's approvals, and fabricating one here
+// would invent venue geometry the catalog never claimed.
+function collapseFestivalDays(sameNight) {
+  const dayRows = new Map(); // festivalId → the day row standing in for it
+  for (const show of sameNight) {
+    if (show.festivalId && show.isFestivalDay === true && !dayRows.has(show.festivalId)) {
+      dayRows.set(show.festivalId, show);
+    }
+  }
+  if (dayRows.size === 0) return sameNight;
+
+  const collapsed = [];
+  const emitted = new Set(); // festivalIds whose day row is already on the list
+  for (const show of sameNight) {
+    const dayRow = show.festivalId ? dayRows.get(show.festivalId) : undefined;
+    if (!dayRow) {
+      // Not a festival, or a festival the catalog has not collapsed yet.
+      collapsed.push(show);
+    } else if (!emitted.has(show.festivalId)) {
+      // First sighting of this festival on the night: the day row stands in
+      // for every row of it. Per-set rows stop being matchable here — their
+      // venue geometry lives on the day row, which shares the grounds.
+      emitted.add(show.festivalId);
+      collapsed.push(dayRow);
+    }
+  }
+  return collapsed;
+}
+
 // shows: [{ id, date, artistNames?, venueName?, venueId?, venueLatitude?,
-//           venueLongitude?, city?, title?, image? }]
+//           venueLongitude?, city?, title?, image?, festivalId?,
+//           isFestivalDay? }]
 // options: { tasteArtists?, visitedVenueIds?, today?, venueRadiusMeters? }
 function matchClustersToShows(clusters, shows, options = {}) {
   const context = {
@@ -378,7 +418,10 @@ function matchClustersToShows(clusters, shows, options = {}) {
 
   const candidates = [];
   for (const cluster of Array.isArray(clusters) ? clusters : []) {
-    const sameNight = byDate.get(cluster.clusterDate) ?? [];
+    // Festival sets collapse to their day row before scoring, so the guard
+    // below judges days against days and venues against venues — never sixty
+    // rows of one day against each other.
+    const sameNight = collapseFestivalDays(byDate.get(cluster.clusterDate) ?? []);
     const scored = sameNight
       .map((show) => ({ show, ...scoreShow(cluster, show, context) }))
       .sort((left, right) => right.locating - left.locating || right.confidence - left.confidence);
@@ -401,6 +444,9 @@ function matchClustersToShows(clusters, shows, options = {}) {
         showId: best.show.id,
         showTitle: best.show.title,
         artistNames: best.show.artistNames ?? [],
+        // A festival-day row is the whole day's bill — the multi-select's
+        // seed at accept time (SPEC.md). False for every other candidate.
+        isFestivalDay: best.show.isFestivalDay === true,
         venueName: best.show.venueName,
         city: best.show.city,
         image: best.show.image,
@@ -459,6 +505,7 @@ export {
   VENUE_NEAR_METERS,
   captureLocalWallClock,
   clusterPhotosIntoNights,
+  collapseFestivalDays,
   describeConfidence,
   describeDistance,
   describeReclaimSpan,

@@ -257,6 +257,10 @@ export const reclaimCameraRoll = mutation({
           venueLongitude: venue?.longitude,
           city: show.city,
           image: show.image,
+          // Festival identity rides with the row so the matcher can collapse
+          // sets to their festival-day entity before scoring.
+          festivalId: show.festivalId,
+          isFestivalDay: show.isFestivalDay === true,
         };
       });
 
