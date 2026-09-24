@@ -29,6 +29,7 @@ import type * as festivalDays from "../festivalDays.js";
 import type * as follows from "../follows.js";
 import type * as freeEvents from "../freeEvents.js";
 import type * as freeEventsUtils from "../freeEventsUtils.js";
+import type * as geoCoverage from "../geoCoverage.js";
 import type * as jambase from "../jambase.js";
 import type * as jambaseUtils from "../jambaseUtils.js";
 import type * as leaderboard from "../leaderboard.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   follows: typeof follows;
   freeEvents: typeof freeEvents;
   freeEventsUtils: typeof freeEventsUtils;
+  geoCoverage: typeof geoCoverage;
   jambase: typeof jambase;
   jambaseUtils: typeof jambaseUtils;
   leaderboard: typeof leaderboard;

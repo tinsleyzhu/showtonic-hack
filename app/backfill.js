@@ -23,6 +23,7 @@ export {
   nightDateOf,
   unmatchedClusters,
 } from "../convex/backfillMatch.js";
+export { describeGeoSignalWarning } from "../convex/geoCoverage.js";
 
 // ---------------------------------------------------------------------------
 // EXIF fallback — minimal JPEG APP1/TIFF parser for DateTimeOriginal (0x9003).

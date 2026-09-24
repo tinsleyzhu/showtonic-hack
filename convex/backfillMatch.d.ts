@@ -107,3 +107,18 @@ export function unmatchedClusters(
 ): NightCluster[];
 export function describeConfidence(confidence: number): string;
 export function describeReclaimSpan(candidates: readonly { clusterDate: string }[]): string;
+
+// A coordinate the matcher would trust — finite, in range, not Null Island.
+// isFiniteCoordinate stays internal; coverage reporting (convex/geoCoverage.js)
+// asks the matcher what "geo-located" means through venueLocationOf, which is
+// the predicate it actually scores with.
+export type VenueLocationSource = {
+  latitude?: number;
+  longitude?: number;
+  venueLatitude?: number;
+  venueLongitude?: number;
+};
+
+// The show's venue position, if any — reads the scan shape
+// (venueLatitude/venueLongitude) and venue rows (latitude/longitude) alike.
+export function venueLocationOf(show: VenueLocationSource | null | undefined): GeoPoint | null;

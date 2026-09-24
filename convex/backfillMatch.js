@@ -469,4 +469,5 @@ export {
   matchClustersToShows,
   nightDateOf,
   unmatchedClusters,
+  venueLocationOf,
 };

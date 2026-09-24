@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import {
   Calendar,
   Check,
@@ -22,6 +22,7 @@ import {
   buildDemoCameraRoll,
   clusterPhotosIntoNights,
   describeConfidence,
+  describeGeoSignalWarning,
   describeReclaimSpan,
   matchClustersToShows,
 } from "../backfill.js";
@@ -192,6 +193,9 @@ export function BackfillFlow({
   const saveCandidates = useMutation(api.backfill.saveCandidates);
   const resolveCandidate = useMutation(api.backfill.resolve);
   const rateLog = useMutation(api.backfill.rateLog);
+  // Coverage is a fact about the catalog, not the roll — a thin GPS signal
+  // exists before the first photo is read.
+  const geoCoverage = useQuery(api.venues.geoCoverage, {});
 
   const today = todayIso();
   const matchOptions = useMemo(() => ({ tasteArtists: favoriteArtists, today }), [favoriteArtists, today]);
@@ -363,6 +367,13 @@ export function BackfillFlow({
     ? shows.filter((show) => show.date === current.candidate.clusterDate && show.id !== current.candidate.showId)
     : [];
 
+  // The completion state, where the skipped-photo ledger resolves: nothing
+  // more is coming, so anything the scan could not use is named here.
+  const scanComplete = scanProgress.total > 0 && scanProgress.checked >= scanProgress.total;
+  const geoSignalWarning = geoCoverage
+    ? describeGeoSignalWarning(geoCoverage.venues)
+    : null;
+
   return (
     <div className="fixed inset-0 z-40 overflow-y-auto bg-[#0A0908] text-[#F5F1E8]">
       <div className="mx-auto flex min-h-screen w-full max-w-md flex-col px-5 pb-10 pt-6">
@@ -481,6 +492,17 @@ export function BackfillFlow({
                 <p className="flex items-center justify-between py-3">
                   Skipped: nights under 3 photos
                   <b className="text-[#F5F1E8]">{scanProgress.skipped.belowClusterMinimum}</b>
+                </p>
+              )}
+              {/* The geo ledger — the other silent degradation. A venue without
+                  coordinates is matched date-only, and nothing else in the
+                  scan says so; the warning names it below the catalog's
+                  threshold (convex/geoCoverage.js) so a weak signal is blamed
+                  on the data, not the matcher. */}
+              {scanComplete && geoSignalWarning && (
+                <p className="flex items-center gap-3 py-3 text-xs text-[#D9B44A]">
+                  <MapPin className="h-4 w-4 shrink-0" />
+                  {geoSignalWarning}
                 </p>
               )}
             </div>
