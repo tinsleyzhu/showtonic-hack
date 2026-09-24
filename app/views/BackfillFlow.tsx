@@ -27,11 +27,13 @@ import {
 } from "../backfill.js";
 import type {
   BackfillCandidate,
+  BackfillDraft,
   BackfillPhoto,
   EvidenceKind,
   SkippedPhotoCounts,
 } from "../backfill.d";
 import { readCameraRoll, summarizeRoll } from "../photoMeta.js";
+import { vibes as vibeChips } from "../data";
 import { RatingStars, todayIso, type Show, posterFallback } from "./shared";
 import { ReclaimShareCard } from "./ReclaimShareCard";
 
@@ -39,7 +41,7 @@ const CARD_COLORS = ["#F97354", "#6FBCD3", "#9B7FB8", "#D9B44A", "#5F7A5E"];
 
 type Stage = "offer" | "scanning" | "confirm" | "rate" | "complete";
 
-type PendingRow = { candidate: BackfillCandidate; candidateId: Id<"backfillCandidates"> };
+type PendingRow = { candidate: BackfillCandidate; candidateId: Id<"backfillCandidates">; draft: BackfillDraft | null };
 type ResolvedNight = { candidate: BackfillCandidate; rating: number };
 
 const EVIDENCE_ICONS: Record<EvidenceKind, typeof MapPin> = {
@@ -71,6 +73,50 @@ function EvidenceRow({ kind, detail, delta }: { kind: EvidenceKind; detail: stri
 
 function weekdayOf(date: string) {
   return new Intl.DateTimeFormat("en", { weekday: "long" }).format(new Date(`${date}T12:00:00`));
+}
+
+// The draft-writer's output, rendered the way the log sheet renders the same
+// fields: a caption line and the tap-only vibe chips (app/data.ts `vibes`).
+// Pre-filled, not pre-decided — both controls are editable, and an empty
+// suggestion renders as a blank field the human fills, never as an invented chip.
+function DraftCard({ draft }: { draft: BackfillDraft }) {
+  const [caption, setCaption] = useState(draft.caption ?? "");
+  const [selected, setSelected] = useState<string[]>(draft.vibes ?? []);
+
+  function toggleVibe(vibe: string) {
+    setSelected((current) =>
+      current.includes(vibe) ? current.filter((item) => item !== vibe) : [...current, vibe],
+    );
+  }
+
+  return (
+    <div className="mt-4 border border-[#2A2521] bg-[#141210] p-4">
+      <label className="block">
+        <span className="mb-2 block text-xs font-black uppercase text-[#FF7A50]">Caption draft</span>
+        <input
+          className="w-full border border-[#2A2521] bg-[#0A0908] p-3 text-sm outline-none focus:border-[#FF7A50]"
+          onChange={(event) => setCaption(event.target.value)}
+          placeholder="One-line caption"
+          value={caption}
+        />
+      </label>
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-black uppercase text-[#FF7A50]">Vibe suggestions</p>
+        <div className="flex flex-wrap gap-2">
+          {vibeChips.map((vibe) => (
+            <button
+              className={`border px-3 py-2 text-xs ${selected.includes(vibe) ? "border-[#4EC98F] bg-[#15251C] text-[#BFE8D2]" : "border-[#2A2521] text-[#C9C1B4]"}`}
+              key={vibe}
+              onClick={() => toggleVibe(vibe)}
+              type="button"
+            >
+              {vibe}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function longDate(date: string) {
@@ -221,12 +267,12 @@ export function BackfillFlow({
           evidence: match.evidence,
         })),
       });
-      const rowsByKey = new Map(saved.rows.map((row) => [`${row.clusterDate}|${row.showId}`, row._id]));
+      const rowsByKey = new Map(saved.rows.map((row) => [`${row.clusterDate}|${row.showId}`, row]));
       const nextQueue: PendingRow[] = [];
       for (const match of matches) {
-        const candidateId = rowsByKey.get(`${match.clusterDate}|${match.showId}`);
-        if (candidateId) {
-          nextQueue.push({ candidate: match, candidateId: candidateId as Id<"backfillCandidates"> });
+        const row = rowsByKey.get(`${match.clusterDate}|${match.showId}`);
+        if (row) {
+          nextQueue.push({ candidate: match, candidateId: row._id as Id<"backfillCandidates">, draft: row.draft ?? null });
         }
       }
       if (!nextQueue.length) {
@@ -484,6 +530,7 @@ export function BackfillFlow({
               </div>
               <p className="mt-3 border-t border-white/10 pt-3 text-xs text-[#8A8177]">Nothing is added until you confirm.</p>
             </div>
+            {current.draft && <DraftCard draft={current.draft} key={current.candidateId} />}
             <div className="flex-1" />
             <div className="mt-6 grid grid-cols-[2fr_1fr] gap-2">
               <button className="bg-[#FF7A50] px-5 py-4 text-sm font-black text-black disabled:opacity-60" disabled={busy} onClick={() => void resolveCurrent("accept")} type="button">

@@ -1,10 +1,38 @@
 import { mutation, query } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { insertVerifiedLog } from "./logs";
+import { completeDraft, writeDraft } from "./backfillDraft.js";
 
 // Backfill candidates (designs 08–11): the client scans photos on-device and
 // sends only match metadata here. Nothing enters the diary until the user
 // confirms a candidate.
+//
+// Genres live on the show's ARTISTS (`shows` carries none), so a draft's vibe
+// suggestions are assembled server-side from the same lookup the diary log
+// uses (`logs.artistGenres`); the pure `writeDraft` never sees a query.
+async function showWithGenres(
+  ctx: MutationCtx,
+  showId: string | null,
+  showCache: Map<string, Doc<"shows"> | null>,
+  genresByShow: Map<string, string[]>,
+): Promise<{ show: Doc<"shows"> | null; genres: string[] }> {
+  if (!showId) return { show: null, genres: [] };
+  let show = showCache.get(showId);
+  if (show === undefined) {
+    show = (await ctx.db.get(showId as Id<"shows">)) ?? null;
+    showCache.set(showId, show);
+  }
+  if (!show) return { show: null, genres: [] };
+  let genres = genresByShow.get(showId);
+  if (!genres) {
+    const artists = await Promise.all(show.artistIds.map((artistId) => ctx.db.get(artistId)));
+    genres = [...new Set(artists.flatMap((artist) => artist?.genres ?? []))];
+    genresByShow.set(showId, genres);
+  }
+  return { show, genres };
+}
 
 export const saveCandidates = mutation({
   args: {
@@ -51,9 +79,23 @@ export const saveCandidates = mutation({
       .collect();
     const loggedShowIds = new Set(logs.map((log) => log.showId));
 
-    const rows: { _id: string; clusterDate: string; showId: string | null }[] = [];
+    const rows: { _id: string; clusterDate: string; showId: string | null; draft: { caption: string; vibes: string[] } }[] = [];
+    const showCache = new Map<string, Doc<"shows"> | null>();
+    const genresByShow = new Map<string, string[]>();
     for (const candidate of args.candidates) {
       if (candidate.showId && loggedShowIds.has(candidate.showId)) continue;
+      // Every insert leaves with a complete draft: the client's fills its own
+      // gaps, and writeDraft fills the rest from evidence + the show's genres.
+      const { show, genres } = await showWithGenres(ctx, candidate.showId ?? null, showCache, genresByShow);
+      const draft = completeDraft(
+        candidate.draft,
+        writeDraft({
+          clusterDate: candidate.clusterDate,
+          photoCount: candidate.photoCount,
+          captureWindow: candidate.captureWindow,
+          show: show ? { venueName: show.venueName, genres } : null,
+        }),
+      );
       const _id = await ctx.db.insert("backfillCandidates", {
         userId: args.userId,
         showId: candidate.showId,
@@ -62,11 +104,11 @@ export const saveCandidates = mutation({
         captureWindow: candidate.captureWindow,
         confidence: Math.max(0, Math.min(candidate.confidence, 0.99)),
         evidence: candidate.evidence,
-        draft: candidate.draft,
+        draft,
         status: "pending",
         createdAt: now,
       });
-      rows.push({ _id, clusterDate: candidate.clusterDate, showId: candidate.showId ?? null });
+      rows.push({ _id, clusterDate: candidate.clusterDate, showId: candidate.showId ?? null, draft });
     }
     return { saved: rows.length, rows };
   },
