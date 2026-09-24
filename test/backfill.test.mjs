@@ -64,6 +64,20 @@ test("photos after midnight belong to the previous night", () => {
   assert.equal(nightDateOf("garbage"), null);
 });
 
+test("offset-bearing stamps attribute by their own capture-local clock", () => {
+  // The naive part of an offset-bearing stamp is the camera's wall clock —
+  // the same night its naive twin lands on, in whatever zone the code runs.
+  // Converting through the runtime's zone is what used to push these past the
+  // 4 AM cutoff or out of the evening window entirely.
+  assert.equal(nightDateOf("2026-06-27T22:30:00-0700"), "2026-06-27");
+  assert.equal(nightDateOf("2026-06-28T00:45:00-0700"), "2026-06-27"); // after midnight, own offset
+  assert.equal(nightDateOf("2026-06-28T00:45:00Z"), "2026-06-27");
+  assert.equal(
+    formatCaptureWindow("2026-06-27T22:30:00-0700", "2026-06-28T00:14:00-0700"),
+    "10:30 PM–12:14 AM",
+  );
+});
+
 test("formats capture windows in 12-hour clock", () => {
   assert.equal(
     formatCaptureWindow("2025-11-15T22:22:00", "2025-11-16T00:14:00"),
@@ -84,16 +98,19 @@ const nightPhotos = [
 ];
 
 test("clusters evening photos into nights with a 3-photo minimum", () => {
-  const clusters = clusterPhotosIntoNights(nightPhotos);
+  const { clusters, skipped } = clusterPhotosIntoNights(nightPhotos);
   assert.equal(clusters.length, 1);
   assert.deepEqual(
     { date: clusters[0].clusterDate, count: clusters[0].photoCount, window: clusters[0].captureWindow },
     { date: "2025-11-15", count: 3, window: "9:10 PM–12:20 AM" },
   );
+  // The ledger for everything that did not become a night: one daytime photo,
+  // and the 2-photo August evening below the minimum.
+  assert.deepEqual(skipped, { unreadableTimestamps: 0, outsideEveningWindow: 1, belowClusterMinimum: 2 });
 });
 
 test("clusters sort newest night first", () => {
-  const clusters = clusterPhotosIntoNights([
+  const { clusters } = clusterPhotosIntoNights([
     { takenAt: "2024-05-01T21:00:00" },
     { takenAt: "2024-05-01T22:00:00" },
     { takenAt: "2024-05-01T23:00:00" },
@@ -183,7 +200,7 @@ test("demo camera roll fabricates matchable evening photos from past shows", () 
   ];
   const photos = buildDemoCameraRoll(shows, { today: "2026-08-15", limit: 3 });
   assert.equal(photos.length >= 9, true); // ≥3 photos per night
-  const clusters = clusterPhotosIntoNights(photos);
+  const { clusters } = clusterPhotosIntoNights(photos);
   // Three placeable nights PLUS one the catalog cannot explain. The roll is
   // built from real shows, so without a deliberate gap every night would match
   // and the demo could never show the matcher refusing — the behaviour the

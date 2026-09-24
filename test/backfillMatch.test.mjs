@@ -63,7 +63,8 @@ test("clustering carries GPS onto the night", () => {
     latitude: MIDWAY.latitude,
     longitude: MIDWAY.longitude,
   }));
-  const [cluster] = clusterPhotosIntoNights(photos);
+  const { clusters } = clusterPhotosIntoNights(photos);
+  const [cluster] = clusters;
   assert.equal(cluster.gps.sampleCount, 3);
   assert.equal(Math.round(haversineMeters(cluster.gps, MIDWAY)), 0);
 });
@@ -274,7 +275,68 @@ test("a UTC timestamp is detectable, because silently losing a night is worse", 
   const wall = clusterPhotosIntoNights(
     Array.from({ length: 5 }, () => ({ takenAt: "2026-06-27T22:30:00" })),
   );
-  assert.equal(wall[0].clusterDate, "2026-06-27");
+  assert.equal(wall.clusters[0].clusterDate, "2026-06-27");
+});
+
+test("offset-bearing timestamps cluster as their naive wall-clock twins", () => {
+  // The fix for the bug above, in its strongest form: a stamp that carries its
+  // own offset ("-0700", "Z") names the same wall clock as its naive twin —
+  // the naive part IS the capture-local time — so both must produce identical
+  // clusters, whatever zone the runtime is in. The burst spans midnight so the
+  // night rollover is exercised too, not just the evening window.
+  const stamps = [
+    "2026-06-27T20:10:00",
+    "2026-06-27T21:20:00",
+    "2026-06-27T22:30:00",
+    "2026-06-27T23:40:00",
+    "2026-06-28T00:40:00",
+  ];
+  const naive = clusterPhotosIntoNights(stamps.map((takenAt) => ({ takenAt })));
+  assert.equal(naive.clusters.length, 1);
+  assert.equal(naive.clusters[0].clusterDate, "2026-06-27");
+  assert.equal(naive.clusters[0].captureWindow, "8:10 PM–12:40 AM");
+
+  // The strongest form: the WHOLE scan result — clusters and the skipped
+  // ledger alike — is identical for every encoding of the same wall clock.
+  assert.deepEqual(
+    clusterPhotosIntoNights(stamps.map((takenAt) => ({ takenAt: `${takenAt}-0700` }))),
+    naive,
+  );
+  assert.deepEqual(
+    clusterPhotosIntoNights(stamps.map((takenAt) => ({ takenAt: `${takenAt}Z` }))),
+    naive,
+  );
+});
+
+test("every photo that is not clustered is counted with a reason", () => {
+  // The scan's ledger: clustered photos plus the skipped counts reconcile to
+  // the input, and every skip names its reason. The dateless photo and the
+  // unparseable one share a bucket — to the scan they are indistinguishable.
+  const { clusters, skipped } = clusterPhotosIntoNights([
+    { takenAt: "2026-06-27T20:10:00" },
+    { takenAt: "2026-06-27T21:20:00" },
+    { takenAt: "2026-06-27T22:30:00" },
+    { name: "IMG_dateless.jpg" }, // no timestamp at all
+    { takenAt: "not-a-date" }, // unparseable
+    { takenAt: "2026-06-27T09:00:00" }, // daytime
+    { takenAt: "2026-06-20T21:00:00" }, // an evening of 2 — below the minimum
+    { takenAt: "2026-06-20T21:30:00" },
+  ]);
+  assert.equal(clusters.length, 1);
+  assert.deepEqual(skipped, {
+    unreadableTimestamps: 2,
+    outsideEveningWindow: 1,
+    belowClusterMinimum: 2,
+  });
+  // Input = clustered + skipped. Nothing fell out of the bottom.
+  const clustered = clusters.reduce((total, cluster) => total + cluster.photoCount, 0);
+  assert.equal(
+    clustered +
+      skipped.unreadableTimestamps +
+      skipped.outsideEveningWindow +
+      skipped.belowClusterMinimum,
+    8,
+  );
 });
 
 test("a festival day is declined, because GPS cannot say which set you saw", () => {
