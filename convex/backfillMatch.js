@@ -91,9 +91,37 @@ function describeDistance(meters) {
 // Night attribution
 // ---------------------------------------------------------------------------
 
+// A night is defined by the clock on the wall where the photo was taken. Naive
+// timestamps ("2026-06-27T22:30:00") are already that wall clock — EXIF and
+// QuickTime sources record the camera's local time with no zone attached — and
+// every Date read here hands the naive components back untouched. Offset-bearing
+// timestamps ("2026-06-27T22:30:00-0700") carry their capture zone in the string
+// itself, so the naive part IS the wall clock: strip the designator rather than
+// converting through the runtime's zone. Converting is what shifted a
+// UTC-exported night out of the evening window entirely — the whole night
+// dropped with no error and no candidate.
+const TIMEZONE_DESIGNATOR = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+function hasTimezoneDesignator(takenAt) {
+  return TIMEZONE_DESIGNATOR.test(String(takenAt ?? "").trim());
+}
+
+// The capture-local wall clock of a timestamp, as the naive string the night
+// rules below expect; null when there is nothing to read.
+function captureLocalWallClock(takenAt) {
+  const raw = String(takenAt ?? "").trim();
+  if (!raw) return null;
+  return hasTimezoneDesignator(raw) ? raw.replace(TIMEZONE_DESIGNATOR, "") : raw;
+}
+
 // A photo taken before NIGHT_END_HOUR belongs to the previous calendar night.
 function nightDateOf(takenAt) {
-  const date = new Date(takenAt);
+  const wallClock = captureLocalWallClock(takenAt);
+  if (wallClock === null) return null;
+  return nightOfWallClock(new Date(wallClock));
+}
+
+function nightOfWallClock(date) {
   if (Number.isNaN(date.getTime())) return null;
   const shifted = new Date(date.getTime());
   if (date.getHours() < NIGHT_END_HOUR) shifted.setDate(shifted.getDate() - 1);
@@ -103,17 +131,11 @@ function nightDateOf(takenAt) {
   return `${year}-${month}-${day}`;
 }
 
-// Every hour comparison here runs in the server's local zone, so a caller that
-// helpfully sends correct UTC ("2026-06-27T22:30:00Z") gets its night shifted —
-// often out of the evening window entirely, which means the night is dropped
-// with no error and no candidate. Silence is the worst possible failure for an
-// agent-facing surface, so callers can detect the ambiguity and say so.
-function hasTimezoneDesignator(takenAt) {
-  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(String(takenAt ?? "").trim());
-}
-
-function isEveningPhoto(takenAt) {
-  const hours = new Date(takenAt).getHours();
+// The evening window: shows start after 5 PM, and photos before 4 AM still
+// belong to the night before. Everything else is a daytime photo, not a show.
+// Takes the parsed capture-local wall clock — see captureLocalWallClock.
+function isEveningWallClock(date) {
+  const hours = date.getHours();
   return hours >= EVENING_START_HOUR || hours < NIGHT_END_HOUR;
 }
 
@@ -126,8 +148,11 @@ function formatClock(date) {
 }
 
 function formatCaptureWindow(firstIso, lastIso) {
-  const first = new Date(firstIso);
-  const last = new Date(lastIso);
+  const firstWall = captureLocalWallClock(firstIso);
+  const lastWall = captureLocalWallClock(lastIso);
+  if (firstWall === null || lastWall === null) return "";
+  const first = new Date(firstWall);
+  const last = new Date(lastWall);
   if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime())) return "";
   return `${formatClock(first)}–${formatClock(last)}`;
 }
@@ -149,11 +174,15 @@ function locateCluster(photos) {
 }
 
 // photos: [{ takenAt: ISO datetime, name?, latitude?, longitude? }]
-//   → night clusters, newest first.
+//   → night clusters, newest first. Every hour check, sort key, and capture
+//     endpoint reads the photo's own capture-local wall clock (see
+//     captureLocalWallClock), never the runtime's zone.
 function clusterPhotosIntoNights(photos) {
   const byNight = new Map();
   for (const photo of Array.isArray(photos) ? photos : []) {
-    if (!photo?.takenAt || !isEveningPhoto(photo.takenAt)) continue;
+    if (!photo?.takenAt) continue;
+    const wallClock = captureLocalWallClock(photo.takenAt);
+    if (wallClock === null || !isEveningWallClock(new Date(wallClock))) continue;
     const night = nightDateOf(photo.takenAt);
     if (!night) continue;
     const entry = byNight.get(night) ?? { clusterDate: night, photos: [] };
@@ -165,14 +194,16 @@ function clusterPhotosIntoNights(photos) {
     .filter((entry) => entry.photos.length >= MIN_CLUSTER_PHOTOS)
     .map((entry) => {
       const sorted = [...entry.photos].sort((left, right) =>
-        String(left.takenAt).localeCompare(String(right.takenAt)),
+        captureLocalWallClock(left.takenAt).localeCompare(captureLocalWallClock(right.takenAt)),
       );
+      const firstTakenAt = captureLocalWallClock(sorted[0].takenAt);
+      const lastTakenAt = captureLocalWallClock(sorted[sorted.length - 1].takenAt);
       return {
         clusterDate: entry.clusterDate,
         photoCount: sorted.length,
-        firstTakenAt: sorted[0].takenAt,
-        lastTakenAt: sorted[sorted.length - 1].takenAt,
-        captureWindow: formatCaptureWindow(sorted[0].takenAt, sorted[sorted.length - 1].takenAt),
+        firstTakenAt,
+        lastTakenAt,
+        captureWindow: formatCaptureWindow(firstTakenAt, lastTakenAt),
         gps: locateCluster(sorted),
       };
     })
@@ -381,6 +412,7 @@ export {
   VENUE_FAR_METERS,
   VENUE_NEARBY_METERS,
   VENUE_NEAR_METERS,
+  captureLocalWallClock,
   clusterPhotosIntoNights,
   describeConfidence,
   describeDistance,

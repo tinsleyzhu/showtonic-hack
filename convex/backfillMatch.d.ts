@@ -80,6 +80,7 @@ export function describeDistance(meters: number): string;
 export function locateCluster(photos: readonly BackfillPhoto[]): ClusterLocation | null;
 export function nightDateOf(takenAt: string): string | null;
 export function hasTimezoneDesignator(takenAt: string): boolean;
+export function captureLocalWallClock(takenAt: string): string | null;
 export function formatCaptureWindow(firstIso: string, lastIso: string): string;
 export function clusterPhotosIntoNights(photos: readonly BackfillPhoto[]): NightCluster[];
 export function matchClustersToShows(
