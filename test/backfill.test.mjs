@@ -64,6 +64,20 @@ test("photos after midnight belong to the previous night", () => {
   assert.equal(nightDateOf("garbage"), null);
 });
 
+test("offset-bearing stamps attribute by their own capture-local clock", () => {
+  // The naive part of an offset-bearing stamp is the camera's wall clock —
+  // the same night its naive twin lands on, in whatever zone the code runs.
+  // Converting through the runtime's zone is what used to push these past the
+  // 4 AM cutoff or out of the evening window entirely.
+  assert.equal(nightDateOf("2026-06-27T22:30:00-0700"), "2026-06-27");
+  assert.equal(nightDateOf("2026-06-28T00:45:00-0700"), "2026-06-27"); // after midnight, own offset
+  assert.equal(nightDateOf("2026-06-28T00:45:00Z"), "2026-06-27");
+  assert.equal(
+    formatCaptureWindow("2026-06-27T22:30:00-0700", "2026-06-28T00:14:00-0700"),
+    "10:30 PM–12:14 AM",
+  );
+});
+
 test("formats capture windows in 12-hour clock", () => {
   assert.equal(
     formatCaptureWindow("2025-11-15T22:22:00", "2025-11-16T00:14:00"),

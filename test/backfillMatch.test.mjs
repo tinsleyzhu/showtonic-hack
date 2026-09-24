@@ -277,6 +277,34 @@ test("a UTC timestamp is detectable, because silently losing a night is worse", 
   assert.equal(wall[0].clusterDate, "2026-06-27");
 });
 
+test("offset-bearing timestamps cluster as their naive wall-clock twins", () => {
+  // The fix for the bug above, in its strongest form: a stamp that carries its
+  // own offset ("-0700", "Z") names the same wall clock as its naive twin —
+  // the naive part IS the capture-local time — so both must produce identical
+  // clusters, whatever zone the runtime is in. The burst spans midnight so the
+  // night rollover is exercised too, not just the evening window.
+  const stamps = [
+    "2026-06-27T20:10:00",
+    "2026-06-27T21:20:00",
+    "2026-06-27T22:30:00",
+    "2026-06-27T23:40:00",
+    "2026-06-28T00:40:00",
+  ];
+  const naive = clusterPhotosIntoNights(stamps.map((takenAt) => ({ takenAt })));
+  assert.equal(naive.length, 1);
+  assert.equal(naive[0].clusterDate, "2026-06-27");
+  assert.equal(naive[0].captureWindow, "8:10 PM–12:40 AM");
+
+  assert.deepEqual(
+    clusterPhotosIntoNights(stamps.map((takenAt) => ({ takenAt: `${takenAt}-0700` }))),
+    naive,
+  );
+  assert.deepEqual(
+    clusterPhotosIntoNights(stamps.map((takenAt) => ({ takenAt: `${takenAt}Z` }))),
+    naive,
+  );
+});
+
 test("a festival day is declined, because GPS cannot say which set you saw", () => {
   // Every set shares one coordinate, so nothing distinguishes them. Naming one
   // would be a coin flip; the honest answer is that we know the night and not
