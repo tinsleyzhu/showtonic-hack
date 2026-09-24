@@ -5,6 +5,6 @@ export function resolveChosenLineup(
   chosen: readonly string[],
 ): string[];
 export function genresForLineup(
-  artists: ReadonlyArray<{ name?: string; genres?: readonly string[] }>,
+  artists: ReadonlyArray<{ name?: string; genres?: readonly string[] } | null>,
   chosenNames: readonly string[],
 ): string[];
