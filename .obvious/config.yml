@@ -1,0 +1,8 @@
+# Obvious repo policy for tinsleyzhu/showtonic-hack
+# Auto-detected from GitHub repo settings on 2026-09-24.
+branch:
+  base: main            # default branch
+  convention: short-lived topic branches, PR into main
+merge:
+  method: squash        # all merge methods enabled on GitHub; squash keeps the hackathon history linear
+  requireHumanMerge: true
